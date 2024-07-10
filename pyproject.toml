@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "opendate"
-version = "0.1.0"
+version = "0.1.1"
 description = ""
 authors = ["bissli <bissli.xyz@protonmail.com>"]
 readme = "README.md"
