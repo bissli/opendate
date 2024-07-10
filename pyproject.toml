@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "opendate"
+version = "0.1.0"
+description = ""
+authors = ["bissli <bissli.xyz@protonmail.com>"]
+readme = "README.md"
+packages = [{ include = "date", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+pandas-market-calendars = "*"
+pendulum = "*"
+wrapt = "*"
+typing-extensions = "*"
+regex = "*"
+
+# = test
+asserts = { version = "*", optional = true }
+pytest = { version = "*", optional = true }
+pdbpp = { version = "*", optional = true }
+bump2version = { version = "*", optional = true }
+
+[tool.poetry.extras]
+test = [
+  "asserts",
+  "pdbpp",
+  "pytest",
+  "bump2version",
+]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
