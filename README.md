@@ -21,7 +21,7 @@ thedate.business().add(days=5) # add 5 business day
 
 # subtract days
 thedate.subtract(days=5)
-thedate.business().subtrat(days=5) # subtract 5 business day
+thedate.business().subtract(days=5) # subtract 5 business day
 
 # start of month
 thedate.start_of('month')

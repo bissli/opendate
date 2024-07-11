@@ -9,7 +9,7 @@
    ...     module_spec.loader.exec_module(module)
    ...     return module
    >>> date = load_module('.', 'src/date/date.py')
-   >>> business = load_module('.', 'src/date/business.py')
+   >>> extras = load_module('.', 'src/date/extras.py')
    >>> from functools import partial
    >>> import doctest
    >>> from asserts import assert_equal as eq, assert_not_equal as ne
@@ -17,4 +17,4 @@
 
    date modules
    >>> _ = testmod(date); ne(_.attempted, 0); eq(_.failed, 0)
-   >>> _ = testmod(business); ne(_.attempted, 0); eq(_.failed, 0)
+   >>> _ = testmod(extras); ne(_.attempted, 0); eq(_.failed, 0)

@@ -8,9 +8,7 @@ import time
 import warnings
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
-from collections import namedtuple
 from collections.abc import Callable, Sequence
-from enum import IntEnum
 from functools import lru_cache, partial, wraps
 from typing import Self
 
@@ -31,8 +29,6 @@ __all__ = [
     'IntervalError',
     'Time',
     'Timezone',
-    'WeekDay',
-    'WEEKDAY_SHORTNAME',
     'EST',
     'UTC',
     'GMT',
@@ -45,6 +41,7 @@ __all__ = [
     'expect_datetime',
     'Entity',
     'NYSE'
+    'WEEKDAY_SHORTNAME',
     ]
 
 
@@ -59,16 +56,7 @@ GMT = Timezone('GMT')
 EST = Timezone('US/Eastern')
 LCL = _pendulum.tz.Timezone(_pendulum.tz.get_local_timezone().name)
 
-
-class WeekDay(IntEnum):
-    MONDAY = 0
-    TUESDAY = 1
-    WEDNESDAY = 2
-    THURSDAY = 3
-    FRIDAY = 4
-    SATURDAY = 5
-    SUNDAY = 6
-
+WeekDay = _pendulum.day.WeekDay
 
 WEEKDAY_SHORTNAME = {
     'MO': WeekDay.MONDAY,
@@ -281,7 +269,7 @@ class NYSE(Entity):
                 if begdate <= d <= enddate}
 
 
-class PendulumBusinessDateMixin:
+class DateBusinessMixin:
 
     _entity: type[NYSE] = NYSE
     _business: bool = False
@@ -509,7 +497,141 @@ class PendulumBusinessDateMixin:
         return self
 
 
-class Date(PendulumBusinessDateMixin, _pendulum.Date):
+class DateExtrasMixin:
+    """Legacy support functionality well outside the
+    scope of Pendulum. Ideally these should be removed.
+
+    See how pendulum does end_of and next_ with getattr
+
+    Create a nearest [start_of, end_of] [week, day, month, quarter, year]
+
+    combo that accounts for whatever prefix and unit is passed in
+    """
+
+    def nearest_start_of_month(self):
+        """Get `nearest` start of month
+
+        1/1/2015 -> Thursday (New Year's Day)
+        2/1/2015 -> Sunday
+
+        >>> from date import Date
+        >>> Date(2015, 1, 1).nearest_start_of_month()
+        Date(2015, 1, 1)
+        >>> Date(2015, 1, 15).nearest_start_of_month()
+        Date(2015, 1, 1)
+        >>> Date(2015, 1, 15).b.nearest_start_of_month()
+        Date(2015, 1, 2)
+        >>> Date(2015, 1, 16).nearest_start_of_month()
+        Date(2015, 2, 1)
+        >>> Date(2015, 1, 31).nearest_start_of_month()
+        Date(2015, 2, 1)
+        >>> Date(2015, 1, 31).b.nearest_start_of_month()
+        Date(2015, 2, 2)
+        """
+        _business = self._business
+        self._business = False
+        if self.day > 15:
+            d = self.end_of('month')
+            if _business:
+                return d.business().add(days=1)
+            return d.add(days=1)
+        d = self.start_of('month')
+        if _business:
+            return d.business().add(days=1)
+        return d
+
+    def nearest_end_of_month(self):
+        """Get `nearest` end of month
+
+        12/31/2014 -> Wednesday
+        1/31/2015 -> Saturday
+
+        >>> from date import Date
+        >>> Date(2015, 1, 1).nearest_end_of_month()
+        Date(2014, 12, 31)
+        >>> Date(2015, 1, 15).nearest_end_of_month()
+        Date(2014, 12, 31)
+        >>> Date(2015, 1, 15).b.nearest_end_of_month()
+        Date(2014, 12, 31)
+        >>> Date(2015, 1, 16).nearest_end_of_month()
+        Date(2015, 1, 31)
+        >>> Date(2015, 1, 31).nearest_end_of_month()
+        Date(2015, 1, 31)
+        >>> Date(2015, 1, 31).b.nearest_end_of_month()
+        Date(2015, 1, 30)
+        """
+        _business = self._business
+        self._business = False
+        if self.day <= 15:
+            d = self.start_of('month')
+            if _business:
+                return d.business().subtract(days=1)
+            return d.subtract(days=1)
+        d = self.end_of('month')
+        if _business:
+            return d.business().subtract(days=1)
+        return d
+
+    def next_relative_date_of_week_by_day(self, day='MO'):
+        """Get next relative day of week by relativedelta code
+
+        >>> from date import Date
+        >>> Date(2020, 5, 18).next_relative_date_of_week_by_day('SU')
+        Date(2020, 5, 24)
+        >>> Date(2020, 5, 24).next_relative_date_of_week_by_day('SU')
+        Date(2020, 5, 24)
+        """
+        if self.weekday() == WEEKDAY_SHORTNAME.get(day):
+            return self
+        return self.next(WEEKDAY_SHORTNAME.get(day))
+
+    def weekday_or_previous_friday(self):
+        """Return the date if it is a weekday, else previous Friday
+
+        >>> from date import Date
+        >>> Date(2019, 10, 6).weekday_or_previous_friday() # Sunday
+        Date(2019, 10, 4)
+        >>> Date(2019, 10, 5).weekday_or_previous_friday() # Saturday
+        Date(2019, 10, 4)
+        >>> Date(2019, 10, 4).weekday_or_previous_friday() # Friday
+        Date(2019, 10, 4)
+        >>> Date(2019, 10, 3).weekday_or_previous_friday() # Thursday
+        Date(2019, 10, 3)
+        """
+        dnum = self.weekday()
+        if dnum in {WeekDay.SATURDAY, WeekDay.SUNDAY}:
+            return self.subtract(days=dnum - 4)
+        return self
+
+    """
+    create a simple nth weekday function that accounts for
+    [1,2,3,4] and weekday as options
+    or weekday, [1,2,3,4]
+
+    """
+
+    @classmethod
+    def third_wednesday(cls, year, month):
+        """Third Wednesday date of a given month/year
+
+        >>> from date import Date
+        >>> Date.third_wednesday(2022, 6)
+        Date(2022, 6, 15)
+        >>> Date.third_wednesday(2023, 3)
+        Date(2023, 3, 15)
+        >>> Date.third_wednesday(2022, 12)
+        Date(2022, 12, 21)
+        >>> Date.third_wednesday(2023, 6)
+        Date(2023, 6, 21)
+        """
+        third = cls(year, month, 15)  # lowest 3rd day
+        w = third.weekday()
+        if w != WeekDay.WEDNESDAY:
+            third = third.replace(day=(15 + (WeekDay.WEDNESDAY - w) % 7))
+        return third
+
+
+class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
     """Inherits and wraps pendulum.Date
     """
 
@@ -768,105 +890,6 @@ class Date(PendulumBusinessDateMixin, _pendulum.Date):
         with contextlib.suppress(Exception):
             return self.isocalendar()[1]
 
-    """
-    See how pendulum does end_of and next_ with getattr
-
-    Create a nearest [start_of, end_of] [week, day, month, quarter, year]
-
-    combo that accounts for whatever prefix and unit is passed in
-    """
-
-    def nearest_start_of_month(self):
-        """Get `nearest` start of month
-
-        1/1/2015 -> Thursday (New Year's Day)
-        2/1/2015 -> Sunday
-
-        >>> Date(2015, 1, 1).nearest_start_of_month()
-        Date(2015, 1, 1)
-        >>> Date(2015, 1, 15).nearest_start_of_month()
-        Date(2015, 1, 1)
-        >>> Date(2015, 1, 15).b.nearest_start_of_month()
-        Date(2015, 1, 2)
-        >>> Date(2015, 1, 16).nearest_start_of_month()
-        Date(2015, 2, 1)
-        >>> Date(2015, 1, 31).nearest_start_of_month()
-        Date(2015, 2, 1)
-        >>> Date(2015, 1, 31).b.nearest_start_of_month()
-        Date(2015, 2, 2)
-        """
-        _business = self._business
-        self._business = False
-        if self.day > 15:
-            d = self.end_of('month')
-            if _business:
-                return d.business().add(days=1)
-            return d.add(days=1)
-        d = self.start_of('month')
-        if _business:
-            return d.business().add(days=1)
-        return d
-
-    def nearest_end_of_month(self):
-        """Get `nearest` end of month
-
-        12/31/2014 -> Wednesday
-        1/31/2015 -> Saturday
-
-        >>> Date(2015, 1, 1).nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 15).nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 15).b.nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 16).nearest_end_of_month()
-        Date(2015, 1, 31)
-        >>> Date(2015, 1, 31).nearest_end_of_month()
-        Date(2015, 1, 31)
-        >>> Date(2015, 1, 31).b.nearest_end_of_month()
-        Date(2015, 1, 30)
-        """
-        _business = self._business
-        self._business = False
-        if self.day <= 15:
-            d = self.start_of('month')
-            if _business:
-                return d.business().subtract(days=1)
-            return d.subtract(days=1)
-        d = self.end_of('month')
-        if _business:
-            return d.business().subtract(days=1)
-        return d
-
-    def next_relative_date_of_week_by_day(self, day='MO'):
-        """Get next relative day of week by relativedelta code
-
-        >>> Date(2020, 5, 18).next_relative_date_of_week_by_day('SU')
-        Date(2020, 5, 24)
-        >>> Date(2020, 5, 24).next_relative_date_of_week_by_day('SU')
-        Date(2020, 5, 24)
-        """
-        if self.weekday() == WEEKDAY_SHORTNAME.get(day):
-            return self
-        return self.next(WEEKDAY_SHORTNAME.get(day))
-
-    def weekday_or_previous_friday(self):
-        """Return the date if it is a weekday, else previous Friday
-
-        >>> Date(2019, 10, 6).weekday_or_previous_friday() # Sunday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 5).weekday_or_previous_friday() # Saturday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 4).weekday_or_previous_friday() # Friday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 3).weekday_or_previous_friday() # Thursday
-        Date(2019, 10, 3)
-        """
-        dnum = self.weekday()
-        if dnum in {WeekDay.SATURDAY, WeekDay.SUNDAY}:
-            return self.subtract(days=dnum - 4)
-        return self
-
     def lookback(self, unit='last') -> Self:
         """Date back based on lookback string, ie last, week, month.
 
@@ -896,32 +919,6 @@ class Date(PendulumBusinessDateMixin, _pendulum.Date):
             'quarter': _lookback(months=3),
             'year': _lookback(years=1),
             }.get(unit)
-
-    """
-    create a simple nth weekday function that accounts for
-    [1,2,3,4] and weekday as options
-    or weekday, [1,2,3,4]
-
-    """
-
-    @staticmethod
-    def third_wednesday(year, month):
-        """Third Wednesday date of a given month/year
-
-        >>> Date.third_wednesday(2022, 6)
-        Date(2022, 6, 15)
-        >>> Date.third_wednesday(2023, 3)
-        Date(2023, 3, 15)
-        >>> Date.third_wednesday(2022, 12)
-        Date(2022, 12, 21)
-        >>> Date.third_wednesday(2023, 6)
-        Date(2023, 6, 21)
-        """
-        third = Date(year, month, 15)  # lowest 3rd day
-        w = third.weekday()
-        if w != WeekDay.WEDNESDAY:
-            third = third.replace(day=(15 + (WeekDay.WEDNESDAY - w) % 7))
-        return third
 
 
 class Time(_pendulum.Time):
@@ -1050,7 +1047,7 @@ class Time(_pendulum.Time):
                    tzinfo=obj.tzinfo or tz)
 
 
-class DateTime(PendulumBusinessDateMixin, _pendulum.DateTime):
+class DateTime(DateBusinessMixin, _pendulum.DateTime):
     """Inherits and wraps pendulum.DateTime
     """
 
@@ -1611,47 +1608,6 @@ class Interval:
             return basis4(begdate, enddate) * sign
 
         raise ValueError('Basis range [0, 4]. Unknown basis {basis}.')
-
-
-Range = namedtuple('Range', ['start', 'end'])
-
-
-def overlap_days(range_one, range_two, days=False):
-    """Test by how much two date ranges overlap
-    if `days=True`, we return an actual day count,
-    otherwise we just return if it overlaps True/False
-    poached from Raymond Hettinger http://stackoverflow.com/a/9044111
-
-    >>> date1 = Date(2016, 3, 1)
-    >>> date2 = Date(2016, 3, 2)
-    >>> date3 = Date(2016, 3, 29)
-    >>> date4 = Date(2016, 3, 30)
-
-    >>> assert overlap_days((date1, date3), (date2, date4))
-    >>> assert overlap_days((date2, date4), (date1, date3))
-    >>> assert not overlap_days((date1, date2), (date3, date4))
-
-    >>> assert overlap_days((date1, date4), (date1, date4))
-    >>> assert overlap_days((date1, date4), (date2, date3))
-    >>> overlap_days((date1, date4), (date1, date4), True)
-    30
-
-    >>> assert overlap_days((date2, date3), (date1, date4))
-    >>> overlap_days((date2, date3), (date1, date4), True)
-    28
-
-    >>> assert not overlap_days((date3, date4), (date1, date2))
-    >>> overlap_days((date3, date4), (date1, date2), True)
-    -26
-    """
-    r1 = Range(*range_one)
-    r2 = Range(*range_two)
-    latest_start = max(r1.start, r2.start)
-    earliest_end = min(r1.end, r2.end)
-    overlap = (earliest_end - latest_start).days + 1
-    if days:
-        return overlap
-    return overlap >= 0
 
 
 def create_ics(begdate, enddate, summary, location):
