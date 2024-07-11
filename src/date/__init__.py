@@ -51,11 +51,10 @@ def time(*args, **kwargs):
     return Time(*args, **kwargs)
 
 
-def parse():
-    """Generic parser that guesses type"""
-    raise NotImplementedError(
-        'Generic parser not implemented, use Date or DateTime parsers'
-    )
+def parse(s: str | None, fmt: str = None, entity: Entity = NYSE, raise_err: bool = False) -> DateTime | None:
+    """Parse using DateTime.parse
+    """
+    return DateTime.parse(s, entity=entity, raise_err=True)
 
 
 def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateTime | Date | Time:
@@ -72,13 +71,13 @@ def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateT
 
 
 def now(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
-    """Get current datetime
+    """Returns Datetime.now
     """
     return DateTime.now(tz)
 
 
 def today(tz: str | _zoneinfo.ZoneInfo = None) -> DateTime:
-    """Get current date
+    """Returns DateTime.today
     """
     return DateTime.today(tz)
 

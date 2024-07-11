@@ -47,6 +47,27 @@ __all__ = [
 
 def Timezone(name:str = 'US/Eastern') -> _zoneinfo.ZoneInfo:
     """Simple wrapper around Pendulum `Timezone`
+
+    Ex: sanity check US/Eastern == America/New_York
+
+    >>> winter1 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('US/Eastern'))
+    >>> winter2 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('America/New_York'))
+
+    >>> summer1 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('US/Eastern'))
+    >>> summer2 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('America/New_York'))
+
+    >>> winter = [winter1, winter2,
+    ... winter1.astimezone(Timezone('America/New_York')),
+    ... winter2.astimezone(Timezone('US/Eastern')),
+    ... ]
+    >>> assert all(x==winter[0] for x in winter)
+
+    >>> summer = [summer1, summer2,
+    ... summer1.astimezone(Timezone('America/New_York')),
+    ... summer2.astimezone(Timezone('US/Eastern')),
+    ... ]
+    >>> assert all(x==summer[0] for x in summer)
+
     """
     return _pendulum.tz.Timezone(name)
 
@@ -1115,7 +1136,11 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return Time.instance(self)
 
     @classmethod
-    def parse(cls, s: str | int | None, raise_err: bool = False) -> Self | None:
+    def parse(
+        cls, s: str | int | None,
+        entity: Entity = NYSE,
+        raise_err: bool = False
+        ) -> Self | None:
         """Thin layer on Date parser and our custom `Date.parse``
 
         >>> DateTime.parse('2022/1/1')
@@ -1173,7 +1198,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 if d is not None and t is not None:
                     return DateTime.combine(d, t, LCL)
 
-        d = Date.parse(s)
+        d = Date.parse(s, entity=entity)
         if d is not None:
             return cls(d.year, d.month, d.day, 0, 0, 0)
 
