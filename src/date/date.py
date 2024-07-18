@@ -1438,18 +1438,35 @@ class Interval:
                 yield thedate
             thedate = thedate.add(days=1)
 
+    def start_of_series(self, unit='month') -> list[Date]:
+        """Return a series between and inclusive of begdate and enddate.
+
+        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_series('month')
+        [Date(2018, 1, 1), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 1)]
+        >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).start_of_series('month')
+        [Date(2018, 4, 1), Date(2018, 5, 1), Date(2018, 6, 1), Date(2018, 7, 1)]
+        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_series('week')
+        [Date(2018, 1, 1), Date(2018, 1, 8), ..., Date(2018, 4, 2)]
+        """
+        begdate = self.begdate.start_of(unit)
+        enddate = self.enddate.start_of(unit)
+        interval = _pendulum.interval(begdate, enddate)
+        return [Date.instance(d).start_of(unit) for d in interval.range(f'{unit}s')]
+
     def end_of_series(self, unit='month') -> list[Date]:
         """Return a series between and inclusive of begdate and enddate.
 
         >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_series('month')
         [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 31), Date(2018, 4, 30)]
+        >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).end_of_series('month')
+        [Date(2018, 4, 30), Date(2018, 5, 31), Date(2018, 6, 30), Date(2018, 7, 31)]
         >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_series('week')
         [Date(2018, 1, 7), Date(2018, 1, 14), ..., Date(2018, 4, 8)]
         """
         begdate = self.begdate.end_of(unit)
         enddate = self.enddate.end_of(unit)
         interval = _pendulum.interval(begdate, enddate)
-        return [Date.instance(d) for d in interval.range(f'{unit}s')]
+        return [Date.instance(d).end_of(unit) for d in interval.range(f'{unit}s')]
 
     def days(self) -> int:
         """Return days between (begdate, enddate] or negative (enddate, begdate].
