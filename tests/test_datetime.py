@@ -56,6 +56,26 @@ def test_combine():
     assert d._business is False
     assert_equal(d, DateTime(2000, 1, 1, 9, 30, 0, tzinfo=Timezone('UTC')))
 
+    # combine with set timezone (from parsed)
+    d = DateTime.combine(date, time, tzinfo=Timezone('EST'))
+    assert isinstance(d, DateTime)
+    assert d._business is False
+    assert_equal(d, DateTime(2000, 1, 1, 9, 30, 0, tzinfo=Timezone('EST')))
+
+    # combine with from instance time
+    time = Time.instance(Time(9, 30))
+    d = DateTime.combine(date, time, tzinfo=Timezone('EST'))
+    assert isinstance(d, DateTime)
+    assert d._business is False
+    assert_equal(d, DateTime(2000, 1, 1, 9, 30, 0, tzinfo=Timezone('EST')))
+
+    # combine with from instance time with another timezone
+    time = Time.instance(Time(9, 30, tzinfo=Timezone('UTC')))
+    d = DateTime.combine(date, time, tzinfo=Timezone('EST'))
+    assert isinstance(d, DateTime)
+    assert d._business is False
+    assert_equal(d, DateTime(2000, 1, 1, 9, 30, 0, tzinfo=Timezone('EST')))
+
 
 def test_copy():
 
