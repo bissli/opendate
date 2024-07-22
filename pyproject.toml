@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "opendate"
-version = "0.1.6"
+version = "0.1.7"
 description = "Python business datetimes"
 authors = ["bissli <bissli.xyz@protonmail.com>"]
 readme = "README.md"
