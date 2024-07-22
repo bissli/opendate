@@ -1068,7 +1068,6 @@ class Time(_pendulum.Time):
 
         return cls(obj.hour, obj.minute, obj.second, obj.microsecond, tzinfo=tz)
 
-    @expect_time
     def astimezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo):
         """Convert timezone
 
