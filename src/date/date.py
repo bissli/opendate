@@ -1040,7 +1040,7 @@ class Time(_pendulum.Time):
         | np.datetime64
         | Self
         | None,
-        tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
+        tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
         """From datetime-like object
@@ -1061,11 +1061,12 @@ class Time(_pendulum.Time):
                 raise ValueError('Empty value')
             return
 
-        if obj.__class__ == cls:
+        if obj.__class__ == cls and not tz:
             return obj
 
-        return cls(obj.hour, obj.minute, obj.second, obj.microsecond,
-                   tzinfo=obj.tzinfo or tz)
+        tz = tz or obj.tzinfo or UTC
+
+        return cls(obj.hour, obj.minute, obj.second, obj.microsecond, tzinfo=tz)
 
 
 class DateTime(DateBusinessMixin, _pendulum.DateTime):
@@ -1219,7 +1220,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         | np.datetime64
         | Self
         | None,
-        tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
+        tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
         """From datetime-like object
@@ -1263,28 +1264,30 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 raise ValueError('Empty value')
             return
 
-        if obj.__class__ == cls:
+        if obj.__class__ == cls and not tz:
             return obj
 
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
-            return cls.instance(obj, tz=tz)
+            return cls.instance(obj, tz=tz or UTC)
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
-            return cls.instance(obj, tz=tz)
+            return cls.instance(obj, tz=tz or UTC)
+
+        if obj.__class__ == Date:
+            return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
+        if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
+            return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
+
+        tz = tz or obj.tzinfo or UTC
 
         if obj.__class__ == Time:
             return cls.combine(Date.today(), obj, tzinfo=tz)
         if isinstance(obj, _datetime.time):
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
-        if obj.__class__ == Date:
-            return cls(obj.year, obj.month, obj.day, tzinfo=tz)
-        if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
-            return cls(obj.year, obj.month, obj.day, tzinfo=tz)
-
         return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
-                   obj.second, obj.microsecond, obj.tzinfo or tz)
+                   obj.second, obj.microsecond, tzinfo=tz)
 
 
 class IntervalError(AttributeError):
