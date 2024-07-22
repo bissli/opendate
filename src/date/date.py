@@ -1068,6 +1068,20 @@ class Time(_pendulum.Time):
 
         return cls(obj.hour, obj.minute, obj.second, obj.microsecond, tzinfo=tz)
 
+    @expect_time
+    def astimezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo):
+        """Convert timezone
+
+        >>> Time(12, 0).astimezone(Timezone('America/Sao_Paulo'))
+        Time(9, 0, 0, tzinfo=Timezone('America/Sao_Paulo'))
+
+        >>> Time(12, 0, tzinfo=Timezone('Europe/Moscow')).astimezone(Timezone('America/Sao_Paulo'))
+        Time(6, 0, 0, tzinfo=Timezone('America/Sao_Paulo'))
+
+        """
+        _dt = DateTime.combine(Date.today(), self, tzinfo=self.tzinfo or UTC)
+        return _dt.astimezone(tz).time()
+
 
 class DateTime(DateBusinessMixin, _pendulum.DateTime):
     """Inherits and wraps pendulum.DateTime
