@@ -272,20 +272,22 @@ class NYSE(Entity):
     @staticmethod
     @lru_cache
     def business_days(begdate=BEGDATE, enddate=ENDDATE) -> set:
-        return {d.date() for d in NYSE.calendar.valid_days(begdate, enddate)}
+        return {Date.instance(d.date())
+                for d in NYSE.calendar.valid_days(begdate, enddate)}
 
     @staticmethod
     @lru_cache
     def business_hours(begdate=BEGDATE, enddate=ENDDATE) -> dict:
         df = NYSE.calendar.schedule(begdate, enddate, tz=EST)
-        open_close = [(o.to_pydatetime(), c.to_pydatetime())
+        open_close = [(DateTime.instance(o.to_pydatetime()),
+                       DateTime.instance(c.to_pydatetime()))
                       for o, c in zip(df.market_open, df.market_close)]
         return dict(zip(df.index.date, open_close))
 
     @staticmethod
     @lru_cache
     def business_holidays(begdate=BEGDATE, enddate=ENDDATE) -> set:
-        return {d.date()
+        return {Date.instance(d.date())
                 for d in map(pd.to_datetime, NYSE.calendar.holidays().holidays)
                 if begdate <= d <= enddate}
 
