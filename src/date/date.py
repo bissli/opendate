@@ -1505,13 +1505,13 @@ class Interval:
     def days(self) -> int:
         """Return days between (begdate, enddate] or negative (enddate, begdate].
 
-        >>> Interval(Date.parse('2018/9/6'), Date.parse('2018/9/10')).days()
+        >>> Interval(Date(2018, 9, 6), Date(2018, 9, 10)).days()
         4
-        >>> Interval(Date.parse('2018/9/10'), Date.parse('2018/9/6')).days()
+        >>> Interval(Date(2018, 9, 10), Date(2018, 9, 6)).days()
         -4
-        >>> Interval(Date.parse('2018/9/6'), Date.parse('2018/9/10')).b.days()
+        >>> Interval(Date(2018, 9, 6), Date(2018, 9, 10)).b.days()
         2
-        >>> Interval(Date.parse('2018/9/10'), Date.parse('2018/9/6')).b.days()
+        >>> Interval(Date(2018, 9, 10), Date(2018, 9, 6)).b.days()
         -2
         """
         assert self.begdate
