@@ -1356,12 +1356,29 @@ class Interval:
           set  -  set    end=beg + num
            -  set set    beg=end - num
 
-        >>> Interval('4/3/2014', None).b.range(3)
+        Basic/legacy cases
+        >>> Interval(Date(2014, 4, 3), None).b.range(3)
         (Date(2014, 4, 3), Date(2014, 4, 8))
         >>> Interval(None, Date(2014, 7, 27)).range(20)
         (Date(2014, 7, 7), Date(2014, 7, 27))
-        >>> Interval(None, '2014/7/27').b.range(20)
+        >>> Interval(None, Date(2014, 7, 27)).b.range(20)
         (Date(2014, 6, 27), Date(2014, 7, 27))
+
+        Do not modify dates if both are provided
+        >>> Interval(Date(2024, 7, 25), Date(2024, 7, 25)).b.range(None)
+        (Date(2024, 7, 25), Date(2024, 7, 25))
+        >>> Interval(Date(2024, 7, 27), Date(2024, 7, 27)).b.range(None)
+        (Date(2024, 7, 27), Date(2024, 7, 27))
+
+        Edge cases (7/27/24 is weekend)
+        >>> Interval(Date(2024, 7, 27), None).b.range(0)
+        (Date(2024, 7, 27), Date(2024, 7, 27))
+        >>> Interval(None, Date(2024, 7, 27)).b.range(0)
+        (Date(2024, 7, 27), Date(2024, 7, 27))
+        >>> Interval(Date(2024, 7, 27), None).b.range(1)
+        (Date(2024, 7, 27), Date(2024, 7, 29))
+        >>> Interval(None, Date(2024, 7, 27)).b.range(1)
+        (Date(2024, 7, 26), Date(2024, 7, 27))
         """
         begdate, enddate = self.begdate, self.enddate
 
@@ -1375,17 +1392,14 @@ class Interval:
             raise IntervalError('Missing begdate and enddate, window specified')
 
         if begdate and enddate:
-            return (begdate.business() if begdate._business else
-                    begdate).add(days=window), \
-                   (enddate.business() if enddate._business else
-                    enddate).subtract(days=0)
-
-        if (not begdate and not enddate) or enddate:
-            begdate = (enddate.business() if enddate._business else
-                       enddate).subtract(days=window)
+            pass  # do nothing if both provided
+        elif (not begdate and not enddate) or enddate:
+            begdate = enddate.subtract(days=window) if window else enddate
         else:
-            enddate = (begdate.business() if begdate._business else
-                       begdate).add(days=window)
+            enddate = begdate.add(days=window) if window else begdate
+
+        enddate._business = False
+        begdate._business = False
 
         return begdate, enddate
 
