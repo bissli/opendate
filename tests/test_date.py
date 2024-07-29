@@ -289,6 +289,8 @@ def test_parse():
     assert_equal(Date.parse('01/15/21'), Date(2021, 1, 15))
     assert_equal(Date.parse('01/15/22'), Date(2022, 1, 15))
 
+    assert_equal(None, Date.parse('100.264400'))
+
 
 def test_copy():
 

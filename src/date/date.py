@@ -794,6 +794,12 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
 
+        with contextlib.suppress(ValueError):
+            if float(s) and not len(s) == 8: # 20000101
+                if raise_err:
+                    raise ValueError('Invalid date: %s', s)
+                return
+
         # special shortcode symbolic values: T, Y-2, P-1b
         if m := DATEMATCH.match(s):
             d = date_for_symbol(m.groupdict().get('d'))
