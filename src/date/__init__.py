@@ -60,14 +60,13 @@ def parse(s: str | None, fmt: str = None, entity: Entity = NYSE, raise_err: bool
 def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateTime | Date | Time:
     """Create a DateTime/Date/Time instance from a datetime/date/time native one.
     """
-    if isinstance(obj, DateTime | Date | Time):
-        return obj
     if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
         return Date.instance(obj)
     if isinstance(obj, _datetime.time):
         return Time.instance(obj)
     if isinstance(obj, _datetime.datetime):
         return DateTime.instance(obj)
+    raise ValueError(f'opendate `instance` helper cannot parse type {type(obj)}')
 
 
 def now(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
