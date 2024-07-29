@@ -787,8 +787,12 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             raise TypeError(f'Invalid type for date parse: {s.__class__}')
 
         if fmt:
-            with contextlib.suppress(ValueError):
+            try:
                 return cls(*time.strptime(s, fmt)[:3])
+            except:
+                if raise_err:
+                    raise ValueError(f'Unable to parse {s} using fmt {fmt}')
+                return
 
         # special shortcode symbolic values: T, Y-2, P-1b
         if m := DATEMATCH.match(s):
@@ -1010,7 +1014,12 @@ class Time(_pendulum.Time):
             raise TypeError(f'Invalid type for time parse: {s.__class__}')
 
         if fmt:
-            return cls(*time.strptime(s, fmt)[3:6])
+            try:
+                return cls(*time.strptime(s, fmt)[3:6])
+            except:
+                if raise_err:
+                    raise ValueError(f'Unable to parse {s} using fmt {fmt}')
+                return
 
         exps = (
             r'^(?P<h>\d{1,2})[:.](?P<m>\d{2})([:.](?P<s>\d{2})([.,](?P<u>\d+))?)?( +(?P<ap>[aApP][mM]))?$',
