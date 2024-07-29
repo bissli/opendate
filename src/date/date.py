@@ -820,7 +820,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             return cls.today().subtract(days=1)
 
         with contextlib.suppress(TypeError, ValueError):
-            return cls.instance(_dateutil.parser.parse(s).date())
+            return cls.instance(_dateutil.parser.parse(s))
 
         # Regex with Month Numbers
         exps = (
@@ -1043,7 +1043,7 @@ class Time(_pendulum.Time):
                 return cls(hh, mm, ss, uu * 1000)
 
         with contextlib.suppress(TypeError, ValueError):
-            return cls.instance(_dateutil.parser.parse(s).time())
+            return cls.instance(_dateutil.parser.parse(s))
 
         if raise_err:
             raise ValueError('Failed to parse time: %s', s)
@@ -1192,7 +1192,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         UTC time technically equals GMT
         >>> this_utc = DateTime.parse('Fri, 31 Oct 2014 18:55:00 GMT')
         >>> this_utc
-        DateTime(2014, 10, 31, 18, 55, 0, tzinfo=Timezone('UTC'))
+        DateTime(2014, 10, 31, 18, 55, 0, tzinfo=tzutc())
 
         We can freely compare time zones
         >>> this_est1==this_est2==this_utc
@@ -1220,8 +1220,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
             return cls.parse(iso).replace(tzinfo=LCL)
 
         with contextlib.suppress(ValueError, TypeError):
-            obj = _dateutil.parser.parse(s)
-            return cls.instance(_pendulum.instance(obj))
+            return cls.instance(_dateutil.parser.parse(s))
 
         for delim in (' ', ':'):
             bits = s.split(delim, 1)
