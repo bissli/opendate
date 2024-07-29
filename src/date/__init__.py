@@ -51,6 +51,10 @@ def time(*args, **kwargs):
     return Time(*args, **kwargs)
 
 
+def interval(*args, **kwargs):
+    return Interval(*args, **kwargs)
+
+
 def parse(s: str | None, fmt: str = None, entity: Entity = NYSE, raise_err: bool = False) -> DateTime | None:
     """Parse using DateTime.parse
     """
