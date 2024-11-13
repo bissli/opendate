@@ -45,6 +45,12 @@ def test_subtract():
     assert_equal(d.subtract(days=1, hours=1, minutes=1), DateTime(2000, 1, 3, 11, 29))
 
 
+def test_business():
+    d = DateTime(2024, 11, 4).start_of('day')  # Monday
+    assert_equal(d.business().subtract(days=1), DateTime(2024, 11, 1))
+    assert_equal(d.subtract(days=1), DateTime(2024, 11, 3))
+
+
 def test_combine():
     """When combining, ignore default Time parse to UTC"""
 
