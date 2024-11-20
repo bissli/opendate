@@ -902,7 +902,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
 
     @classmethod
     def today(cls):
-        d = _datetime.date.today()
+        d = _datetime.datetime.now(LCL)
         return cls(d.year, d.month, d.day)
 
     def isoweek(self):
