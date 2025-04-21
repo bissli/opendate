@@ -1216,6 +1216,8 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
             raise TypeError(f'Invalid type for datetime parse: {s.__class__}')
 
         if isinstance(s, int | float):
+            if len(str(int(s))) == 13:
+                s /= 1000  # Convert from milliseconds to seconds
             iso = _datetime.datetime.fromtimestamp(s).isoformat()
             return cls.parse(iso).replace(tzinfo=LCL)
 
