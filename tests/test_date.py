@@ -338,5 +338,211 @@ def test_expects():
     assert_true(isinstance(func((df, p))[0], pd.DataFrame))
 
 
+def test_isoweek():
+    """Test the isoweek method returns correct ISO week numbers."""
+    assert_equal(Date(2023, 1, 2).isoweek(), 1)
+    assert_equal(Date(2023, 4, 27).isoweek(), 17)
+    assert_equal(Date(2023, 12, 31).isoweek(), 52)
+    assert_equal(Date(2023, 1, 1).isoweek(), 52)  # Belongs to previous year's week
+
+
+def test_lookback():
+    """Test lookback functionality with different units."""
+    test_date = Date(2018, 12, 7)
+
+    assert_equal(test_date.lookback('last'), Date(2018, 12, 6))
+    assert_equal(test_date.lookback('day'), Date(2018, 12, 6))
+    assert_equal(test_date.lookback('week'), Date(2018, 11, 30))
+    assert_equal(test_date.lookback('month'), Date(2018, 11, 7))
+
+    # Test with business lookback
+    assert_equal(test_date.b.lookback('last'), Date(2018, 12, 6))
+    assert_equal(test_date.b.lookback('month'), Date(2018, 11, 7))
+
+
+def test_third_wednesday():
+    """Test third_wednesday class method and its alias."""
+    # Test class method
+    assert_equal(Date.third_wednesday(2022, 6), Date(2022, 6, 15))
+    assert_equal(Date.third_wednesday(2023, 3), Date(2023, 3, 15))
+    assert_equal(Date.third_wednesday(2022, 12), Date(2022, 12, 21))
+    assert_equal(Date.third_wednesday(2023, 6), Date(2023, 6, 21))
+
+
+def test_nearest_start_and_end_of_month():
+    """Test nearest_start_of_month and nearest_end_of_month methods."""
+    # Test nearest_start_of_month
+    assert_equal(Date(2015, 1, 1).nearest_start_of_month(), Date(2015, 1, 1))
+    assert_equal(Date(2015, 1, 15).nearest_start_of_month(), Date(2015, 1, 1))
+    assert_equal(Date(2015, 1, 16).nearest_start_of_month(), Date(2015, 2, 1))
+    assert_equal(Date(2015, 1, 31).nearest_start_of_month(), Date(2015, 2, 1))
+
+    # Test with business days
+    assert_equal(Date(2015, 1, 15).b.nearest_start_of_month(), Date(2015, 1, 2))
+    assert_equal(Date(2015, 1, 31).b.nearest_start_of_month(), Date(2015, 2, 2))
+
+    # Test nearest_end_of_month
+    assert_equal(Date(2015, 1, 1).nearest_end_of_month(), Date(2014, 12, 31))
+    assert_equal(Date(2015, 1, 15).nearest_end_of_month(), Date(2014, 12, 31))
+    assert_equal(Date(2015, 1, 16).nearest_end_of_month(), Date(2015, 1, 31))
+    assert_equal(Date(2015, 1, 31).nearest_end_of_month(), Date(2015, 1, 31))
+
+    # Test with business days
+    assert_equal(Date(2015, 1, 15).b.nearest_end_of_month(), Date(2014, 12, 31))
+    assert_equal(Date(2015, 1, 31).b.nearest_end_of_month(), Date(2015, 1, 30))
+
+
+def test_weekday_or_previous_friday():
+    """Test weekday_or_previous_friday method."""
+    # Test with weekday
+    assert_equal(Date(2019, 10, 4).weekday_or_previous_friday(), Date(2019, 10, 4))  # Friday
+    assert_equal(Date(2019, 10, 3).weekday_or_previous_friday(), Date(2019, 10, 3))  # Thursday
+
+    # Test with weekend
+    assert_equal(Date(2019, 10, 5).weekday_or_previous_friday(), Date(2019, 10, 4))  # Saturday -> Friday
+    assert_equal(Date(2019, 10, 6).weekday_or_previous_friday(), Date(2019, 10, 4))  # Sunday -> Friday
+
+
+def test_next_relative_date_of_week_by_day():
+    """Test next_relative_date_of_week_by_day method."""
+    # Test when target day is in the future
+    assert_equal(Date(2020, 5, 18).next_relative_date_of_week_by_day('SU'), Date(2020, 5, 24))
+
+    # Test when target day is the current day
+    assert_equal(Date(2020, 5, 24).next_relative_date_of_week_by_day('SU'), Date(2020, 5, 24))
+
+    # Test with different days
+    assert_equal(Date(2020, 5, 18).next_relative_date_of_week_by_day('TU'), Date(2020, 5, 19))
+    assert_equal(Date(2020, 5, 18).next_relative_date_of_week_by_day('WE'), Date(2020, 5, 20))
+
+
+def test_business_methods():
+    """Test business day related methods."""
+    # Test is_business_day
+    assert_equal(Date(2021, 4, 19).is_business_day(), True)  # Monday
+    assert_equal(Date(2021, 4, 17).is_business_day(), False)  # Saturday
+    assert_equal(Date(2021, 1, 18).is_business_day(), False)  # MLK Day
+    assert_equal(Date(2021, 11, 25).is_business_day(), False)  # Thanksgiving
+
+    # Test business_open (same as is_business_day)
+    assert_equal(Date(2021, 4, 19).business_open(), True)
+    assert_equal(Date(2021, 4, 17).business_open(), False)
+
+    # Test business_hours
+    # We can't assert exact times due to potential timezone differences, but we can check existence
+    open_time, close_time = Date(2023, 1, 5).business_hours()
+    assert open_time is not None
+    assert close_time is not None
+    assert open_time.hour == 9
+    assert open_time.minute == 30
+
+    # Test holiday with no business hours
+    open_time, close_time = Date(2024, 5, 27).business_hours()  # Memorial day
+    assert open_time is None
+    assert close_time is None
+
+
+def test_date_average():
+    """Test the average instance method returns the average of two dates."""
+    # Test with equal dates
+    result = Date(2022, 1, 1).average(Date(2022, 1, 1))
+    assert_equal(result, Date(2022, 1, 1))
+
+    # Test with dates one day apart
+    result = Date(2022, 1, 1).average(Date(2022, 1, 3))
+    assert_equal(result, Date(2022, 1, 2))
+
+    # Test with dates further apart
+    result = Date(2022, 1, 1).average(Date(2022, 1, 31))
+    assert_equal(result, Date(2022, 1, 16))
+
+    # Test with dates in different years
+    result = Date(2021, 12, 31).average(Date(2022, 1, 2))
+    assert_equal(result, Date(2022, 1, 1))
+
+    # Verify result is Date instance
+    assert isinstance(result, Date)
+
+
+def test_date_fromordinal():
+    """Test the fromordinal class method creates correct Date objects."""
+    # January 1, 2022 is the 738156th day since January 1, 1
+    result = Date.fromordinal(738156)
+    assert_equal(result, Date(2022, 1, 1))
+
+    # Test another date
+    result = Date.fromordinal(738187)  # February 1, 2022
+    assert_equal(result, Date(2022, 2, 1))
+
+    # Test date in different year
+    result = Date.fromordinal(737791)  # January 1, 2021
+    assert_equal(result, Date(2021, 1, 1))
+
+    # Verify result is Date instance
+    assert isinstance(result, Date)
+
+
+def test_date_fromtimestamp():
+    """Test the fromtimestamp class method with various timestamps."""
+    # Test with timestamp for 2022-01-01
+    # Using a timestamp that's safely in 2022 in any timezone
+    timestamp = 1641038400  # 2022-01-01 12:00:00 UTC
+    result = Date.fromtimestamp(timestamp)
+    assert_equal(result.year, 2022)
+    assert_equal(result.month, 1)
+    assert_equal(result.day, 1)
+
+    # Test with another timestamp
+    timestamp = 1643673600  # 2022-02-01 UTC
+    result = Date.fromtimestamp(timestamp)
+    assert_equal(result.year, 2022)
+    assert_equal(result.month, 2)
+    assert_equal(result.day, 1)
+
+    # Verify result is Date instance
+    assert isinstance(result, Date)
+
+
+def test_date_nth_of():
+    """Test the nth_of instance method for finding nth occurrence of weekday in month."""
+    # Test finding the 1st Monday of January 2022
+    base_date = Date(2022, 1, 1)
+    result = base_date.nth_of('month', 1, WeekDay.MONDAY)
+    assert_equal(result, Date(2022, 1, 3))
+
+    # Test finding the 3rd Friday of March 2022
+    base_date = Date(2022, 3, 1)
+    result = base_date.nth_of('month', 3, WeekDay.FRIDAY)
+    assert_equal(result, Date(2022, 3, 18))
+
+    # Test finding the 5th Sunday of May 2022 (which exists)
+    base_date = Date(2022, 5, 1)
+    result = base_date.nth_of('month', 5, WeekDay.SUNDAY)
+    assert_equal(result, Date(2022, 5, 29))
+
+    # Test with last day of month case
+    base_date = Date(2022, 2, 1)
+    result = base_date.nth_of('month', 4, WeekDay.MONDAY)
+    assert_equal(result, Date(2022, 2, 28))
+
+    # Verify result is Date instance
+    assert isinstance(result, Date)
+
+
+def test_date_today():
+    """Test the today class method returns current date."""
+    # Since the actual date will vary, we just check basic properties
+    result = Date.today()
+
+    # Test that it's a Date instance
+    assert isinstance(result, Date)
+
+    # Test that it's close to today (within 1 day, to handle timezone differences)
+    import datetime as dt
+    today = dt.date.today()
+    diff = abs((today - dt.date(result.year, result.month, result.day)).days)
+    assert diff <= 1
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

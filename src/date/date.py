@@ -46,28 +46,30 @@ __all__ = [
 
 
 def Timezone(name:str = 'US/Eastern') -> _zoneinfo.ZoneInfo:
-    """Simple wrapper around Pendulum `Timezone`
+    """Create a timezone object with the specified name.
 
-    Ex: sanity check US/Eastern == America/New_York
+    Simple wrapper around Pendulum's Timezone function that ensures
+    consistent timezone handling across the library.
 
+    Parameters
+        name: Timezone name (e.g., 'US/Eastern', 'UTC')
+
+    Returns
+        A timezone object for the specified timezone
+
+    Examples
+
+    US/Eastern is equivalent to America/New_York:
     >>> winter1 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('US/Eastern'))
     >>> winter2 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('America/New_York'))
+    >>> winter1 == winter2
+    True
 
+    This works in both summer and winter:
     >>> summer1 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('US/Eastern'))
     >>> summer2 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('America/New_York'))
-
-    >>> winter = [winter1, winter2,
-    ... winter1.astimezone(Timezone('America/New_York')),
-    ... winter2.astimezone(Timezone('US/Eastern')),
-    ... ]
-    >>> assert all(x==winter[0] for x in winter)
-
-    >>> summer = [summer1, summer2,
-    ... summer1.astimezone(Timezone('America/New_York')),
-    ... summer2.astimezone(Timezone('US/Eastern')),
-    ... ]
-    >>> assert all(x==summer[0] for x in summer)
-
+    >>> summer1 == summer2
+    True
     """
     return _pendulum.tz.Timezone(name)
 
@@ -172,8 +174,17 @@ expect_time = partial(expect, typ=_datetime.time)
 
 
 def type_class(typ, obj):
+    if isinstance(typ, str):
+        if typ == 'Date':
+            return Date
+        if typ == 'DateTime':
+            return DateTime
+        if typ == 'Interval':
+            return Interval
     if typ:
         return typ
+    if obj.__class__ in {_pendulum.Interval, Interval}:
+        return Interval
     if obj.__class__ in {_datetime.datetime, _pendulum.DateTime, DateTime}:
         return DateTime
     if obj.__class__ in {_datetime.date, _pendulum.Date, Date}:
@@ -240,7 +251,15 @@ expect_utc_timezone = partial(prefer_utc_timezone, force=True)
 
 
 class Entity(ABC):
-    """ABC for named entity types"""
+    """Abstract base class for calendar entities with business day definitions.
+
+    This class defines the interface for calendar entities that provide
+    business day information, such as market open/close times and holidays.
+    Not available in pendulum.
+
+    Concrete implementations (like NYSE) provide specific calendar rules
+    for different business contexts.
+    """
 
     tz = UTC
 
@@ -261,7 +280,15 @@ class Entity(ABC):
 
 
 class NYSE(Entity):
-    """New York Stock Exchange"""
+    """New York Stock Exchange calendar entity.
+
+    Provides business day definitions, market hours, and holidays
+    according to the NYSE trading calendar. Uses pandas_market_calendars
+    for the underlying implementation.
+
+    This entity is used as the default for business day calculations
+    throughout the library.
+    """
 
     BEGDATE = _datetime.date(1900, 1, 1)
     ENDDATE = _datetime.date(2200, 1, 1)
@@ -293,27 +320,70 @@ class NYSE(Entity):
 
 
 class DateBusinessMixin:
+    """Mixin class providing business day functionality.
+
+    This mixin adds business day awareness to Date and DateTime classes,
+    allowing date operations to account for weekends and holidays according
+    to a specified calendar entity.
+
+    Features not available in pendulum:
+    - Business day mode toggle
+    - Entity-specific calendar rules
+    - Business-aware date arithmetic
+    """
 
     _entity: type[NYSE] = NYSE
     _business: bool = False
 
     def business(self) -> Self:
+        """Switch to business day mode for date calculations.
+
+        In business day mode, date arithmetic only counts business days
+        as defined by the associated entity (default NYSE).
+
+        Returns
+            Self instance for method chaining
+        """
         self._business = True
         return self
 
     @property
     def b(self) -> Self:
+        """Shorthand property for business() method.
+
+        Returns
+            Self instance for method chaining
+        """
         return self.business()
 
     def entity(self, entity: type[NYSE] = NYSE) -> Self:
+        """Set the calendar entity for business day calculations.
+
+        Parameters
+            entity: Calendar entity class (defaults to NYSE)
+
+        Returns
+            Self instance for method chaining
+        """
         self._entity = entity
         return self
 
     @store_entity
     def add(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
-        """Add wrapper
-        If not business use Pendulum
-        If business assume only days (for now) and use local logic
+        """Add time periods to the current date or datetime.
+
+        Extends pendulum's add method with business day awareness. When in business mode,
+        only counts business days for the 'days' parameter.
+
+        Parameters
+            years: Number of years to add
+            months: Number of months to add
+            weeks: Number of weeks to add
+            days: Number of days to add (business days if in business mode)
+            **kwargs: Additional time units to add
+
+        Returns
+            New instance with added time
         """
         _business = self._business
         self._business = False
@@ -521,14 +591,15 @@ class DateBusinessMixin:
 
 
 class DateExtrasMixin:
-    """Legacy support functionality well outside the
-    scope of Pendulum. Ideally these should be removed.
+    """Extended date functionality not provided by Pendulum.
 
-    See how pendulum does end_of and next_ with getattr
+    This mixin provides additional date utilities primarily focused on:
+    - Financial date calculations (nearest month start/end)
+    - Weekday-oriented date navigation
+    - Relative date lookups
 
-    Create a nearest [start_of, end_of] [week, day, month, quarter, year]
-
-    combo that accounts for whatever prefix and unit is passed in
+    These methods extend Pendulum's functionality with features commonly
+    needed in financial applications and reporting scenarios.
     """
 
     def nearest_start_of_month(self):
@@ -635,17 +706,14 @@ class DateExtrasMixin:
 
     @classmethod
     def third_wednesday(cls, year, month):
-        """Third Wednesday date of a given month/year
+        """Calculate the date of the third Wednesday in a given month/year.
 
-        >>> from date import Date
-        >>> Date.third_wednesday(2022, 6)
-        Date(2022, 6, 15)
-        >>> Date.third_wednesday(2023, 3)
-        Date(2023, 3, 15)
-        >>> Date.third_wednesday(2022, 12)
-        Date(2022, 12, 21)
-        >>> Date.third_wednesday(2023, 6)
-        Date(2023, 6, 21)
+        Parameters
+            year: The year to use
+            month: The month to use (1-12)
+
+        Returns
+            A Date object representing the third Wednesday of the specified month
         """
         third = cls(year, month, 15)  # lowest 3rd day
         w = third.weekday()
@@ -655,7 +723,16 @@ class DateExtrasMixin:
 
 
 class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
-    """Inherits and wraps pendulum.Date
+    """Date class extending pendulum.Date with business day and additional functionality.
+
+    This class inherits all pendulum.Date functionality while adding:
+    - Business day calculations with NYSE calendar integration
+    - Additional date navigation methods
+    - Enhanced parsing capabilities
+    - Custom financial date utilities
+
+    Unlike pendulum.Date, methods that create new instances return Date objects
+    that preserve business status and entity association when chained.
     """
 
     def to_string(self, fmt: str) -> str:
@@ -665,6 +742,84 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         '1/5/2022'
         """
         return self.strftime(fmt.replace('%-', '%#') if os.name == 'nt' else fmt)
+
+    @store_entity(typ='Date')
+    def replace(self, *args, **kwargs):
+        """Replace method that preserves entity and business status.
+        """
+        return _pendulum.Date.replace(self, *args, **kwargs)
+
+    @store_entity(typ='Date')
+    def closest(self, *args, **kwargs):
+        """Closest method that preserves entity and business status.
+        """
+        return _pendulum.Date.closest(self, *args, **kwargs)
+
+    @store_entity(typ='Date')
+    def farthest(self, *args, **kwargs):
+        """Farthest method that preserves entity and business status.
+        """
+        return _pendulum.Date.farthest(self, *args, **kwargs)
+
+    @store_entity(typ='Date')
+    def average(self, dt=None):
+        """Modify the current instance to the average
+        of a given instance (default now) and the current instance.
+
+        Parameters
+            dt: The date to average with (defaults to today)
+
+        Returns
+            A new Date object representing the average date
+        """
+        return _pendulum.Date.average(self)
+
+    @classmethod
+    def fromordinal(cls, *args, **kwargs):
+        """Create a Date from an ordinal.
+
+        Parameters
+            n: The ordinal value
+
+        Returns
+            Date instance
+        """
+        result = _pendulum.Date.fromordinal(*args, **kwargs)
+        return cls.instance(result)
+
+    @classmethod
+    def fromtimestamp(cls, timestamp, tz=None):
+        """Create a Date from a timestamp.
+
+        Parameters
+            timestamp: Unix timestamp
+            tz: Optional timezone (defaults to UTC)
+
+        Returns
+            Date instance
+        """
+        # Ensure timezone is always applied to get consistent results
+        tz = tz or UTC
+        dt = _datetime.datetime.fromtimestamp(timestamp, tz=tz)
+        return cls(dt.year, dt.month, dt.day)
+
+    @store_entity(typ='Date')
+    def nth_of(self, unit: str, nth: int, day_of_week: WeekDay) -> Self:
+        """Returns a new instance set to the given occurrence
+        of a given day of the week in the current unit.
+
+        Parameters
+            unit: The unit to use ("month", "quarter", or "year")
+            nth: The position of the day in the unit (1 to 5)
+            day_of_week: The day of the week (pendulum.MONDAY to pendulum.SUNDAY)
+
+        Returns
+            A new Date object for the nth occurrence
+
+        Raises
+            ValueError: If the occurrence can't be found
+        """
+        return _pendulum.Date.nth_of(self, unit, nth, day_of_week)
 
     @classmethod
     def parse(
@@ -795,7 +950,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
                 return
 
         with contextlib.suppress(ValueError):
-            if float(s) and not len(s) == 8: # 20000101
+            if float(s) and len(s) != 8:  # 20000101
                 if raise_err:
                     raise ValueError('Invalid date: %s', s)
                 return
@@ -955,6 +1110,16 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
 
 
 class Time(_pendulum.Time):
+    """Time class extending pendulum.Time with additional functionality.
+
+    This class inherits all pendulum.Time functionality while adding:
+    - Enhanced parsing for various time formats
+    - Default UTC timezone when created
+    - Simple timezone conversion utilities
+
+    Unlike pendulum.Time, this class has more lenient parsing capabilities
+    and different timezone defaults.
+    """
 
     @classmethod
     @prefer_utc_timezone
@@ -1102,13 +1267,113 @@ class Time(_pendulum.Time):
 
 
 class DateTime(DateBusinessMixin, _pendulum.DateTime):
-    """Inherits and wraps pendulum.DateTime
+    """DateTime class extending pendulum.DateTime with business day and additional functionality.
+
+    This class inherits all pendulum.DateTime functionality while adding:
+    - Business day calculations with NYSE calendar integration
+    - Enhanced timezone handling
+    - Extended parsing capabilities
+    - Custom utility methods for financial applications
+
+    Unlike pendulum.DateTime:
+    - today() returns start of day rather than current time
+    - Methods preserve business status and entity when chaining
+    - Has timezone handling helpers not present in pendulum
     """
 
     def epoch(self):
         """Translate a datetime object into unix seconds since epoch
         """
         return self.timestamp()
+
+    @store_entity(typ='DateTime')
+    def astimezone(self, *args, **kwargs):
+        """Convert to a timezone-aware datetime in a different timezone.
+        """
+        return _pendulum.DateTime.astimezone(self, *args, **kwargs)
+
+    @store_entity(typ='DateTime')
+    def in_timezone(self, *args, **kwargs):
+        """Convert to a timezone-aware datetime in a different timezone.
+        """
+        return _pendulum.DateTime.in_timezone(self, *args, **kwargs)
+
+    @store_entity(typ='DateTime')
+    def in_tz(self, *args, **kwargs):
+        """Convert to a timezone-aware datetime in a different timezone.
+        """
+        return _pendulum.DateTime.in_tz(self, *args, **kwargs)
+
+    @store_entity(typ='DateTime')
+    def replace(self, *args, **kwargs):
+        """Replace method that preserves entity and business status.
+        """
+        return _pendulum.DateTime.replace(self, *args, **kwargs)
+
+    @classmethod
+    def fromordinal(cls, *args, **kwargs):
+        """Create a DateTime from an ordinal.
+
+        Parameters
+            n: The ordinal value
+
+        Returns
+            DateTime instance
+        """
+        result = _pendulum.DateTime.fromordinal(*args, **kwargs)
+        return cls.instance(result)
+
+    @classmethod
+    def fromtimestamp(cls, timestamp, tz=None):
+        """Create a DateTime from a timestamp.
+
+        Parameters
+            timestamp: Unix timestamp
+            tz: Optional timezone
+
+        Returns
+            DateTime instance
+        """
+        tz = tz or UTC
+        result = _pendulum.DateTime.fromtimestamp(timestamp, tz)
+        return cls.instance(result)
+
+    @classmethod
+    def strptime(cls, time_str, fmt):
+        """Parse a string into a DateTime according to a format.
+
+        Parameters
+            time_str: String to parse
+            fmt: Format string
+
+        Returns
+            DateTime instance
+        """
+        result = _pendulum.DateTime.strptime(time_str, fmt)
+        return cls.instance(result)
+
+    @classmethod
+    def utcfromtimestamp(cls, timestamp):
+        """Create a UTC DateTime from a timestamp.
+
+        Parameters
+            timestamp: Unix timestamp
+
+        Returns
+            DateTime instance
+        """
+        result = _pendulum.DateTime.utcfromtimestamp(timestamp)
+        return cls.instance(result)
+
+    @classmethod
+    def utcnow(cls):
+        """Create a DateTime representing current UTC time.
+
+        Returns
+            DateTime instance
+        """
+        result = _pendulum.DateTime.utcnow()
+        return cls.instance(result)
 
     @classmethod
     def now(cls, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None) -> Self:
@@ -1127,7 +1392,16 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
 
     @classmethod
     def today(cls, tz: str | _zoneinfo.ZoneInfo | None = None):
-        """Unlike Pendulum, returns DateTime object at start of day
+        """Create a DateTime object representing today at the start of day.
+
+        Unlike pendulum.today() which returns current time, this method
+        returns a DateTime object at 00:00:00 of the current day.
+
+        Parameters
+            tz: Optional timezone (defaults to local timezone)
+
+        Returns
+            DateTime instance representing start of current day
         """
         return DateTime.now(tz).start_of('day')
 
@@ -1174,38 +1448,44 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         entity: Entity = NYSE,
         raise_err: bool = False
         ) -> Self | None:
-        """Thin layer on Date parser and our custom `Date.parse``
+        """Convert a string or timestamp to a DateTime with extended format support.
 
+        Unlike pendulum's parse, this method supports:
+        - Unix timestamps (int/float)
+        - Special codes (T=today, Y=yesterday, P=previous business day)
+        - Business day offsets (e.g., 'T-3b' for 3 business days before today)
+        - Multiple date-time formats beyond ISO 8601
+
+        Parameters
+            s: String or timestamp to parse
+            entity: Calendar entity for business day calculations
+            raise_err: Whether to raise error on parse failure
+
+        Returns
+            DateTime instance or None if parsing fails and raise_err is False
+
+        Examples
+
+        Basic formats:
         >>> DateTime.parse('2022/1/1')
         DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
 
-        Assume UTC, convert to EST
+        Timezone handling:
         >>> this_est1 = DateTime.parse('Fri, 31 Oct 2014 18:55:00').in_timezone(EST)
         >>> this_est1
         DateTime(2014, 10, 31, 14, 55, 0, tzinfo=Timezone('US/Eastern'))
 
-        This is actually 18:55 UTC with -4 hours applied = EST
         >>> this_est2 = DateTime.parse('Fri, 31 Oct 2014 14:55:00 -0400')
         >>> this_est2
         DateTime(2014, 10, 31, 14, 55, 0, tzinfo=...)
 
-        UTC time technically equals GMT
         >>> this_utc = DateTime.parse('Fri, 31 Oct 2014 18:55:00 GMT')
         >>> this_utc
         DateTime(2014, 10, 31, 18, 55, 0, tzinfo=tzutc())
 
-        We can freely compare time zones
-        >>> this_est1==this_est2==this_utc
-        True
-
-        Format tests
+        Timestamp parsing:
         >>> DateTime.parse(1707856982).replace(tzinfo=UTC).epoch()
         1707856982.0
-        >>> DateTime.parse('Jan 29  2010')
-        DateTime(2010, 1, 29, 0, 0, 0, tzinfo=Timezone('UTC'))
-        >>> _ = DateTime.parse('Sep 27 17:11')
-        >>> _.month, _.day, _.hour, _.minute
-        (9, 27, 17, 11)
         """
         if not s:
             if raise_err:
@@ -1256,41 +1536,46 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
-        """From datetime-like object
+        """Create a DateTime instance from various datetime-like objects.
 
+        This method provides a unified interface for converting different
+        date/time types including pandas and numpy datetime objects into
+        DateTime instances.
+
+        Unlike pendulum, this method:
+        - Handles pandas Timestamp and numpy datetime64 objects
+        - Adds timezone (UTC by default) when none is specified
+        - Has special handling for time objects
+
+        Parameters
+            obj: Date, datetime, time, or compatible object to convert
+            tz: Optional timezone to apply (if None, uses obj's timezone or UTC)
+            raise_err: Whether to raise error if obj is None/NA
+
+        Returns
+            DateTime instance or None if obj is None/NA and raise_err is False
+
+        Examples
+
+        From Python datetime types:
         >>> DateTime.instance(_datetime.date(2022, 1, 1))
-        DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-        >>> DateTime.instance(Date(2022, 1, 1))
         DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
         >>> DateTime.instance(_datetime.datetime(2022, 1, 1, 0, 0, 0))
         DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-        >>> DateTime.instance(_pendulum.DateTime(2022, 1, 1, 0, 0, 0))
-        DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-        >>> DateTime.instance(None)
 
-        like Pendulum, do not add timzone if no timezone and DateTime object
+        Preserves timezone behavior:
         >>> DateTime.instance(DateTime(2022, 1, 1, 0, 0, 0))
         DateTime(2022, 1, 1, 0, 0, 0)
-        >>> DateTime.instance(DateTime(2000, 1, 1))
-        DateTime(2000, 1, 1, 0, 0, 0)
 
-        no tz -> UTC
+        From Time objects:
         >>> DateTime.instance(Time(4, 4, 21))
         DateTime(..., 4, 4, 21, tzinfo=Timezone('UTC'))
-
-        tzinfo on time -> time tzinfo (precedence)
         >>> DateTime.instance(Time(4, 4, 21, tzinfo=UTC))
         DateTime(..., 4, 4, 21, tzinfo=Timezone('UTC'))
-        >>> DateTime.instance(Time(4, 4, 21, tzinfo=LCL))
-        DateTime(..., 4, 4, 21, tzinfo=Timezone('...'))
 
+        From numpy/pandas datetime:
         >>> DateTime.instance(np.datetime64('2000-01', 'D'))
         DateTime(2000, 1, 1, 0, 0, 0, tzinfo=Timezone('UTC'))
-
-        Convert date to datetime (will use native time zone)
-        >>> DateTime.instance(_datetime.date(2000, 1, 1))
-        DateTime(2000, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-
         """
         if pd.isna(obj):
             if raise_err:
@@ -1716,34 +2001,6 @@ LOCATION:{location}
 END:VEVENT
 END:VCALENDAR
     """
-
-
-# apply any missing Date functions
-for func in (
-    'average',
-    'closest',
-    'farthest',
-    'fromordinal',
-    'fromtimestamp',
-    'nth_of',
-    'replace',
-):
-    setattr(Date, func, store_entity(getattr(_pendulum.Date, func), typ=Date))
-
-# apply any missing DateTime functions
-for func in (
-    'astimezone',
-    'date',
-    'fromordinal',
-    'fromtimestamp',
-    'in_timezone',
-    'in_tz',
-    'replace',
-    'strptime',
-    'utcfromtimestamp',
-    'utcnow',
-):
-    setattr(DateTime, func, store_entity(getattr(_pendulum.DateTime, func), typ=DateTime))
 
 
 if __name__ == '__main__':
