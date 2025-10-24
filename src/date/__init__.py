@@ -31,11 +31,9 @@ from date.date import expect_utc_timezone
 from date.date import prefer_native_timezone
 from date.date import prefer_utc_timezone
 from date.date import Timezone
-from date.extras import end_of_range
 from date.extras import is_business_day
 from date.extras import is_within_business_hours
 from date.extras import overlap_days
-from date.extras import start_of_range
 
 
 timezone = Timezone
@@ -126,7 +124,6 @@ __all__ = [
     'date',
     'DateTime',
     'datetime',
-    'end_of_range',
     'Entity',
     'expect_date',
     'expect_datetime',
@@ -145,7 +142,6 @@ __all__ = [
     'parse',
     'prefer_native_timezone',
     'prefer_utc_timezone',
-    'start_of_range',
     'Time',
     'time',
     'timezone',

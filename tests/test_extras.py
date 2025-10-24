@@ -3,7 +3,7 @@ from unittest.mock import patch
 import pytest
 
 from date import EST, NYSE, Date, DateTime, Interval
-from date.extras import end_of_range, is_business_day, is_within_business_hours, overlap_days, start_of_range
+from date.extras import is_business_day, is_within_business_hours, overlap_days
 
 
 def test_is_within_business_hours():
@@ -73,77 +73,6 @@ def test_is_business_day():
     with patch('date.DateTime.now') as mock:
         mock.return_value = DateTime(2021, 7, 5, 12, 30, 0, 0, tzinfo=tz)
         assert is_business_day() is False
-
-
-def test_start_of_range_months():
-    """Test start_of_range with month unit.
-    """
-    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
-    result = start_of_range(interval, 'month')
-    assert result == [Date(2018, 1, 1), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 1)]
-
-    interval = Interval(Date(2018, 4, 30), Date(2018, 7, 30))
-    result = start_of_range(interval, 'month')
-    assert result == [Date(2018, 4, 1), Date(2018, 5, 1), Date(2018, 6, 1), Date(2018, 7, 1)]
-
-
-def test_start_of_range_weeks():
-    """Test start_of_range with week unit.
-    """
-    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
-    result = start_of_range(interval, 'week')
-    assert result == [Date(2018, 1, 1), Date(2018, 1, 8), Date(2018, 1, 15), Date(2018, 1, 22)]
-
-
-def test_start_of_range_single_month():
-    """Test start_of_range with interval within a single month.
-    """
-    interval = Interval(Date(2018, 3, 15), Date(2018, 3, 25))
-    result = start_of_range(interval, 'month')
-    assert result == [Date(2018, 3, 1)]
-
-
-def test_end_of_range_months():
-    """Test end_of_range with month unit.
-    """
-    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
-    result = end_of_range(interval, 'month')
-    assert result == [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 31), Date(2018, 4, 30)]
-
-    interval = Interval(Date(2018, 4, 30), Date(2018, 7, 30))
-    result = end_of_range(interval, 'month')
-    assert result == [Date(2018, 4, 30), Date(2018, 5, 31), Date(2018, 6, 30), Date(2018, 7, 31)]
-
-
-def test_end_of_range_weeks():
-    """Test end_of_range with week unit.
-    """
-    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
-    result = end_of_range(interval, 'week')
-    assert result == [Date(2018, 1, 7), Date(2018, 1, 14), Date(2018, 1, 21), Date(2018, 1, 28)]
-
-
-def test_end_of_range_leap_year():
-    """Test end_of_range correctly handles February in leap year.
-    """
-    interval = Interval(Date(2020, 1, 15), Date(2020, 3, 15))
-    result = end_of_range(interval, 'month')
-    assert result == [Date(2020, 1, 31), Date(2020, 2, 29), Date(2020, 3, 31)]
-
-
-def test_start_end_range_datetime():
-    """Test start_of_range and end_of_range work with DateTime intervals.
-    """
-    interval = Interval(DateTime(2018, 1, 5, 10, 0, 0, tzinfo=EST),
-                       DateTime(2018, 3, 5, 15, 0, 0, tzinfo=EST))
-    
-    start_result = start_of_range(interval, 'month')
-    assert len(start_result) == 3
-    assert all(isinstance(d, DateTime) for d in start_result)
-    
-    end_result = end_of_range(interval, 'month')
-    assert len(end_result) == 3
-    assert all(isinstance(d, DateTime) for d in end_result)
 
 
 def test_create_ics():

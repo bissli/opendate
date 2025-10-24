@@ -15,8 +15,6 @@ __all__ = [
     'is_within_business_hours',
     'is_business_day',
     'overlap_days',
-    'start_of_range',
-    'end_of_range',
 ]
 
 
@@ -58,21 +56,3 @@ def overlap_days(
     if days:
         return overlap
     return overlap >= 0
-
-
-def start_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
-    """Return the start of each unit within the interval.
-
-    .. deprecated::
-        Use interval.start_of(unit) instead.
-    """
-    return interval.start_of(unit)
-
-
-def end_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
-    """Return the end of each unit within the interval.
-
-    .. deprecated::
-        Use interval.end_of(unit) instead.
-    """
-    return interval.end_of(unit)

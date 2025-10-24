@@ -146,7 +146,7 @@ Extended `pendulum.Interval` with business day and financial calculations:
 **Note:** Unlike Pendulum's `Interval.months` (which returns int), OpenDate's returns float with fractional months calculated from actual day counts.
 
 ```python
-from date import Date, Interval
+from date import Date, Interval, NYSE
 
 # Create intervals
 start = Date(2024, 1, 1)
@@ -154,36 +154,67 @@ end = Date(2024, 12, 31)
 interval = Interval(start, end)
 
 # Basic properties
-interval.days                    # 365
+interval.days                    # 365 (calendar days)
 interval.months                  # 12.0 (float with fractional months)
 interval.years                   # 1 (always floors to int)
 interval.quarters                # 4.0 (approximate, based on days/365*4)
 
-# Business days
+# Business day calculations
 interval.b.days                  # ~252 (only business days)
+interval.entity(NYSE).b.days     # Explicitly set calendar entity
 
-# Iterate over interval
+# Check which days are business days
+business_flags = list(interval.is_business_day_range())
+# [True, True, True, False, True, ...]  # Mon-Fri are True, Sat-Sun are False
+
+# Iterate over interval with different units
 for date in interval.range('days'):
-    print(date)
+    print(date)                  # Every day
 
-for date in interval.b.range('days'):  # Only business days
-    print(date)
+for date in interval.range('weeks'):
+    print(date)                  # Every Monday
 
-for month_start in interval.range('months'):
-    print(month_start)
+for date in interval.range('months'):
+    print(date)                  # First of each month
+
+for date in interval.range('years'):
+    print(date)                  # January 1st of each year
+
+# Business days only (works with 'days' unit)
+for date in interval.b.range('days'):
+    print(date)                  # Only business days (skips weekends/holidays)
 
 # Get period boundaries within interval
-month_starts = interval.start_of('month')  # [2024-01-01, 2024-02-01, ..., 2024-12-01]
-month_ends = interval.end_of('month')      # [2024-01-31, 2024-02-29, ..., 2024-12-31]
-week_starts = interval.start_of('week')    # All Mondays in range
-week_ends = interval.end_of('week')        # All Sundays in range
+month_starts = interval.start_of('month')
+# [2024-01-01, 2024-02-01, ..., 2024-12-01]
 
-# Financial calculations
-interval.yearfrac(0)             # US 30/360 basis
-interval.yearfrac(1)             # Actual/actual
-interval.yearfrac(2)             # Actual/360
-interval.yearfrac(3)             # Actual/365
-interval.yearfrac(4)             # European 30/360
+month_ends = interval.end_of('month')
+# [2024-01-31, 2024-02-29, ..., 2024-12-31]
+
+week_starts = interval.start_of('week')
+# All Mondays in the interval
+
+week_ends = interval.end_of('week')
+# All Sundays in the interval
+
+quarter_starts = interval.start_of('quarter')
+# [2024-01-01, 2024-04-01, 2024-07-01, 2024-10-01]
+
+year_starts = interval.start_of('year')
+# [2024-01-01]
+
+# Financial calculations (Excel-compatible)
+interval.yearfrac(0)             # US 30/360 basis (corporate bonds)
+interval.yearfrac(1)             # Actual/actual (Treasury bonds)
+interval.yearfrac(2)             # Actual/360 (money market)
+interval.yearfrac(3)             # Actual/365 (some bonds)
+interval.yearfrac(4)             # European 30/360 (Eurobonds)
+
+# Negative intervals (when end < start)
+backward = Interval(Date(2024, 12, 31), Date(2024, 1, 1))
+backward.days                    # -365
+backward.months                  # -12.0
+backward.years                   # -1
 ```
 
 ## Enhanced Parsing
@@ -374,7 +405,7 @@ from date import prefer_utc_timezone, expect_utc_timezone
 def get_timestamp():
     return DateTime(2024, 1, 15, 9, 0)  # Adds UTC if no timezone
 
-@expect_utc_timezone  
+@expect_utc_timezone
 def get_utc_time():
     return DateTime(2024, 1, 15, 9, 0, tzinfo=EST)  # Forces to UTC
 ```
@@ -388,28 +419,30 @@ from date import is_business_day, is_within_business_hours
 from date import overlap_days
 from date import Date, Interval
 
-# Check current time
+# Check current time against market hours
 is_business_day()                # Is today a business day?
 is_within_business_hours()       # Is it between market open/close?
 
 # Calculate interval overlap
 interval1 = (Date(2024, 1, 1), Date(2024, 1, 31))
 interval2 = (Date(2024, 1, 15), Date(2024, 2, 15))
-overlap_days(interval1, interval2)           # True (they overlap)
+
+# Boolean check - do they overlap?
+overlap_days(interval1, interval2)            # True (they overlap)
+
+# Get actual day count of overlap
 overlap_days(interval1, interval2, days=True)  # 17 (days of overlap)
-```
 
-**Note:** `start_of_range()` and `end_of_range()` are deprecated. Use `interval.start_of()` and `interval.end_of()` instead:
+# Works with Interval objects too
+int1 = Interval(Date(2024, 1, 1), Date(2024, 1, 31))
+int2 = Interval(Date(2024, 1, 15), Date(2024, 2, 15))
+overlap_days(int1, int2, days=True)           # 17
 
-```python
-# Old way (deprecated)
-from date import start_of_range, end_of_range
-start_of_range(interval, 'month')
-end_of_range(interval, 'month')
-
-# New way (preferred)
-interval.start_of('month')  # [2024-01-01, 2024-02-01, 2024-03-01, 2024-04-01]
-interval.end_of('month')    # [2024-01-31, 2024-02-29, 2024-03-31, 2024-04-30]
+# Non-overlapping intervals return negative
+int3 = Interval(Date(2024, 1, 1), Date(2024, 1, 10))
+int4 = Interval(Date(2024, 1, 20), Date(2024, 1, 31))
+overlap_days(int3, int4)                      # False
+overlap_days(int3, int4, days=True)           # -9 (negative = no overlap)
 ```
 
 ## Advanced Features
@@ -439,7 +472,7 @@ date = Date(2024, 1, 15)
 # Nth occurrence of weekday in period
 date.nth_of('month', 3, WeekDay.WEDNESDAY)  # 3rd Wednesday of month
 
-# Named day navigation  
+# Named day navigation
 date.next(WeekDay.FRIDAY)                    # Next Friday
 date.previous(WeekDay.MONDAY)                # Previous Monday
 
@@ -457,7 +490,7 @@ from date import Date
 date = Date(2024, 1, 15)
 
 date.lookback('day')      # Yesterday
-date.lookback('week')     # One week ago  
+date.lookback('week')     # One week ago
 date.lookback('month')    # One month ago
 date.lookback('quarter')  # One quarter ago
 date.lookback('year')     # One year ago
@@ -519,7 +552,7 @@ DateTime.instance(np.datetime64('2024-01-15T09:30:00'))
 
 ### Over pandas
 
-- Lighter weight for non-DataFrame operations  
+- Lighter weight for non-DataFrame operations
 - Better business day support
 - Cleaner API for date arithmetic
 - Financial functions built-in
@@ -532,12 +565,26 @@ DateTime.instance(np.datetime64('2024-01-15T09:30:00'))
 from date import Date, Interval
 
 interval = Interval(Date(2024, 1, 1), Date(2024, 12, 31))
+
+# Get all month-end dates
 month_ends = interval.end_of('month')
 # [2024-01-31, 2024-02-29, ..., 2024-12-31]
 
-# Or month starts
+# Get all month-start dates
 month_starts = interval.start_of('month')
 # [2024-01-01, 2024-02-01, ..., 2024-12-01]
+
+# Works with other periods too
+quarter_ends = interval.end_of('quarter')
+# [2024-03-31, 2024-06-30, 2024-09-30, 2024-12-31]
+
+week_starts = interval.start_of('week')
+# All Mondays in 2024
+
+# Partial year example
+partial = Interval(Date(2024, 3, 15), Date(2024, 7, 20))
+partial.end_of('month')
+# [2024-03-31, 2024-04-30, 2024-05-31, 2024-06-30, 2024-07-31]
 ```
 
 ### Calculate Business Days Between Dates
@@ -547,7 +594,21 @@ from date import Date, Interval
 
 start = Date(2024, 1, 1)
 end = Date(2024, 12, 31)
-business_days = Interval(start, end).b.days  # ~252
+interval = Interval(start, end)
+
+# Count business days
+business_days = interval.b.days  # ~252
+
+# Count calendar days
+calendar_days = interval.days    # 365
+
+# Get list of which days are business days
+is_bday = list(interval.is_business_day_range())
+# [True, True, False, False, True, ...]
+
+# Iterate only over business days
+for bday in interval.b.range('days'):
+    print(f"{bday} is a business day")
 ```
 
 ### Find Next Options Expiration (3rd Friday)
