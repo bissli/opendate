@@ -253,7 +253,7 @@ def test_interval_preserves_custom_date_types():
     d1 = Date(2020, 1, 1)
     d2 = Date(2020, 12, 31)
     interval = Interval(d1, d2)
-    
+
     assert isinstance(interval.start, Date)
     assert isinstance(interval.end, Date)
     assert type(interval.start).__name__ == 'Date'
@@ -262,12 +262,12 @@ def test_interval_preserves_custom_date_types():
 
 def test_interval_preserves_custom_datetime_types():
     """Test that Interval preserves custom DateTime types."""
-    from date import DateTime, EST
-    
+    from date import EST, DateTime
+
     dt1 = DateTime(2020, 1, 1, 9, 0, 0, tzinfo=EST)
     dt2 = DateTime(2020, 1, 1, 17, 0, 0, tzinfo=EST)
     interval = Interval(dt1, dt2)
-    
+
     assert isinstance(interval.start, DateTime)
     assert isinstance(interval.end, DateTime)
     assert type(interval.start).__name__ == 'DateTime'
@@ -279,10 +279,10 @@ def test_interval_business_mode_with_custom_types():
     d1 = Date(2018, 9, 6)
     d2 = Date(2018, 9, 10)
     interval = Interval(d1, d2)
-    
+
     assert type(interval.start).__name__ == 'Date'
     assert type(interval.end).__name__ == 'Date'
-    
+
     business_days = interval.b.days
     assert business_days == 2
 
@@ -292,7 +292,7 @@ def test_interval_range_returns_custom_types():
     d1 = Date(2020, 1, 1)
     d2 = Date(2020, 1, 5)
     interval = Interval(d1, d2)
-    
+
     dates = list(interval.range('days'))
     assert all(type(d).__name__ == 'Date' for d in dates)
     assert len(dates) == 5
@@ -303,11 +303,28 @@ def test_interval_methods_work_with_custom_types():
     d1 = Date(2020, 1, 1)
     d2 = Date(2020, 2, 1)
     interval = Interval(d1, d2)
-    
+
     assert hasattr(interval.start, 'is_business_day')
     assert hasattr(interval.end, 'is_business_day')
     assert callable(interval.start.is_business_day)
     assert callable(interval.end.is_business_day)
+
+
+def test_interval_entity():
+    """Test entity method sets entity on interval dates."""
+    from date import NYSE
+
+    d1 = Date(2020, 1, 1)
+    d2 = Date(2020, 1, 10)
+    interval = Interval(d1, d2)
+
+    interval.entity(NYSE)
+    assert interval._entity == NYSE
+    assert interval._start._entity == NYSE
+    assert interval._end._entity == NYSE
+
+    business_days = interval.b.days
+    assert business_days == 6
 
 
 if __name__ == '__main__':

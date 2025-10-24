@@ -39,9 +39,11 @@ __all__ = [
     'prefer_utc_timezone',
     'expect_date',
     'expect_datetime',
+    'expect_time',
     'Entity',
-    'NYSE'
+    'NYSE',
     'WEEKDAY_SHORTNAME',
+    'WeekDay',
     ]
 
 
@@ -107,7 +109,7 @@ DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
 
 
 def isdateish(x) -> bool:
-    return isinstance(x, _datetime.date | _datetime.datetime | pd.Timestamp | np.datetime64)
+    return isinstance(x, _datetime.date | _datetime.datetime | _datetime.time | pd.Timestamp | np.datetime64)
 
 
 def parse_arg(typ, arg):
@@ -145,6 +147,9 @@ def expect(func, typ: type[_datetime.date], exclkw: bool = False) -> Callable:
                         continue
                     if typ == _datetime.date:
                         kwargs[k] = Date.instance(v)
+                        continue
+                    if typ == _datetime.time:
+                        kwargs[k] = Time.instance(v)
         return func(*args, **kwargs)
     return wrapper
 
@@ -297,7 +302,7 @@ class NYSE(Entity):
     def business_holidays(begdate=BEGDATE, enddate=ENDDATE) -> set:
         return {Date.instance(d.date())
                 for d in map(pd.to_datetime, NYSE.calendar.holidays().holidays)
-                if begdate <= d <= enddate}
+                if begdate <= d.date() <= enddate}
 
 
 class DateBusinessMixin:

@@ -53,5 +53,27 @@ def test_overlap_days_count():
     assert overlap_days((date3, date4), (date1, date2), True) == -26
 
 
+def test_create_ics():
+    """Test create_ics function generates valid iCalendar format."""
+    from date.date import create_ics
+    
+    begdate = DateTime(2024, 1, 15, 9, 30, 0, tzinfo=EST)
+    enddate = DateTime(2024, 1, 15, 16, 0, 0, tzinfo=EST)
+    summary = "Test Meeting"
+    location = "Conference Room A"
+    
+    ics_content = create_ics(begdate, enddate, summary, location)
+    
+    assert 'BEGIN:VCALENDAR' in ics_content
+    assert 'VERSION:2.0' in ics_content
+    assert 'BEGIN:VEVENT' in ics_content
+    assert 'END:VEVENT' in ics_content
+    assert 'END:VCALENDAR' in ics_content
+    assert 'DTSTART;TZID=America/New_York:20240115T093000' in ics_content
+    assert 'DTEND;TZID=America/New_York:20240115T160000' in ics_content
+    assert 'SUMMARY:Test Meeting' in ics_content
+    assert 'LOCATION:Conference Room A' in ics_content
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

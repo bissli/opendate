@@ -134,10 +134,10 @@ def test_type():
     not pendulum.DateTime
     """
     d = DateTime.now()
-    assert type(d) == DateTime
+    assert isinstance(d, DateTime)
 
     d = DateTime.now(tz=NYSE.tz).entity(NYSE)
-    assert type(d) == DateTime
+    assert isinstance(d, DateTime)
 
 
 def test_expects():
@@ -356,7 +356,7 @@ def test_datetime_time_extraction():
     assert t.minute == 30
     assert t.second == 15
     assert t.tzinfo == EST
-    
+
     dt_utc = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=UTC)
     t = dt_utc.time()
     assert t.hour == 12
@@ -392,6 +392,70 @@ def test_datetime_utcnow():
     dt_timestamp = dt.timestamp()
     time_diff = abs(dt_timestamp - current_timestamp)
     assert time_diff < 2
+
+
+def test_datetime_astimezone():
+    """Test astimezone method for timezone conversion."""
+    dt_utc = DateTime(2022, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    dt_est = dt_utc.astimezone(EST)
+    assert dt_est.hour == 7
+    assert dt_est.tzinfo == EST
+    assert isinstance(dt_est, DateTime)
+
+    dt_utc = DateTime(2022, 6, 1, 12, 0, 0, tzinfo=UTC)
+    dt_est = dt_utc.astimezone(EST)
+    assert dt_est.hour == 8
+
+
+def test_datetime_in_timezone():
+    """Test in_timezone and in_tz methods for timezone conversion."""
+    dt_utc = DateTime(2022, 1, 1, 12, 0, 0, tzinfo=UTC)
+
+    dt_est = dt_utc.in_timezone(EST)
+    assert dt_est.hour == 7
+    assert dt_est.tzinfo == EST
+    assert isinstance(dt_est, DateTime)
+
+    dt_est2 = dt_utc.in_tz(EST)
+    assert dt_est2 == dt_est
+
+    dt_utc = DateTime(2022, 6, 1, 12, 0, 0, tzinfo=UTC)
+    dt_est = dt_utc.in_timezone(EST)
+    assert dt_est.hour == 8
+
+
+def test_datetime_replace():
+    """Test replace method preserves DateTime type and entity."""
+    dt = DateTime(2022, 1, 15, 12, 30, 45, tzinfo=UTC).entity(NYSE)
+
+    result = dt.replace(year=2023)
+    assert result == DateTime(2023, 1, 15, 12, 30, 45, tzinfo=UTC)
+    assert isinstance(result, DateTime)
+    assert result._entity == NYSE
+
+    result = dt.replace(month=6)
+    assert result == DateTime(2022, 6, 15, 12, 30, 45, tzinfo=UTC)
+
+    result = dt.replace(hour=14)
+    assert result == DateTime(2022, 1, 15, 14, 30, 45, tzinfo=UTC)
+
+    result = dt.replace(year=2024, month=12, day=31, hour=23, minute=59, second=59)
+    assert result == DateTime(2024, 12, 31, 23, 59, 59, tzinfo=UTC)
+
+
+def test_datetime_date_extraction():
+    """Test date method extracts Date object from DateTime."""
+    dt = DateTime(2022, 1, 15, 12, 30, 45, tzinfo=UTC)
+
+    d = dt.date()
+    assert d == Date(2022, 1, 15)
+    assert isinstance(d, Date)
+    assert type(d).__name__ == 'Date'
+
+    dt = DateTime(2023, 12, 31, 23, 59, 59, tzinfo=EST)
+    d = dt.date()
+    assert d == Date(2023, 12, 31)
 
 
 if __name__ == '__main__':
