@@ -62,21 +62,17 @@ def overlap_days(
 
 def start_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
     """Return the start of each unit within the interval.
+
+    .. deprecated::
+        Use interval.start_of(unit) instead.
     """
-    result = []
-    current = type(interval._start).instance(interval._start).start_of(unit)
-    while current <= interval._end:
-        result.append(current)
-        current = current.add(**{f'{unit}s': 1}).start_of(unit)
-    return result
+    return interval.start_of(unit)
 
 
 def end_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
     """Return the end of each unit within the interval.
+
+    .. deprecated::
+        Use interval.end_of(unit) instead.
     """
-    result = []
-    current = type(interval._start).instance(interval._start).start_of(unit)
-    while current <= interval._end:
-        result.append(current.end_of(unit))
-        current = current.add(**{f'{unit}s': 1}).start_of(unit)
-    return result
+    return interval.end_of(unit)

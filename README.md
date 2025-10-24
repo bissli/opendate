@@ -21,11 +21,11 @@ pip install opendate
 ## Quick Start
 
 ```python
-from date import Date, DateTime, Time, Interval
+from date import Date, DateTime, Time, Interval, EST
 
 # Create dates
 today = Date.today()
-meeting = DateTime(2024, 1, 15, 14, 30, tzinfo='US/Eastern')
+meeting = DateTime(2024, 1, 15, 14, 30, tzinfo=EST)
 
 # Business day arithmetic
 next_business_day = today.business().add(days=1)  # or today.b.add(days=1)
@@ -82,13 +82,19 @@ date.lookback('month')           # One month ago
 
 Extended `pendulum.DateTime` with business day support:
 
+**Important differences from Pendulum:**
+- `DateTime.today()` returns start of day (00:00:00) instead of current time like `pendulum.today()`
+- Methods preserve business status and entity when chaining
+- `DateTime.instance()` adds UTC timezone by default if none specified
+
 ```python
 from date import DateTime, EST, UTC
 
-# Create datetimes
-now = DateTime.now()
+# Create datetimes (timezone parameter available)
+now = DateTime.now()                          # Current time in local timezone
+now_utc = DateTime.now(tz=UTC)               # Current time in UTC
 dt = DateTime(2024, 1, 15, 9, 30, 0, tzinfo=EST)
-parsed = DateTime.parse('2024-01-15T09:30:00')
+parsed = DateTime.parse('2024-01-15T09:30:00')  # Parsed with local timezone
 
 # Business day operations (preserves time)
 dt.b.add(days=1)                 # Next business day at 9:30 AM
@@ -102,7 +108,7 @@ dt.astimezone(EST)               # Alternative syntax
 from date import Date, Time
 date = Date(2024, 1, 15)
 time = Time(9, 30, tzinfo=EST)
-dt = DateTime.combine(date, time, tzinfo=EST)
+dt = DateTime.combine(date, time, tzinfo=EST)  # tzinfo parameter determines result timezone
 
 # Extract components
 dt.date()                        # Date(2024, 1, 15)
@@ -116,10 +122,12 @@ Extended `pendulum.Time` with enhanced parsing:
 ```python
 from date import Time, UTC
 
-# Create times
+# Create times (timezone must be specified)
 time = Time(9, 30, 0, tzinfo=UTC)
-parsed = Time.parse('9:30 AM')
-parsed = Time.parse('14:30:45.123')
+
+# Parsed times default to UTC timezone
+parsed = Time.parse('9:30 AM')           # Returns with tzinfo=UTC
+parsed = Time.parse('14:30:45.123')      # Returns with tzinfo=UTC
 
 # Supported formats
 Time.parse('9:30')               # 09:30:00
@@ -135,6 +143,8 @@ time.in_timezone(EST)            # Convert to different timezone
 
 Extended `pendulum.Interval` with business day and financial calculations:
 
+**Note:** Unlike Pendulum's `Interval.months` (which returns int), OpenDate's returns float with fractional months calculated from actual day counts.
+
 ```python
 from date import Date, Interval
 
@@ -145,9 +155,9 @@ interval = Interval(start, end)
 
 # Basic properties
 interval.days                    # 365
-interval.months                  # 12.0 (fractional)
-interval.years                   # 1
-interval.quarters                # 4.0 (approximate)
+interval.months                  # 12.0 (float with fractional months)
+interval.years                   # 1 (always floors to int)
+interval.quarters                # 4.0 (approximate, based on days/365*4)
 
 # Business days
 interval.b.days                  # ~252 (only business days)
@@ -161,6 +171,12 @@ for date in interval.b.range('days'):  # Only business days
 
 for month_start in interval.range('months'):
     print(month_start)
+
+# Get period boundaries within interval
+month_starts = interval.start_of('month')  # [2024-01-01, 2024-02-01, ..., 2024-12-01]
+month_ends = interval.end_of('month')      # [2024-01-31, 2024-02-29, ..., 2024-12-31]
+week_starts = interval.start_of('week')    # All Mondays in range
+week_ends = interval.end_of('week')        # All Sundays in range
 
 # Financial calculations
 interval.yearfrac(0)             # US 30/360 basis
@@ -290,12 +306,16 @@ interval.yearfrac(4)  # European 30/360 - Eurobonds
 
 ### Fractional Periods
 
+**Note:** `Interval.months` returns float (unlike Pendulum which returns int).
+Fractional months are calculated based on actual day counts within partial months.
+
 ```python
 from date import Date, Interval
 
 # Fractional months (not just integer count)
 Interval(Date(2024, 1, 1), Date(2024, 2, 15)).months    # ~1.5
 Interval(Date(2024, 1, 15), Date(2024, 2, 14)).months   # ~0.97
+Interval(Date(2024, 1, 1), Date(2024, 2, 1)).months     # 1.0 (exactly)
 
 # Approximate quarters
 Interval(Date(2024, 1, 1), Date(2024, 3, 31)).quarters  # ~1.0
@@ -307,19 +327,19 @@ Interval(Date(2024, 1, 1), Date(2024, 3, 31)).quarters  # ~1.0
 from date import DateTime, EST, UTC, GMT, LCL, Timezone
 
 # Built-in timezones
-dt_est = DateTime(2024, 1, 15, 9, 30, tzinfo=EST)    # US/Eastern
+dt_est = DateTime(2024, 1, 15, 9, 30, tzinfo=EST)    # US/Eastern (same as America/New_York)
 dt_utc = DateTime(2024, 1, 15, 14, 30, tzinfo=UTC)   # UTC
 dt_gmt = DateTime(2024, 1, 15, 14, 30, tzinfo=GMT)   # GMT
-dt_lcl = DateTime.now(tz=LCL)                         # Local timezone
+dt_lcl = DateTime.now(tz=LCL)                         # Local timezone (from system)
 
 # Custom timezones
 tokyo = Timezone('Asia/Tokyo')
 dt_tokyo = DateTime(2024, 1, 15, 23, 30, tzinfo=tokyo)
 
-# Convert between timezones
-dt_est.in_timezone(UTC)          # Convert to UTC
-dt_utc.in_tz(EST)                # Convert to EST (shorthand)
-dt_est.astimezone(tokyo)         # Convert to Tokyo time
+# Convert between timezones (preserves the instant in time, changes timezone)
+dt_est.in_timezone(UTC)          # 9:30 AM EST → 2:30 PM UTC
+dt_utc.in_tz(EST)                # 2:30 PM UTC → 9:30 AM EST (shorthand)
+dt_est.astimezone(tokyo)         # 9:30 AM EST → 11:30 PM JST
 ```
 
 ## Helper Functions and Decorators
@@ -365,7 +385,7 @@ The `date.extras` module provides standalone functions for backward compatibilit
 
 ```python
 from date import is_business_day, is_within_business_hours
-from date import overlap_days, start_of_range, end_of_range
+from date import overlap_days
 from date import Date, Interval
 
 # Check current time
@@ -377,18 +397,26 @@ interval1 = (Date(2024, 1, 1), Date(2024, 1, 31))
 interval2 = (Date(2024, 1, 15), Date(2024, 2, 15))
 overlap_days(interval1, interval2)           # True (they overlap)
 overlap_days(interval1, interval2, days=True)  # 17 (days of overlap)
+```
 
-# Get period boundaries within interval
-interval = Interval(Date(2024, 1, 5), Date(2024, 4, 5))
-start_of_range(interval, 'month')  # [2024-01-01, 2024-02-01, 2024-03-01, 2024-04-01]
-end_of_range(interval, 'month')    # [2024-01-31, 2024-02-29, 2024-03-31, 2024-04-30]
+**Note:** `start_of_range()` and `end_of_range()` are deprecated. Use `interval.start_of()` and `interval.end_of()` instead:
+
+```python
+# Old way (deprecated)
+from date import start_of_range, end_of_range
+start_of_range(interval, 'month')
+end_of_range(interval, 'month')
+
+# New way (preferred)
+interval.start_of('month')  # [2024-01-01, 2024-02-01, 2024-03-01, 2024-04-01]
+interval.end_of('month')    # [2024-01-31, 2024-02-29, 2024-03-31, 2024-04-30]
 ```
 
 ## Advanced Features
 
 ### Method Chaining
 
-All date operations return the same type, allowing for clean method chaining:
+Date and DateTime operations preserve type and state (business mode, entity), allowing for clean method chaining:
 
 ```python
 from date import Date, NYSE
@@ -442,7 +470,10 @@ date.b.lookback('month')  # One month ago, adjusted to business day
 
 OpenDate maintains compatibility with:
 
-- **Pendulum**: All Pendulum methods work unchanged
+- **Pendulum**: Most Pendulum methods work as expected, with some notable differences:
+  - `Interval.months` returns float (with fractional months) instead of int
+  - `DateTime.today()` returns start of day (00:00:00) instead of current time
+  - Methods preserve business day status and entity when chaining
 - **Python datetime**: Seamless conversion via `instance()` methods
 - **Pandas**: Works with pandas Timestamp and datetime64
 - **NumPy**: Supports numpy datetime64 conversion
@@ -474,6 +505,10 @@ DateTime.instance(np.datetime64('2024-01-15T09:30:00'))
 - Financial functions (yearfrac, fractional periods)
 - Enhanced parsing with special codes and business day offsets
 - Built-in NYSE calendar (extensible to others)
+- `Interval.months` returns float for precise financial calculations
+- `DateTime.today()` returns start of day for consistent behavior
+
+**Note:** Some Pendulum behavior is intentionally modified for financial use cases.
 
 ### Over datetime
 
@@ -494,11 +529,15 @@ DateTime.instance(np.datetime64('2024-01-15T09:30:00'))
 ### Generate Month-End Dates
 
 ```python
-from date import Date, Interval, end_of_range
+from date import Date, Interval
 
 interval = Interval(Date(2024, 1, 1), Date(2024, 12, 31))
-month_ends = end_of_range(interval, 'month')
+month_ends = interval.end_of('month')
 # [2024-01-31, 2024-02-29, ..., 2024-12-31]
+
+# Or month starts
+month_starts = interval.start_of('month')
+# [2024-01-01, 2024-02-01, ..., 2024-12-01]
 ```
 
 ### Calculate Business Days Between Dates

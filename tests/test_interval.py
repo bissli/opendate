@@ -327,5 +327,71 @@ def test_interval_entity():
     assert business_days == 6
 
 
+def test_interval_start_of_months():
+    """Test Interval.start_of method with month unit."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    result = interval.start_of('month')
+    assert result == [Date(2018, 1, 1), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 1)]
+
+    interval = Interval(Date(2018, 4, 30), Date(2018, 7, 30))
+    result = interval.start_of('month')
+    assert result == [Date(2018, 4, 1), Date(2018, 5, 1), Date(2018, 6, 1), Date(2018, 7, 1)]
+
+
+def test_interval_start_of_weeks():
+    """Test Interval.start_of method with week unit."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
+    result = interval.start_of('week')
+    assert result == [Date(2018, 1, 1), Date(2018, 1, 8), Date(2018, 1, 15), Date(2018, 1, 22)]
+
+
+def test_interval_start_of_single_month():
+    """Test Interval.start_of with interval within a single month."""
+    interval = Interval(Date(2018, 3, 15), Date(2018, 3, 25))
+    result = interval.start_of('month')
+    assert result == [Date(2018, 3, 1)]
+
+
+def test_interval_end_of_months():
+    """Test Interval.end_of method with month unit."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    result = interval.end_of('month')
+    assert result == [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 31), Date(2018, 4, 30)]
+
+    interval = Interval(Date(2018, 4, 30), Date(2018, 7, 30))
+    result = interval.end_of('month')
+    assert result == [Date(2018, 4, 30), Date(2018, 5, 31), Date(2018, 6, 30), Date(2018, 7, 31)]
+
+
+def test_interval_end_of_weeks():
+    """Test Interval.end_of method with week unit."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
+    result = interval.end_of('week')
+    assert result == [Date(2018, 1, 7), Date(2018, 1, 14), Date(2018, 1, 21), Date(2018, 1, 28)]
+
+
+def test_interval_end_of_leap_year():
+    """Test Interval.end_of correctly handles February in leap year."""
+    interval = Interval(Date(2020, 1, 15), Date(2020, 3, 15))
+    result = interval.end_of('month')
+    assert result == [Date(2020, 1, 31), Date(2020, 2, 29), Date(2020, 3, 31)]
+
+
+def test_interval_start_end_with_datetime():
+    """Test Interval.start_of and end_of work with DateTime intervals."""
+    from date import EST, DateTime
+
+    interval = Interval(DateTime(2018, 1, 5, 10, 0, 0, tzinfo=EST),
+                       DateTime(2018, 3, 5, 15, 0, 0, tzinfo=EST))
+    
+    start_result = interval.start_of('month')
+    assert len(start_result) == 3
+    assert all(isinstance(d, DateTime) for d in start_result)
+    
+    end_result = interval.end_of('month')
+    assert len(end_result) == 3
+    assert all(isinstance(d, DateTime) for d in end_result)
+
+
 if __name__ == '__main__':
     __import__('pytest').main([__file__])

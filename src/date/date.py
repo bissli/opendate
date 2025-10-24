@@ -1663,6 +1663,38 @@ class Interval(_pendulum.Interval):
 
         raise ValueError('Basis range [0, 4]. Unknown basis {basis}.')
 
+    def start_of(self, unit: str = 'month') -> list[Date | DateTime]:
+        """Return the start of each unit within the interval.
+
+        Parameters
+            unit: Time unit ('month', 'week', 'year', 'quarter')
+
+        Returns
+            List of Date or DateTime objects representing start of each unit
+        """
+        result = []
+        current = self._start.start_of(unit)
+        while current <= self._end:
+            result.append(current)
+            current = current.add(**{f'{unit}s': 1}).start_of(unit)
+        return result
+
+    def end_of(self, unit: str = 'month') -> list[Date | DateTime]:
+        """Return the end of each unit within the interval.
+
+        Parameters
+            unit: Time unit ('month', 'week', 'year', 'quarter')
+
+        Returns
+            List of Date or DateTime objects representing end of each unit
+        """
+        result = []
+        current = self._start.start_of(unit)
+        while current <= self._end:
+            result.append(current.end_of(unit))
+            current = current.add(**{f'{unit}s': 1}).start_of(unit)
+        return result
+
 
 def create_ics(begdate, enddate, summary, location) -> str:
     """Create a simple .ics file per RFC 5545 guidelines."""
