@@ -1,4 +1,4 @@
-__version__ = '0.1.13'
+__version__ = '0.1.14'
 
 import datetime as _datetime
 
@@ -15,7 +15,6 @@ from date.date import Date
 from date.date import DateTime
 from date.date import Entity
 from date.date import Interval
-from date.date import IntervalError
 from date.date import LCL
 from date.date import EST
 from date.date import GMT
@@ -39,20 +38,54 @@ from date.extras import is_within_business_hours
 timezone = Timezone
 
 
-def date(*args, **kwargs):
-    return Date(*args, **kwargs)
+def date(year: int, month: int, day: int) -> Date:
+    """Create new Date
+    """
+    return Date(year, month, day)
 
 
-def datetime(*args, **kwargs):
-    return DateTime(*args, **kwargs)
+def datetime(
+    year: int,
+    month: int,
+    day: int,
+    hour: int = 0,
+    minute: int = 0,
+    second: int = 0,
+    microsecond: int = 0,
+    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,  # note that this is different from our DateTime
+    fold: int = 0,  # different from pendulum
+) -> DateTime:
+    """Create new DateTime
+    """
+    return DateTime(
+        year,
+        month,
+        day,
+        hour=hour,
+        minute=minute,
+        second=second,
+        microsecond=microsecond,
+        tzinfo=tzinfo,
+        fold=fold,
+    )
 
 
-def time(*args, **kwargs):
-    return Time(*args, **kwargs)
+def time(
+    hour: int,
+    minute: int = 0,
+    second: int = 0,
+    microsecond: int = 0,
+    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,  # review this choice
+) -> Time:
+    """Create new Time
+    """
+    return Time(hour, minute, second, microsecond, tzinfo)
 
 
-def interval(*args, **kwargs):
-    return Interval(*args, **kwargs)
+def interval(self, begdate: Date | DateTime, enddate: Date | DateTime):
+    """Create new Interval
+    """
+    return Interval(begdate, enddate)
 
 
 def parse(s: str | None, fmt: str = None, entity: Entity = NYSE, raise_err: bool = False) -> DateTime | None:
@@ -98,7 +131,6 @@ __all__ = [
     'instance',
     'Interval',
     'interval',
-    'IntervalError',
     'is_business_day',
     'is_within_business_hours',
     'LCL',
@@ -113,4 +145,8 @@ __all__ = [
     'timezone',
     'today',
     'WeekDay',
+    'EST',
+    'GMT',
+    'UTC',
+    'WEEKDAY_SHORTNAME',
     ]

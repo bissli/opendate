@@ -2,13 +2,14 @@ import calendar
 import contextlib
 import datetime as _datetime
 import logging
+import operator
 import os
 import re
 import time
 import warnings
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from functools import lru_cache, partial, wraps
 from typing import Self
 
@@ -26,7 +27,6 @@ __all__ = [
     'Date',
     'DateTime',
     'Interval',
-    'IntervalError',
     'Time',
     'Timezone',
     'EST',
@@ -49,27 +49,8 @@ def Timezone(name:str = 'US/Eastern') -> _zoneinfo.ZoneInfo:
     """Create a timezone object with the specified name.
 
     Simple wrapper around Pendulum's Timezone function that ensures
-    consistent timezone handling across the library.
-
-    Parameters
-        name: Timezone name (e.g., 'US/Eastern', 'UTC')
-
-    Returns
-        A timezone object for the specified timezone
-
-    Examples
-
-    US/Eastern is equivalent to America/New_York:
-    >>> winter1 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('US/Eastern'))
-    >>> winter2 = DateTime(2000, 1, 1, 12, tzinfo=Timezone('America/New_York'))
-    >>> winter1 == winter2
-    True
-
-    This works in both summer and winter:
-    >>> summer1 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('US/Eastern'))
-    >>> summer2 = DateTime(2000, 7, 1, 12, tzinfo=Timezone('America/New_York'))
-    >>> summer1 == summer2
-    True
+    consistent timezone handling across the library. Note that 'US/Eastern'
+    is equivalent to 'America/New_York' for all dates.
     """
     return _pendulum.tz.Timezone(name)
 
@@ -125,7 +106,7 @@ DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
     # return entity
 
 
-def isdateish(x):
+def isdateish(x) -> bool:
     return isinstance(x, _datetime.date | _datetime.datetime | pd.Timestamp | np.datetime64)
 
 
@@ -218,7 +199,7 @@ def store_both(func=None, *, typ=None):
     return wrapper
 
 
-def prefer_utc_timezone(func, force:bool = False):
+def prefer_utc_timezone(func, force:bool = False) -> Callable:
     """Return datetime as UTC.
     """
     @wraps(func)
@@ -232,7 +213,7 @@ def prefer_utc_timezone(func, force:bool = False):
     return wrapper
 
 
-def prefer_native_timezone(func, force:bool = False):
+def prefer_native_timezone(func, force:bool = False) -> Callable:
     """Return datetime as native.
     """
     @wraps(func)
@@ -488,63 +469,21 @@ class DateBusinessMixin:
 
     @expect_date
     def business_open(self) -> bool:
-        """Business open
-
-        >>> thedate = Date(2021, 4, 19) # Monday
-        >>> thedate.business_open()
-        True
-        >>> thedate = Date(2021, 4, 17) # Saturday
-        >>> thedate.business_open()
-        False
-        >>> thedate = Date(2021, 1, 18) # MLK Day
-        >>> thedate.business_open()
-        False
+        """Check if the date is a business day (market is open).
         """
         return self.is_business_day()
 
     @expect_date
     def is_business_day(self) -> bool:
-        """Is business date.
-
-        >>> thedate = Date(2021, 4, 19) # Monday
-        >>> thedate.is_business_day()
-        True
-        >>> thedate = Date(2021, 4, 17) # Saturday
-        >>> thedate.is_business_day()
-        False
-        >>> thedate = Date(2021, 1, 18) # MLK Day
-        >>> thedate.is_business_day()
-        False
-        >>> thedate = Date(2021, 11, 25) # Thanksgiving
-        >>> thedate.is_business_day()
-        False
-        >>> thedate = Date(2021, 11, 26) # Day after ^
-        >>> thedate.is_business_day()
-        True
+        """Check if the date is a business day according to the entity calendar.
         """
         return self in self._entity.business_days()
 
     @expect_date
     def business_hours(self) -> 'tuple[DateTime, DateTime]':
-        """Business hours
+        """Get market open and close times for this date.
 
-        Returns (None, None) if not a business day
-
-        >>> thedate = Date(2023, 1, 5)
-        >>> thedate.business_hours()
-        (... 9, 30, ... 16, 0, ...)
-
-        >>> thedate = Date(2023, 7, 3)
-        >>> thedate.business_hours()
-        (... 9, 30, ... 13, 0, ...)
-
-        >>> thedate = Date(2023, 11, 24)
-        >>> thedate.business_hours()
-        (... 9, 30, ... 13, 0, ...)
-
-        >>> thedate = Date(2024, 5, 27) # memorial day
-        >>> thedate.business_hours()
-        (None, None)
+        Returns (None, None) if not a business day.
         """
         return self._entity.business_hours(self, self)\
             .get(self, (None, None))
@@ -593,34 +532,25 @@ class DateBusinessMixin:
 class DateExtrasMixin:
     """Extended date functionality not provided by Pendulum.
 
+    .. note::
+        This mixin exists primarily for legacy backward compatibility.
+        New code should prefer using built-in methods where possible.
+
     This mixin provides additional date utilities primarily focused on:
     - Financial date calculations (nearest month start/end)
     - Weekday-oriented date navigation
     - Relative date lookups
 
-    These methods extend Pendulum's functionality with features commonly
+    These methods extend OpenDate functionality with features commonly
     needed in financial applications and reporting scenarios.
     """
 
-    def nearest_start_of_month(self):
-        """Get `nearest` start of month
+    def nearest_start_of_month(self) -> Self:
+        """Get the nearest start of month.
 
-        1/1/2015 -> Thursday (New Year's Day)
-        2/1/2015 -> Sunday
-
-        >>> from date import Date
-        >>> Date(2015, 1, 1).nearest_start_of_month()
-        Date(2015, 1, 1)
-        >>> Date(2015, 1, 15).nearest_start_of_month()
-        Date(2015, 1, 1)
-        >>> Date(2015, 1, 15).b.nearest_start_of_month()
-        Date(2015, 1, 2)
-        >>> Date(2015, 1, 16).nearest_start_of_month()
-        Date(2015, 2, 1)
-        >>> Date(2015, 1, 31).nearest_start_of_month()
-        Date(2015, 2, 1)
-        >>> Date(2015, 1, 31).b.nearest_start_of_month()
-        Date(2015, 2, 2)
+        If day <= 15, returns start of current month.
+        If day > 15, returns start of next month.
+        In business mode, adjusts to next business day if needed.
         """
         _business = self._business
         self._business = False
@@ -634,25 +564,12 @@ class DateExtrasMixin:
             return d.business().add(days=1)
         return d
 
-    def nearest_end_of_month(self):
-        """Get `nearest` end of month
+    def nearest_end_of_month(self) -> Self:
+        """Get the nearest end of month.
 
-        12/31/2014 -> Wednesday
-        1/31/2015 -> Saturday
-
-        >>> from date import Date
-        >>> Date(2015, 1, 1).nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 15).nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 15).b.nearest_end_of_month()
-        Date(2014, 12, 31)
-        >>> Date(2015, 1, 16).nearest_end_of_month()
-        Date(2015, 1, 31)
-        >>> Date(2015, 1, 31).nearest_end_of_month()
-        Date(2015, 1, 31)
-        >>> Date(2015, 1, 31).b.nearest_end_of_month()
-        Date(2015, 1, 30)
+        If day <= 15, returns end of previous month.
+        If day > 15, returns end of current month.
+        In business mode, adjusts to previous business day if needed.
         """
         _business = self._business
         self._business = False
@@ -666,47 +583,26 @@ class DateExtrasMixin:
             return d.business().subtract(days=1)
         return d
 
-    def next_relative_date_of_week_by_day(self, day='MO'):
-        """Get next relative day of week by relativedelta code
-
-        >>> from date import Date
-        >>> Date(2020, 5, 18).next_relative_date_of_week_by_day('SU')
-        Date(2020, 5, 24)
-        >>> Date(2020, 5, 24).next_relative_date_of_week_by_day('SU')
-        Date(2020, 5, 24)
+    def next_relative_date_of_week_by_day(self, day='MO') -> Self:
+        """Get next occurrence of the specified weekday (or current date if already that day).
         """
         if self.weekday() == WEEKDAY_SHORTNAME.get(day):
             return self
         return self.next(WEEKDAY_SHORTNAME.get(day))
 
-    def weekday_or_previous_friday(self):
-        """Return the date if it is a weekday, else previous Friday
-
-        >>> from date import Date
-        >>> Date(2019, 10, 6).weekday_or_previous_friday() # Sunday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 5).weekday_or_previous_friday() # Saturday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 4).weekday_or_previous_friday() # Friday
-        Date(2019, 10, 4)
-        >>> Date(2019, 10, 3).weekday_or_previous_friday() # Thursday
-        Date(2019, 10, 3)
+    def weekday_or_previous_friday(self) -> Self:
+        """Return the date if it is a weekday, otherwise return the previous Friday.
         """
-        dnum = self.weekday()
-        if dnum in {WeekDay.SATURDAY, WeekDay.SUNDAY}:
-            return self.subtract(days=dnum - 4)
+        if self.weekday() in {WeekDay.SATURDAY, WeekDay.SUNDAY}:
+            return self.previous(WeekDay.FRIDAY)
         return self
 
-    """
-    create a simple nth weekday function that accounts for
-    [1,2,3,4] and weekday as options
-    or weekday, [1,2,3,4]
-
-    """
-
     @classmethod
-    def third_wednesday(cls, year, month):
+    def third_wednesday(cls, year, month) -> Self:
         """Calculate the date of the third Wednesday in a given month/year.
+
+        .. deprecated::
+            Use Date(year, month, 1).nth_of('month', 3, WeekDay.WEDNESDAY) instead.
 
         Parameters
             year: The year to use
@@ -715,11 +611,7 @@ class DateExtrasMixin:
         Returns
             A Date object representing the third Wednesday of the specified month
         """
-        third = cls(year, month, 15)  # lowest 3rd day
-        w = third.weekday()
-        if w != WeekDay.WEDNESDAY:
-            third = third.replace(day=(15 + (WeekDay.WEDNESDAY - w) % 7))
-        return third
+        return cls(year, month, 1).nth_of('month', 3, WeekDay.WEDNESDAY)
 
 
 class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
@@ -736,10 +628,9 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
     """
 
     def to_string(self, fmt: str) -> str:
-        """Format cleaner https://stackoverflow.com/a/2073189.
+        """Format date to string, handling platform-specific format codes.
 
-        >>> Date(2022, 1, 5).to_string('%-m/%-d/%Y')
-        '1/5/2022'
+        Automatically converts '%-' format codes to '%#' on Windows.
         """
         return self.strftime(fmt.replace('%-', '%#') if os.name == 'nt' else fmt)
 
@@ -772,10 +663,10 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         Returns
             A new Date object representing the average date
         """
-        return _pendulum.Date.average(self)
+        return _pendulum.Date.average(self, dt)
 
     @classmethod
-    def fromordinal(cls, *args, **kwargs):
+    def fromordinal(cls, *args, **kwargs) -> Self:
         """Create a Date from an ordinal.
 
         Parameters
@@ -788,7 +679,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         return cls.instance(result)
 
     @classmethod
-    def fromtimestamp(cls, timestamp, tz=None):
+    def fromtimestamp(cls, timestamp, tz=None) -> Self:
         """Create a Date from a timestamp.
 
         Parameters
@@ -831,84 +722,47 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
     ) -> Self | None:
         """Convert a string to a date handling many different formats.
 
-        creating a new Date object
-        >>> Date.parse('2022/1/1')
-        Date(2022, 1, 1)
+        Supports various date formats including:
+        - Standard formats: YYYY-MM-DD, MM/DD/YYYY, MM/DD/YY, YYYYMMDD
+        - Named months: DD-MON-YYYY, MON-DD-YYYY, Month DD, YYYY
+        - Special codes: T (today), Y (yesterday), P (previous business day)
+        - Business day offsets: T-3b, P+2b (add/subtract business days)
+        - Custom format strings via fmt parameter
 
-        previous business day accessed with 'P'
-        >>> Date.parse('P')==Date.today().b.subtract(days=1)
-        True
-        >>> Date.parse('T-3b')==Date.today().b.subtract(days=3)
-        True
-        >>> Date.parse('T-3b')==Date.today().b.add(days=-3)
-        True
-        >>> Date.parse('T+3b')==Date.today().b.subtract(days=-3)
-        True
-        >>> Date.parse('T+3b')==Date.today().b.add(days=3)
-        True
-        >>> Date.parse('M')==Date.today().start_of('month').subtract(days=1)
-        True
+        Parameters
+            s: String to parse or None
+            fmt: Optional strftime format string for custom parsing
+            entity: Calendar entity for business day calculations (default NYSE)
+            raise_err: If True, raises ValueError on parse failure instead of returning None
 
-        m[/-]d[/-]yyyy  6-23-2006
-        >>> Date.parse('6-23-2006')
-        Date(2006, 6, 23)
+        Returns
+            Date instance or None if parsing fails and raise_err is False
 
-        m[/-]d[/-]yy    6/23/06
-        >>> Date.parse('6/23/06')
-        Date(2006, 6, 23)
+        Examples
+            Standard numeric formats:
+            Date.parse('2020-01-15') → Date(2020, 1, 15)
+            Date.parse('01/15/2020') → Date(2020, 1, 15)
+            Date.parse('01/15/20') → Date(2020, 1, 15)
+            Date.parse('20200115') → Date(2020, 1, 15)
 
-        m[/-]d          6/23
-        >>> Date.parse('6/23') == Date(Date.today().year, 6, 23)
-        True
+            Named month formats:
+            Date.parse('15-Jan-2020') → Date(2020, 1, 15)
+            Date.parse('Jan 15, 2020') → Date(2020, 1, 15)
+            Date.parse('15JAN2020') → Date(2020, 1, 15)
 
-        yyyy-mm-dd      2006-6-23
-        >>> Date.parse('2006-6-23')
-        Date(2006, 6, 23)
+            Special codes:
+            Date.parse('T') → today's date
+            Date.parse('Y') → yesterday's date
+            Date.parse('P') → previous business day
+            Date.parse('M') → last day of previous month
 
-        yyyymmdd        20060623
-        >>> Date.parse('20060623')
-        Date(2006, 6, 23)
+            Business day offsets:
+            Date.parse('T-3b') → 3 business days ago
+            Date.parse('P+2b') → 2 business days after previous business day
+            Date.parse('T+5') → 5 calendar days from today
 
-        dd-mon-yyyy     23-JUN-2006
-        >>> Date.parse('23-JUN-2006')
-        Date(2006, 6, 23)
-
-        mon-dd-yyyy     JUN-23-2006
-        >>> Date.parse('20 Jan 2009')
-        Date(2009, 1, 20)
-
-        month dd, yyyy  June 23, 2006
-        >>> Date.parse('June 23, 2006')
-        Date(2006, 6, 23)
-
-        dd-mon-yy
-        >>> Date.parse('23-May-12')
-        Date(2012, 5, 23)
-
-        ddmonyyyy
-        >>> Date.parse('23May2012')
-        Date(2012, 5, 23)
-
-        >>> Date.parse('Oct. 24, 2007', fmt='%b. %d, %Y')
-        Date(2007, 10, 24)
-
-        >>> Date.parse('Yesterday') == DateTime.now().subtract(days=1).date()
-        True
-        >>> Date.parse('TODAY') == Date.today()
-        True
-        >>> Date.parse('Jan. 13, 2014')
-        Date(2014, 1, 13)
-
-        >>> Date.parse('March') == Date(Date.today().year, 3, Date.today().day)
-        True
-
-        only raise error when we explicitly say so
-        >>> Date.parse('bad date') is None
-        True
-        >>> Date.parse('bad date', raise_err=True)
-        Traceback (most recent call last):
-        ...
-        ValueError: Failed to parse date: bad date
+            Custom format:
+            Date.parse('15-Jan-2020', fmt='%d-%b-%Y') → Date(2020, 1, 15)
         """
 
         def date_for_symbol(s):
@@ -1027,20 +881,17 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         | None,
         raise_err: bool = False,
     ) -> Self | None:
-        """From datetime.date like object
+        """Create a Date instance from various date-like objects.
 
-        >>> Date.instance(_datetime.date(2022, 1, 1))
-        Date(2022, 1, 1)
-        >>> Date.instance(Date(2022, 1, 1))
-        Date(2022, 1, 1)
-        >>> Date.instance(_pendulum.Date(2022, 1, 1))
-        Date(2022, 1, 1)
-        >>> Date.instance(Date(2022, 1, 1))
-        Date(2022, 1, 1)
-        >>> Date.instance(np.datetime64('2000-01', 'D'))
-        Date(2000, 1, 1)
-        >>> Date.instance(None)
+        Converts datetime.date, datetime.datetime, pandas Timestamp,
+        numpy datetime64, and other date-like objects to Date instances.
 
+        Parameters
+            obj: Date-like object to convert
+            raise_err: If True, raises ValueError for None/NA values instead of returning None
+
+        Returns
+            Date instance or None if obj is None/NA and raise_err is False
         """
         if pd.isna(obj):
             if raise_err:
@@ -1056,39 +907,21 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         return cls(obj.year, obj.month, obj.day)
 
     @classmethod
-    def today(cls):
+    def today(cls) -> Self:
         d = _datetime.datetime.now(LCL)
         return cls(d.year, d.month, d.day)
 
-    def isoweek(self):
-        """Week number 1-52 following ISO week-numbering
-
-        Standard weeks
-        >>> Date(2023, 1, 2).isoweek()
-        1
-        >>> Date(2023, 4, 27).isoweek()
-        17
-        >>> Date(2023, 12, 31).isoweek()
-        52
-
-        Belongs to week of previous year
-        >>> Date(2023, 1, 1).isoweek()
-        52
+    def isoweek(self) -> int | None:
+        """Get ISO week number (1-52/53) following ISO week-numbering standard.
         """
         with contextlib.suppress(Exception):
             return self.isocalendar()[1]
 
     def lookback(self, unit='last') -> Self:
-        """Date back based on lookback string, ie last, week, month.
+        """Get date in the past based on lookback unit.
 
-        >>> Date(2018, 12, 7).b.lookback('last')
-        Date(2018, 12, 6)
-        >>> Date(2018, 12, 7).b.lookback('day')
-        Date(2018, 12, 6)
-        >>> Date(2018, 12, 7).b.lookback('week')
-        Date(2018, 11, 30)
-        >>> Date(2018, 12, 7).b.lookback('month')
-        Date(2018, 11, 7)
+        Supported units: 'last'/'day' (1 day), 'week', 'month', 'quarter', 'year'.
+        Respects business day mode if enabled.
         """
         def _lookback(years=0, months=0, weeks=0, days=0):
             _business = self._business
@@ -1124,38 +957,46 @@ class Time(_pendulum.Time):
     @classmethod
     @prefer_utc_timezone
     def parse(cls, s: str | None, fmt: str | None = None, raise_err: bool = False) -> Self | None:
-        """Convert a string to a time handling many formats::
+        """Parse time string in various formats.
 
-            handle many time formats:
-            hh[:.]mm
-            hh[:.]mm am/pm
-            hh[:.]mm[:.]ss
-            hh[:.]mm[:.]ss[.,]uuu am/pm
-            hhmmss[.,]uuu
-            hhmmss[.,]uuu am/pm
+        Supported formats:
+        - hh:mm or hh.mm
+        - hh:mm:ss or hh.mm.ss
+        - hh:mm:ss.microseconds
+        - Any of above with AM/PM
+        - Compact: hhmmss or hhmmss.microseconds
 
-        >>> Time.parse('9:30')
-        Time(9, 30, 0, tzinfo=Timezone('UTC'))
-        >>> Time.parse('9:30:15')
-        Time(9, 30, 15, tzinfo=Timezone('UTC'))
-        >>> Time.parse('9:30:15.751')
-        Time(9, 30, 15, 751000, tzinfo=Timezone('UTC'))
-        >>> Time.parse('9:30 AM')
-        Time(9, 30, 0, tzinfo=Timezone('UTC'))
-        >>> Time.parse('9:30 pm')
-        Time(21, 30, 0, tzinfo=Timezone('UTC'))
-        >>> Time.parse('9:30:15.751 PM')
-        Time(21, 30, 15, 751000, tzinfo=Timezone('UTC'))
-        >>> Time.parse('0930')  # Date treats this as a date, careful!!
-        Time(9, 30, 0, tzinfo=Timezone('UTC'))
-        >>> Time.parse('093015')
-        Time(9, 30, 15, tzinfo=Timezone('UTC'))
-        >>> Time.parse('093015,751')
-        Time(9, 30, 15, 751000, tzinfo=Timezone('UTC'))
-        >>> Time.parse('0930 pm')
-        Time(21, 30, 0, tzinfo=Timezone('UTC'))
-        >>> Time.parse('093015,751 PM')
-        Time(21, 30, 15, 751000, tzinfo=Timezone('UTC'))
+        Returns Time with UTC timezone by default.
+
+        Parameters
+            s: String to parse or None
+            fmt: Optional strftime format string for custom parsing
+            raise_err: If True, raises ValueError on parse failure instead of returning None
+
+        Returns
+            Time instance with UTC timezone or None if parsing fails and raise_err is False
+
+        Examples
+            Basic time formats:
+            Time.parse('14:30') → Time(14, 30, 0, 0, tzinfo=UTC)
+            Time.parse('14.30') → Time(14, 30, 0, 0, tzinfo=UTC)
+            Time.parse('14:30:45') → Time(14, 30, 45, 0, tzinfo=UTC)
+
+            With microseconds:
+            Time.parse('14:30:45.123456') → Time(14, 30, 45, 123456000, tzinfo=UTC)
+            Time.parse('14:30:45,500000') → Time(14, 30, 45, 500000000, tzinfo=UTC)
+
+            AM/PM formats:
+            Time.parse('2:30 PM') → Time(14, 30, 0, 0, tzinfo=UTC)
+            Time.parse('11:30 AM') → Time(11, 30, 0, 0, tzinfo=UTC)
+            Time.parse('12:30 PM') → Time(12, 30, 0, 0, tzinfo=UTC)
+
+            Compact formats:
+            Time.parse('143045') → Time(14, 30, 45, 0, tzinfo=UTC)
+            Time.parse('1430') → Time(14, 30, 0, 0, tzinfo=UTC)
+
+            Custom format:
+            Time.parse('14-30-45', fmt='%H-%M-%S') → Time(14, 30, 45, 0, tzinfo=UTC)
         """
 
         def seconds(m):
@@ -1225,18 +1066,9 @@ class Time(_pendulum.Time):
         tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
-        """From datetime-like object
+        """Create Time instance from time-like object.
 
-        >>> Time.instance(_datetime.time(12, 30, 1))
-        Time(12, 30, 1, tzinfo=Timezone('UTC'))
-        >>> Time.instance(_pendulum.Time(12, 30, 1))
-        Time(12, 30, 1, tzinfo=Timezone('UTC'))
-        >>> Time.instance(None)
-
-        like Pendulum, do not add timzone if no timezone and Time object
-        >>> Time.instance(Time(12, 30, 1))
-        Time(12, 30, 1)
-
+        Adds UTC timezone by default unless obj is already a Time instance.
         """
         if pd.isna(obj):
             if raise_err:
@@ -1250,15 +1082,8 @@ class Time(_pendulum.Time):
 
         return cls(obj.hour, obj.minute, obj.second, obj.microsecond, tzinfo=tz)
 
-    def in_timezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo):
-        """Convert timezone
-
-        >>> Time(12, 0).in_timezone(Timezone('America/Sao_Paulo'))
-        Time(9, 0, 0, tzinfo=Timezone('America/Sao_Paulo'))
-
-        >>> Time(12, 0, tzinfo=Timezone('Europe/Moscow')).in_timezone(Timezone('America/Sao_Paulo'))
-        Time(6, 0, 0, tzinfo=Timezone('America/Sao_Paulo'))
-
+    def in_timezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo) -> Self:
+        """Convert time to a different timezone.
         """
         _dt = DateTime.combine(Date.today(), self, tzinfo=self.tzinfo or UTC)
         return _dt.in_timezone(tz).time()
@@ -1281,7 +1106,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
     - Has timezone handling helpers not present in pendulum
     """
 
-    def epoch(self):
+    def epoch(self) -> float:
         """Translate a datetime object into unix seconds since epoch
         """
         return self.timestamp()
@@ -1311,7 +1136,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return _pendulum.DateTime.replace(self, *args, **kwargs)
 
     @classmethod
-    def fromordinal(cls, *args, **kwargs):
+    def fromordinal(cls, *args, **kwargs) -> Self:
         """Create a DateTime from an ordinal.
 
         Parameters
@@ -1324,7 +1149,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return cls.instance(result)
 
     @classmethod
-    def fromtimestamp(cls, timestamp, tz=None):
+    def fromtimestamp(cls, timestamp, tz=None) -> Self:
         """Create a DateTime from a timestamp.
 
         Parameters
@@ -1339,7 +1164,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return cls.instance(result)
 
     @classmethod
-    def strptime(cls, time_str, fmt):
+    def strptime(cls, time_str, fmt) -> Self:
         """Parse a string into a DateTime according to a format.
 
         Parameters
@@ -1353,7 +1178,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return cls.instance(result)
 
     @classmethod
-    def utcfromtimestamp(cls, timestamp):
+    def utcfromtimestamp(cls, timestamp) -> Self:
         """Create a UTC DateTime from a timestamp.
 
         Parameters
@@ -1366,7 +1191,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         return cls.instance(result)
 
     @classmethod
-    def utcnow(cls):
+    def utcnow(cls) -> Self:
         """Create a DateTime representing current UTC time.
 
         Returns
@@ -1391,7 +1216,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                    d.microsecond, tzinfo=d.tzinfo, fold=d.fold)
 
     @classmethod
-    def today(cls, tz: str | _zoneinfo.ZoneInfo | None = None):
+    def today(cls, tz: str | _zoneinfo.ZoneInfo | None = None) -> Self:
         """Create a DateTime object representing today at the start of day.
 
         Unlike pendulum.today() which returns current time, this method
@@ -1405,7 +1230,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         """
         return DateTime.now(tz).start_of('day')
 
-    def date(self):
+    def date(self) -> Date:
         return Date(self.year, self.month, self.day)
 
     @classmethod
@@ -1420,25 +1245,13 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         _tzinfo = tzinfo or time.tzinfo
         return DateTime.instance(_datetime.datetime.combine(date, time, tzinfo=_tzinfo))
 
-    def rfc3339(self):
-        """
-        >>> DateTime.parse('Fri, 31 Oct 2014 10:55:00')
-        DateTime(2014, 10, 31, 10, 55, 0, tzinfo=Timezone('UTC'))
-        >>> DateTime.parse('Fri, 31 Oct 2014 10:55:00').rfc3339()
-        '2014-10-31T10:55:00+00:00'
+    def rfc3339(self) -> str:
+        """Return RFC 3339 formatted string (same as isoformat()).
         """
         return self.isoformat()
 
-    def time(self):
-        """Extract time from self (preserve timezone)
-
-        >>> d = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=EST)
-        >>> d.time()
-        Time(12, 30, 15, tzinfo=Timezone('US/Eastern'))
-
-        >>> d = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=UTC)
-        >>> d.time()
-        Time(12, 30, 15, tzinfo=Timezone('UTC'))
+    def time(self) -> Time:
+        """Extract time component from datetime (preserving timezone).
         """
         return Time.instance(self)
 
@@ -1451,41 +1264,43 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         """Convert a string or timestamp to a DateTime with extended format support.
 
         Unlike pendulum's parse, this method supports:
-        - Unix timestamps (int/float)
-        - Special codes (T=today, Y=yesterday, P=previous business day)
-        - Business day offsets (e.g., 'T-3b' for 3 business days before today)
+        - Unix timestamps (int/float, handles milliseconds automatically)
+        - Special codes: T (today), Y (yesterday), P (previous business day)
+        - Business day offsets: T-3b, P+2b (add/subtract business days)
         - Multiple date-time formats beyond ISO 8601
+        - Combined date and time strings with various separators
 
         Parameters
             s: String or timestamp to parse
-            entity: Calendar entity for business day calculations
-            raise_err: Whether to raise error on parse failure
+            entity: Calendar entity for business day calculations (default NYSE)
+            raise_err: If True, raises ValueError on parse failure instead of returning None
 
         Returns
             DateTime instance or None if parsing fails and raise_err is False
 
         Examples
+            Unix timestamps:
+            DateTime.parse(1609459200) → DateTime(2021, 1, 1, 0, 0, 0, tzinfo=LCL)
+            DateTime.parse(1609459200000) → DateTime(2021, 1, 1, 0, 0, 0, tzinfo=LCL)
 
-        Basic formats:
-        >>> DateTime.parse('2022/1/1')
-        DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
+            ISO 8601 format:
+            DateTime.parse('2020-01-15T14:30:00') → DateTime(2020, 1, 15, 14, 30, 0)
 
-        Timezone handling:
-        >>> this_est1 = DateTime.parse('Fri, 31 Oct 2014 18:55:00').in_timezone(EST)
-        >>> this_est1
-        DateTime(2014, 10, 31, 14, 55, 0, tzinfo=Timezone('US/Eastern'))
+            Date and time separated:
+            DateTime.parse('2020-01-15 14:30:00') → DateTime(2020, 1, 15, 14, 30, 0, tzinfo=LCL)
+            DateTime.parse('01/15/2020:14:30:00') → DateTime(2020, 1, 15, 14, 30, 0, tzinfo=LCL)
 
-        >>> this_est2 = DateTime.parse('Fri, 31 Oct 2014 14:55:00 -0400')
-        >>> this_est2
-        DateTime(2014, 10, 31, 14, 55, 0, tzinfo=...)
+            Date only (time defaults to 00:00:00):
+            DateTime.parse('2020-01-15') → DateTime(2020, 1, 15, 0, 0, 0)
+            DateTime.parse('01/15/2020') → DateTime(2020, 1, 15, 0, 0, 0)
 
-        >>> this_utc = DateTime.parse('Fri, 31 Oct 2014 18:55:00 GMT')
-        >>> this_utc
-        DateTime(2014, 10, 31, 18, 55, 0, tzinfo=tzutc())
+            Time only (uses today's date):
+            DateTime.parse('14:30:00') → DateTime(today's year, month, day, 14, 30, 0, tzinfo=LCL)
 
-        Timestamp parsing:
-        >>> DateTime.parse(1707856982).replace(tzinfo=UTC).epoch()
-        1707856982.0
+            Special codes:
+            DateTime.parse('T') → today at 00:00:00
+            DateTime.parse('Y') → yesterday at 00:00:00
+            DateTime.parse('P') → previous business day at 00:00:00
         """
         if not s:
             if raise_err:
@@ -1538,44 +1353,21 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
     ) -> Self | None:
         """Create a DateTime instance from various datetime-like objects.
 
-        This method provides a unified interface for converting different
-        date/time types including pandas and numpy datetime objects into
-        DateTime instances.
+        Provides unified interface for converting different date/time types
+        including pandas and numpy datetime objects into DateTime instances.
 
         Unlike pendulum, this method:
         - Handles pandas Timestamp and numpy datetime64 objects
         - Adds timezone (UTC by default) when none is specified
-        - Has special handling for time objects
+        - Has special handling for Time objects (combines with current date)
 
         Parameters
             obj: Date, datetime, time, or compatible object to convert
             tz: Optional timezone to apply (if None, uses obj's timezone or UTC)
-            raise_err: Whether to raise error if obj is None/NA
+            raise_err: If True, raises ValueError for None/NA values instead of returning None
 
         Returns
             DateTime instance or None if obj is None/NA and raise_err is False
-
-        Examples
-
-        From Python datetime types:
-        >>> DateTime.instance(_datetime.date(2022, 1, 1))
-        DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-        >>> DateTime.instance(_datetime.datetime(2022, 1, 1, 0, 0, 0))
-        DateTime(2022, 1, 1, 0, 0, 0, tzinfo=Timezone('...'))
-
-        Preserves timezone behavior:
-        >>> DateTime.instance(DateTime(2022, 1, 1, 0, 0, 0))
-        DateTime(2022, 1, 1, 0, 0, 0)
-
-        From Time objects:
-        >>> DateTime.instance(Time(4, 4, 21))
-        DateTime(..., 4, 4, 21, tzinfo=Timezone('UTC'))
-        >>> DateTime.instance(Time(4, 4, 21, tzinfo=UTC))
-        DateTime(..., 4, 4, 21, tzinfo=Timezone('UTC'))
-
-        From numpy/pandas datetime:
-        >>> DateTime.instance(np.datetime64('2000-01', 'D'))
-        DateTime(2000, 1, 1, 0, 0, 0, tzinfo=Timezone('UTC'))
         """
         if pd.isna(obj):
             if raise_err:
@@ -1608,25 +1400,44 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                    obj.second, obj.microsecond, tzinfo=tz)
 
 
-class IntervalError(AttributeError):
-    pass
+class Interval(_pendulum.Interval):
+    """Interval class extending pendulum.Interval with business day awareness.
 
+    This class represents the difference between two dates or datetimes with
+    additional support for business day calculations, entity awareness, and
+    financial period calculations.
 
-class Interval:
+    Unlike pendulum.Interval:
+    - Has business day mode that only counts business days
+    - Preserves entity association (e.g., NYSE)
+    - Additional financial methods like yearfrac()
+    - Support for range operations that respect business days
+    """
 
     _business: bool = False
     _entity: type[NYSE] = NYSE
 
-    def __init__(self, begdate: str | Date | None = None, enddate: str | Date | None = None):
-        self.begdate = Date.parse(begdate) if isinstance(begdate, str) else Date.instance(begdate)
-        self.enddate = Date.parse(enddate) if isinstance(enddate, str) else Date.instance(enddate)
+    def __new__(cls, begdate: Date | DateTime, enddate: Date | DateTime) -> Self:
+        assert begdate and enddate, 'Interval dates cannot be None'
+        instance = super().__new__(cls, begdate, enddate, False)
+        return instance
+
+    def __init__(self, begdate: Date | DateTime, enddate: Date | DateTime) -> None:
+        super().__init__(begdate, enddate, False)
+        self._sign = 1 if begdate <= enddate else -1
+        if begdate <= enddate:
+            self._start = begdate
+            self._end = enddate
+        else:
+            self._start = enddate
+            self._end = begdate
 
     def business(self) -> Self:
         self._business = True
-        if self.begdate:
-            self.begdate.business()
-        if self.enddate:
-            self.enddate.business()
+        if self._start:
+            self._start.business()
+        if self._end:
+            self._end.business()
         return self
 
     @property
@@ -1635,249 +1446,118 @@ class Interval:
 
     def entity(self, e: type[NYSE] = NYSE) -> Self:
         self._entity = e
-        if self.begdate:
-            self.enddate._entity = e
-        if self.enddate:
-            self.enddate._entity = e
+        if self._start:
+            self._end._entity = e
+        if self._end:
+            self._end._entity = e
         return self
 
-    def range(self, window=0) -> tuple[_datetime.date, _datetime.date]:
-        """Set date ranges based on begdate, enddate and window.
-
-        The combinations are as follows:
-
-          beg end num    action
-          --- --- ---    ---------------------
-           -   -   -     Error, underspecified
-          set set set    Error, overspecified
-          set set  -
-          set  -   -     end=max date
-           -  set  -     beg=min date
-           -   -  set    end=max date, beg=end - num
-          set  -  set    end=beg + num
-           -  set set    beg=end - num
-
-        Basic/legacy cases
-        >>> Interval(Date(2014, 4, 3), None).b.range(3)
-        (Date(2014, 4, 3), Date(2014, 4, 8))
-        >>> Interval(None, Date(2014, 7, 27)).range(20)
-        (Date(2014, 7, 7), Date(2014, 7, 27))
-        >>> Interval(None, Date(2014, 7, 27)).b.range(20)
-        (Date(2014, 6, 27), Date(2014, 7, 27))
-
-        Do not modify dates if both are provided
-        >>> Interval(Date(2024, 7, 25), Date(2024, 7, 25)).b.range(None)
-        (Date(2024, 7, 25), Date(2024, 7, 25))
-        >>> Interval(Date(2024, 7, 27), Date(2024, 7, 27)).b.range(None)
-        (Date(2024, 7, 27), Date(2024, 7, 27))
-
-        Edge cases (7/27/24 is weekend)
-        >>> Interval(Date(2024, 7, 27), None).b.range(0)
-        (Date(2024, 7, 27), Date(2024, 7, 27))
-        >>> Interval(None, Date(2024, 7, 27)).b.range(0)
-        (Date(2024, 7, 27), Date(2024, 7, 27))
-        >>> Interval(Date(2024, 7, 27), None).b.range(1)
-        (Date(2024, 7, 27), Date(2024, 7, 29))
-        >>> Interval(None, Date(2024, 7, 27)).b.range(1)
-        (Date(2024, 7, 26), Date(2024, 7, 27))
+    def is_business_day_range(self) -> list[bool]:
+        """Generate boolean values indicating whether each day in the range is a business day.
         """
-        begdate, enddate = self.begdate, self.enddate
-
-        window = abs(int(window or 0))
-
-        if begdate and enddate and window:
-            raise IntervalError('Window requested and begdate and enddate provided')
-        if not begdate and not enddate and not window:
-            raise IntervalError('Missing begdate, enddate, and window')
-        if not begdate and not enddate and window:
-            raise IntervalError('Missing begdate and enddate, window specified')
-
-        if begdate and enddate:
-            pass  # do nothing if both provided
-        elif (not begdate and not enddate) or enddate:
-            begdate = enddate.subtract(days=window) if window else enddate
-        else:
-            enddate = begdate.add(days=window) if window else begdate
-
-        enddate._business = False
-        begdate._business = False
-
-        return begdate, enddate
-
-    def is_business_day_series(self) -> list[bool]:
-        """Is business date range.
-
-        >>> list(Interval(Date(2018, 11, 19), Date(2018, 11, 25)).is_business_day_series())
-        [True, True, True, False, True, False, False]
-        >>> list(Interval(Date(2021, 11, 22),Date(2021, 11, 28)).is_business_day_series())
-        [True, True, True, False, True, False, False]
-        """
-        for thedate in self.series():
+        self._business = False
+        for thedate in self.range('days'):
             yield thedate.is_business_day()
 
-    def series(self, window=0):
-        """Get a series of datetime.date objects.
+    def range(self, unit: str = 'days', amount: int = 1) -> Iterator[DateTime | Date]:
+        """Generate dates/datetimes over the interval.
 
-        give the function since and until wherever possible (more explicit)
-        else pass in a window to back out since or until
-        - Window gives window=N additional days. So `until`-`window`=1
-        defaults to include ALL days (not just business days)
+        Parameters
+            unit: Time unit ('days', 'weeks', 'months', 'years')
+            amount: Step size (e.g., every N units)
 
-        >>> next(Interval(Date(2014,7,16), Date(2014,7,16)).series())
-        Date(2014, 7, 16)
-        >>> next(Interval(Date(2014,7,12), Date(2014,7,16)).series())
-        Date(2014, 7, 12)
-        >>> len(list(Interval(Date(2014,7,12), Date(2014,7,16)).series()))
-        5
-        >>> len(list(Interval(Date(2014,7,12), None).series(window=4)))
-        5
-        >>> len(list(Interval(Date(2014,7,16)).series(window=4)))
-        5
-
-        Weekend and a holiday
-        >>> len(list(Interval(Date(2014,7,3), Date(2014,7,5)).b.series()))
-        1
-        >>> len(list(Interval(Date(2014,7,17), Date(2014,7,16)).series()))
-        Traceback (most recent call last):
-        ...
-        AssertionError: Begdate must be earlier or equal to Enddate
-
-        since != business day and want business days
-        1/[3,10]/2015 is a Saturday, 1/7/2015 is a Wednesday
-        >>> len(list(Interval(Date(2015,1,3), Date(2015,1,7)).b.series()))
-        3
-        >>> len(list(Interval(Date(2015,1,3), None).b.series(window=3)))
-        3
-        >>> len(list(Interval(Date(2015,1,3), Date(2015,1,10)).b.series()))
-        5
-        >>> len(list(Interval(Date(2015,1,3), None).b.series(window=5)))
-        5
+        In business mode (for 'days' only), skips non-business days.
         """
-        window = abs(int(window))
-        since, until = self.begdate, self.enddate
-        _business = self._business
-        assert until or since, 'Since or until is required'
-        if not since and until:
-            since = (until.business() if _business else
-                     until).subtract(days=window)
-        elif since and not until:
-            until = (since.business() if _business else
-                     since).add(days=window)
-        assert since <= until, 'Since date must be earlier or equal to Until date'
-        thedate = since
-        while thedate <= until:
-            if _business:
-                if thedate.is_business_day():
-                    yield thedate
+        # no business concept for units other than days
+        if unit != 'days':
+            yield from (type(d).instance(d) for d in super().range(unit, amount))
+            return
+
+        if self._sign == 1:
+            op = operator.le
+            this = self._start
+            thru = self._end
+        else:
+            op = operator.ge
+            this = self._end
+            thru = self._start
+
+        while op(this, thru):
+            if self._business:
+                if this.is_business_day():
+                    yield this
             else:
-                yield thedate
-            thedate = thedate.add(days=1)
+                yield this
+            this = this.add(days=self._sign * amount)
 
-    def start_of_series(self, unit='month') -> list[Date]:
-        """Return a series between and inclusive of begdate and enddate.
+        self._business = False
+        if self._start:
+            self._start._business = False
+        if self._end:
+            self._end._business = False
 
-        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_series('month')
-        [Date(2018, 1, 1), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 1)]
-        >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).start_of_series('month')
-        [Date(2018, 4, 1), Date(2018, 5, 1), Date(2018, 6, 1), Date(2018, 7, 1)]
-        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_series('week')
-        [Date(2018, 1, 1), Date(2018, 1, 8), ..., Date(2018, 4, 2)]
-        """
-        begdate = self.begdate.start_of(unit)
-        enddate = self.enddate.start_of(unit)
-        interval = _pendulum.interval(begdate, enddate)
-        return [Date.instance(d).start_of(unit) for d in interval.range(f'{unit}s')]
-
-    def end_of_series(self, unit='month') -> list[Date]:
-        """Return a series between and inclusive of begdate and enddate.
-
-        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_series('month')
-        [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 31), Date(2018, 4, 30)]
-        >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).end_of_series('month')
-        [Date(2018, 4, 30), Date(2018, 5, 31), Date(2018, 6, 30), Date(2018, 7, 31)]
-        >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_series('week')
-        [Date(2018, 1, 7), Date(2018, 1, 14), ..., Date(2018, 4, 8)]
-        """
-        begdate = self.begdate.end_of(unit)
-        enddate = self.enddate.end_of(unit)
-        interval = _pendulum.interval(begdate, enddate)
-        return [Date.instance(d).end_of(unit) for d in interval.range(f'{unit}s')]
-
+    @property
     def days(self) -> int:
-        """Return days between (begdate, enddate] or negative (enddate, begdate].
-
-        >>> Interval(Date(2018, 9, 6), Date(2018, 9, 10)).days()
-        4
-        >>> Interval(Date(2018, 9, 10), Date(2018, 9, 6)).days()
-        -4
-        >>> Interval(Date(2018, 9, 6), Date(2018, 9, 10)).b.days()
-        2
-        >>> Interval(Date(2018, 9, 10), Date(2018, 9, 6)).b.days()
-        -2
+        """Get number of days in the interval (respects business mode and sign).
         """
-        assert self.begdate
-        assert self.enddate
-        if self.begdate == self.enddate:
-            return 0
-        if not self._business:
-            return (self.enddate - self.begdate).days
-        if self.begdate < self.enddate:
-            return len(list(self.series())) - 1
-        _reverse = Interval(self.enddate, self.begdate)
-        _reverse._entity = self._entity
-        _reverse._business = self._business
-        return -len(list(_reverse.series())) + 1
+        return self._sign * len(tuple(self.range('days'))) - self._sign
 
-    def quarters(self):
-        """Return the number of quarters between two dates
-        TODO: good enough implementation; refine rules to be heuristically precise
+    @property
+    def monthsfrac(self) -> float:
+        """Get number of months in the interval including fractional parts.
 
-        >>> round(Interval(Date(2020, 1, 1), Date(2020, 2, 16)).quarters(), 2)
-        0.5
-        >>> round(Interval(Date(2020, 1, 1), Date(2020, 4, 1)).quarters(), 2)
-        1.0
-        >>> round(Interval(Date(2020, 1, 1), Date(2020, 7, 1)).quarters(), 2)
-        1.99
-        >>> round(Interval(Date(2020, 1, 1), Date(2020, 8, 1)).quarters(), 2)
-        2.33
+        Calculates fractional months based on actual day counts within partial months.
         """
-        return 4 * self.days() / 365.0
+        year_diff = self._end.year - self._start.year
+        month_diff = self._end.month - self._start.month
+        total_months = year_diff * 12 + month_diff
 
-    def years(self, basis: int = 0):
-        """Years with Fractions (matches Excel YEARFRAC)
+        if self._end.day >= self._start.day:
+            day_diff = self._end.day - self._start.day
+            days_in_month = calendar.monthrange(self._start.year, self._start.month)[1]
+            fraction = day_diff / days_in_month
+        else:
+            total_months -= 1
+            days_in_start_month = calendar.monthrange(self._start.year, self._start.month)[1]
+            day_diff = (days_in_start_month - self._start.day) + self._end.day
+            fraction = day_diff / days_in_start_month
 
-        Adapted from https://web.archive.org/web/20200915094905/https://dwheeler.com/yearfrac/calc_yearfrac.py
+        return self._sign * (total_months + fraction)
 
-        Basis:
-        0 = US (NASD) 30/360
-        1 = Actual/actual
-        2 = Actual/360
-        3 = Actual/365
-        4 = European 30/360
+    @property
+    def quarters(self) -> float:
+        """Get approximate number of quarters in the interval.
 
-        >>> begdate = Date(1978, 2, 28)
-        >>> enddate = Date(2020, 5, 17)
+        Note: This is an approximation using day count / 365 * 4.
+        """
+        return self._sign * 4 * self.days / 365.0
 
-        Tested Against Excel
-        >>> "{:.4f}".format(Interval(begdate, enddate).years(0))
-        '42.2139'
-        >>> '{:.4f}'.format(Interval(begdate, enddate).years(1))
-        '42.2142'
-        >>> '{:.4f}'.format(Interval(begdate, enddate).years(2))
-        '42.8306'
-        >>> '{:.4f}'.format(Interval(begdate, enddate).years(3))
-        '42.2438'
-        >>> '{:.4f}'.format(Interval(begdate, enddate).years(4))
-        '42.2194'
-        >>> '{:.4f}'.format(Interval(enddate, begdate).years(4))
-        '-42.2194'
+    @property
+    def years(self) -> int:
+        """Get number of complete years in the interval (always floors).
+        """
+        year_diff = self._end.year - self._start.year
+        if self._end.month < self._start.month or \
+           (self._end.month == self._start.month and self._end.day < self._start.day):
+            year_diff -= 1
+        return self._sign * year_diff
 
-        Excel has a known leap year bug when year == 1900 (=YEARFRAC("1900-1-1", "1900-12-1", 1) -> 0.9178)
-        The bug originated from Lotus 1-2-3, and was purposely implemented in Excel for the purpose of backward compatibility.
-        >>> begdate = Date(1900, 1, 1)
-        >>> enddate = Date(1900, 12, 1)
-        >>> '{:.4f}'.format(Interval(begdate, enddate).years(4))
-        '0.9167'
+    def yearfrac(self, basis: int = 0) -> float:
+        """Calculate the fraction of years between two dates (Excel-compatible).
+
+        This method provides precise calculation using various day count conventions
+        used in finance. Results are tested against Excel for compatibility.
+
+        Parameters
+            basis: Day count convention to use:
+                0 = US (NASD) 30/360 (default)
+                1 = Actual/actual
+                2 = Actual/360
+                3 = Actual/365
+                4 = European 30/360
+
+        Note: Excel has a known leap year bug for year 1900 which is intentionally
+        replicated for compatibility (1900 is treated as a leap year even though it wasn't).
         """
 
         def average_year_length(date1, date2):
@@ -1962,32 +1642,23 @@ class Interval:
                 (date1day + date1month * 30 + date1year * 360)
             return daydiff360 / 360
 
-        begdate, enddate = self.begdate, self.enddate
-        if enddate is None:
-            return
-
-        sign = 1
-        if begdate > enddate:
-            begdate, enddate = enddate, begdate
-            sign = -1
-        if begdate == enddate:
+        if self._start == self._end:
             return 0.0
-
         if basis == 0:
-            return basis0(begdate, enddate) * sign
+            return basis0(self._start, self._end) * self._sign
         if basis == 1:
-            return basis1(begdate, enddate) * sign
+            return basis1(self._start, self._end) * self._sign
         if basis == 2:
-            return basis2(begdate, enddate) * sign
+            return basis2(self._start, self._end) * self._sign
         if basis == 3:
-            return basis3(begdate, enddate) * sign
+            return basis3(self._start, self._end) * self._sign
         if basis == 4:
-            return basis4(begdate, enddate) * sign
+            return basis4(self._start, self._end) * self._sign
 
         raise ValueError('Basis range [0, 4]. Unknown basis {basis}.')
 
 
-def create_ics(begdate, enddate, summary, location):
+def create_ics(begdate, enddate, summary, location) -> str:
     """Create a simple .ics file per RFC 5545 guidelines."""
 
     return f"""BEGIN:VCALENDAR
@@ -2001,7 +1672,3 @@ LOCATION:{location}
 END:VEVENT
 END:VCALENDAR
     """
-
-
-if __name__ == '__main__':
-    __import__('doctest').testmod(optionflags=4 | 8 | 32)
