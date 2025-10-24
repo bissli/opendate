@@ -29,69 +29,69 @@ def test_business_resets():
 
 def test_months_complete():
     """Test months property with complete month intervals."""
-    assert Interval(Date(2020, 1, 1), Date(2020, 2, 1)).monthsfrac == 1.0
-    assert Interval(Date(2020, 1, 15), Date(2020, 2, 15)).monthsfrac == 1.0
-    assert Interval(Date(2020, 1, 1), Date(2021, 1, 1)).monthsfrac == 12.0
-    assert Interval(Date(2020, 1, 1), Date(2022, 1, 1)).monthsfrac == 24.0
+    assert Interval(Date(2020, 1, 1), Date(2020, 2, 1)).months == 1.0
+    assert Interval(Date(2020, 1, 15), Date(2020, 2, 15)).months == 1.0
+    assert Interval(Date(2020, 1, 1), Date(2021, 1, 1)).months == 12.0
+    assert Interval(Date(2020, 1, 1), Date(2022, 1, 1)).months == 24.0
 
 
 def test_months_fractional():
     """Test months property with fractional month intervals."""
-    result = Interval(Date(2020, 1, 15), Date(2020, 2, 14)).monthsfrac
+    result = Interval(Date(2020, 1, 15), Date(2020, 2, 14)).months
     assert round(result, 2) == 0.97
 
-    result = Interval(Date(2020, 1, 1), Date(2020, 1, 16)).monthsfrac
+    result = Interval(Date(2020, 1, 1), Date(2020, 1, 16)).months
     assert round(result, 2) == 0.48
 
-    result = Interval(Date(2020, 1, 10), Date(2020, 2, 20)).monthsfrac
+    result = Interval(Date(2020, 1, 10), Date(2020, 2, 20)).months
     assert round(result, 2) == 1.32
 
 
 def test_months_negative():
     """Test months property with negative intervals."""
-    assert Interval(Date(2021, 1, 1), Date(2020, 1, 1)).monthsfrac == -12.0
-    assert Interval(Date(2020, 2, 1), Date(2020, 1, 1)).monthsfrac == -1.0
+    assert Interval(Date(2021, 1, 1), Date(2020, 1, 1)).months == -12.0
+    assert Interval(Date(2020, 2, 1), Date(2020, 1, 1)).months == -1.0
 
-    result = Interval(Date(2020, 2, 14), Date(2020, 1, 15)).monthsfrac
+    result = Interval(Date(2020, 2, 14), Date(2020, 1, 15)).months
     assert round(result, 2) == -0.97
 
 
 def test_months_same_date():
     """Test months property when start and end dates are the same."""
-    assert Interval(Date(2020, 1, 1), Date(2020, 1, 1)).monthsfrac == 0.0
-    assert Interval(Date(2020, 6, 15), Date(2020, 6, 15)).monthsfrac == 0.0
+    assert Interval(Date(2020, 1, 1), Date(2020, 1, 1)).months == 0.0
+    assert Interval(Date(2020, 6, 15), Date(2020, 6, 15)).months == 0.0
 
 
 def test_months_leap_year():
     """Test months property with leap year dates."""
-    result = Interval(Date(2020, 2, 1), Date(2020, 3, 1)).monthsfrac
+    result = Interval(Date(2020, 2, 1), Date(2020, 3, 1)).months
     assert result == 1.0
 
-    result = Interval(Date(2020, 2, 15), Date(2020, 3, 15)).monthsfrac
+    result = Interval(Date(2020, 2, 15), Date(2020, 3, 15)).months
     assert result == 1.0
 
-    result = Interval(Date(2020, 2, 1), Date(2020, 2, 15)).monthsfrac
+    result = Interval(Date(2020, 2, 1), Date(2020, 2, 15)).months
     assert round(result, 2) == 0.48
 
 
 def test_months_month_boundaries():
     """Test months property at month boundaries."""
-    result = Interval(Date(2020, 1, 31), Date(2020, 2, 29)).monthsfrac
+    result = Interval(Date(2020, 1, 31), Date(2020, 2, 29)).months
     assert round(result, 2) == 0.94
 
-    result = Interval(Date(2020, 1, 31), Date(2020, 3, 31)).monthsfrac
+    result = Interval(Date(2020, 1, 31), Date(2020, 3, 31)).months
     assert result == 2.0
 
-    result = Interval(Date(2020, 3, 31), Date(2020, 4, 30)).monthsfrac
+    result = Interval(Date(2020, 3, 31), Date(2020, 4, 30)).months
     assert round(result, 2) == 0.97
 
 
 def test_months_cross_year():
     """Test months property across year boundaries."""
-    result = Interval(Date(2019, 11, 15), Date(2020, 2, 15)).monthsfrac
+    result = Interval(Date(2019, 11, 15), Date(2020, 2, 15)).months
     assert result == 3.0
 
-    result = Interval(Date(2019, 12, 20), Date(2020, 1, 10)).monthsfrac
+    result = Interval(Date(2019, 12, 20), Date(2020, 1, 10)).months
     assert round(result, 2) == 0.68
 
 

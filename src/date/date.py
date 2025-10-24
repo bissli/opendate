@@ -1503,9 +1503,10 @@ class Interval(_pendulum.Interval):
         return self._sign * len(tuple(self.range('days'))) - self._sign
 
     @property
-    def monthsfrac(self) -> float:
+    def months(self) -> float:
         """Get number of months in the interval including fractional parts.
 
+        Overrides pendulum's months property to return a float instead of an integer.
         Calculates fractional months based on actual day counts within partial months.
         """
         year_diff = self._end.year - self._start.year
