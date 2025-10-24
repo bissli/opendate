@@ -1,6 +1,3 @@
-
-from asserts import assert_equal, assert_false, assert_true
-
 from date import Date, DateTime
 
 
@@ -9,37 +6,37 @@ def test_date_business_date_or_next():
     d = Date(2018, 9, 1)\
         .business()\
         .add(days=0)
-    assert_equal(d, Date(2018, 9, 4))
+    assert d == Date(2018, 9, 4)
 
     # regular Saturday
     d = Date(2024, 3, 30)\
         .business()\
         .add(days=0)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
     d = Date(2024, 3, 30)\
         .subtract(days=1)\
         .business()\
         .add(days=1)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
     # regular Sunday
     d = Date(2024, 3, 31)\
         .business()\
         .add(days=0)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
     d = Date(2024, 3, 31)\
         .subtract(days=1)\
         .business()\
         .add(days=1)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
     # regular Monday
     d = Date(2024, 4, 1)\
         .business()\
         .add(days=0)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
 
 def test_date_business_date_or_previous():
@@ -50,31 +47,31 @@ def test_date_business_date_or_previous():
     d = Date(2024, 3, 30)\
         .business()\
         .subtract(days=0)
-    assert_equal(d, Date(2024, 3, 28))
+    assert d == Date(2024, 3, 28)
 
     d = Date(2024, 3, 30)\
         .add(days=1)\
         .business()\
         .subtract(days=1)
-    assert_equal(d, Date(2024, 3, 28))
+    assert d == Date(2024, 3, 28)
 
     # regular Sunday
     d = Date(2024, 3, 31)\
         .business()\
         .subtract(days=0)
-    assert_equal(d, Date(2024, 3, 28))
+    assert d == Date(2024, 3, 28)
 
     d = Date(2024, 3, 31)\
         .add(days=1)\
         .business()\
         .subtract(days=1)
-    assert_equal(d, Date(2024, 3, 28))
+    assert d == Date(2024, 3, 28)
 
     # regular Monday
     d = Date(2024, 4, 1)\
         .business()\
         .subtract(days=0)
-    assert_equal(d, Date(2024, 4, 1))
+    assert d == Date(2024, 4, 1)
 
 
 def test_datetime_is_business_day():
@@ -83,9 +80,9 @@ def test_datetime_is_business_day():
     """
 
     d = DateTime(2000, 1, 1, 12, 30)
-    assert_false(d.is_business_day())
-    assert_true(d.add(days=2).is_business_day())
-    assert_true(d.subtract(days=2).b.add(days=1).is_business_day())
+    assert not d.is_business_day()
+    assert d.add(days=2).is_business_day()
+    assert d.subtract(days=2).b.add(days=1).is_business_day()
 
 
 if __name__ == '__main__':
