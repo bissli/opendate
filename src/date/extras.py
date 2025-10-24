@@ -1,11 +1,22 @@
-from collections import namedtuple
+"""Legacy compatibility functions for OpenDate.
 
-from date import NYSE, DateTime, Entity
+This module contains functions that exist primarily for backward compatibility
+with older codebases. These functions provide alternative interfaces to
+functionality that may be available through other means in the core Date,
+DateTime, and Interval classes.
+
+New code should prefer using the built-in methods on Date, DateTime, and
+Interval objects where applicable.
+"""
+
+from date import NYSE, Date, DateTime, Entity, Interval
 
 __all__ = [
     'is_within_business_hours',
     'is_business_day',
     'overlap_days',
+    'start_of_range',
+    'end_of_range',
 ]
 
 
@@ -24,49 +35,48 @@ def is_business_day(entity: Entity = NYSE) -> bool:
     return DateTime.now(tz=entity.tz).entity(entity).is_business_day()
 
 
-Range = namedtuple('Range', ['start', 'end'])
+def overlap_days(
+    interval_one: Interval | tuple[Date | DateTime, Date | DateTime],
+    interval_two: Interval | tuple[Date | DateTime, Date | DateTime],
+    days: bool = False,
+) -> bool | int:
+    """Calculate how much two date intervals overlap.
 
-
-def overlap_days(range_one, range_two, days=False):
-    """Calculate how much two date ranges overlap.
-
-    When days=False, returns True/False indicating whether ranges overlap.
+    When days=False, returns True/False indicating whether intervals overlap.
     When days=True, returns the actual day count (negative if non-overlapping).
 
     Algorithm adapted from Raymond Hettinger: http://stackoverflow.com/a/9044111
     """
-    r1 = Range(*range_one)
-    r2 = Range(*range_two)
-    latest_start = max(r1.start, r2.start)
-    earliest_end = min(r1.end, r2.end)
+    if not isinstance(interval_one, Interval):
+        interval_one = Interval(*interval_one)
+    if not isinstance(interval_two, Interval):
+        interval_two = Interval(*interval_two)
+
+    latest_start = max(interval_one._start, interval_two._start)
+    earliest_end = min(interval_one._end, interval_two._end)
     overlap = (earliest_end - latest_start).days + 1
     if days:
         return overlap
     return overlap >= 0
 
 
-#  def start_of_range(self, unit='month') -> list[Date]:
-    #  """Return a series between and inclusive of begdate and enddate.
-
-    #  >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_range('month')
-    #  [Date(2018, 1, 1), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 1)]
-    #  >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).start_of_range('month')
-    #  [Date(2018, 4, 1), Date(2018, 5, 1), Date(2018, 6, 1), Date(2018, 7, 1)]
-    #  >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).start_of_range('week')
-    #  [Date(2018, 1, 1), Date(2018, 1, 8), ..., Date(2018, 4, 2)]
-    #  """
-    #  return [type(d).instance(d).start_of(unit) for d in self.range(f'{unit}s')]
-
-#  def end_of_range(self, unit='month') -> list[Date]:
-    #  """Return a series between and inclusive of begdate and enddate.
-
-    #  >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_range('month')
-    #  [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 31), Date(2018, 4, 30)]
-    #  >>> Interval(Date(2018, 4, 30), Date(2018, 7, 30)).end_of_range('month')
-    #  [Date(2018, 4, 30), Date(2018, 5, 31), Date(2018, 6, 30), Date(2018, 7, 31)]
-    #  >>> Interval(Date(2018, 1, 5), Date(2018, 4, 5)).end_of_range('week')
-    #  [Date(2018, 1, 7), Date(2018, 1, 14), ..., Date(2018, 4, 8)]
-    #  """
-    #  return [type(d).instance(d).end_of(unit) for d in self.range(f'{unit}s')]
+def start_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
+    """Return the start of each unit within the interval.
+    """
+    result = []
+    current = type(interval._start).instance(interval._start).start_of(unit)
+    while current <= interval._end:
+        result.append(current)
+        current = current.add(**{f'{unit}s': 1}).start_of(unit)
+    return result
 
 
+def end_of_range(interval: Interval, unit: str = 'month') -> list[Date | DateTime]:
+    """Return the end of each unit within the interval.
+    """
+    result = []
+    current = type(interval._start).instance(interval._start).start_of(unit)
+    while current <= interval._end:
+        result.append(current.end_of(unit))
+        current = current.add(**{f'{unit}s': 1}).start_of(unit)
+    return result
