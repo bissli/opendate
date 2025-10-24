@@ -382,15 +382,280 @@ def test_interval_start_end_with_datetime():
     from date import EST, DateTime
 
     interval = Interval(DateTime(2018, 1, 5, 10, 0, 0, tzinfo=EST),
-                       DateTime(2018, 3, 5, 15, 0, 0, tzinfo=EST))
-    
+                        DateTime(2018, 3, 5, 15, 0, 0, tzinfo=EST))
+
     start_result = interval.start_of('month')
     assert len(start_result) == 3
     assert all(isinstance(d, DateTime) for d in start_result)
-    
+
     end_result = interval.end_of('month')
     assert len(end_result) == 3
     assert all(isinstance(d, DateTime) for d in end_result)
+
+
+def test_interval_business_start_of_month():
+    """Test Interval.start_of('month') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    result = interval.b.start_of('month')
+    assert result == [Date(2018, 1, 2), Date(2018, 2, 1), Date(2018, 3, 1), Date(2018, 4, 2)]
+
+
+def test_interval_business_end_of_month():
+    """Test Interval.end_of('month') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    result = interval.b.end_of('month')
+    assert result == [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 29), Date(2018, 4, 30)]
+
+
+def test_interval_business_start_of_week():
+    """Test Interval.start_of('week') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
+    result = interval.b.start_of('week')
+    assert result == [Date(2018, 1, 2), Date(2018, 1, 8), Date(2018, 1, 16), Date(2018, 1, 22)]
+
+
+def test_interval_business_end_of_week():
+    """Test Interval.end_of('week') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
+    result = interval.b.end_of('week')
+    assert result == [Date(2018, 1, 5), Date(2018, 1, 12), Date(2018, 1, 19), Date(2018, 1, 26)]
+
+
+def test_interval_business_start_of_year():
+    """Test Interval.start_of('year') with business mode."""
+    interval = Interval(Date(2017, 6, 1), Date(2019, 6, 1))
+    result = interval.b.start_of('year')
+    assert result == [Date(2017, 1, 3), Date(2018, 1, 2), Date(2019, 1, 2)]
+
+
+def test_interval_business_end_of_year():
+    """Test Interval.end_of('year') with business mode."""
+    interval = Interval(Date(2017, 6, 1), Date(2019, 6, 1))
+    result = interval.b.end_of('year')
+    assert result == [Date(2017, 12, 29), Date(2018, 12, 31), Date(2019, 12, 31)]
+
+
+def test_interval_business_start_end_preserves_datetime_type():
+    """Test that business start_of and end_of preserve DateTime types."""
+    from date import EST, DateTime
+
+    interval = Interval(DateTime(2018, 1, 5, 10, 0, 0, tzinfo=EST),
+                        DateTime(2018, 3, 5, 15, 0, 0, tzinfo=EST))
+
+    start_result = interval.b.start_of('month')
+    assert len(start_result) == 3
+    assert all(isinstance(d, DateTime) for d in start_result)
+
+    end_result = interval.b.end_of('month')
+    assert len(end_result) == 3
+    assert all(isinstance(d, DateTime) for d in end_result)
+
+
+def test_interval_business_start_of_quarter():
+    """Test Interval.start_of('quarter') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 12, 31))
+    result = interval.b.start_of('quarter')
+    assert result == [Date(2018, 1, 2), Date(2018, 4, 2), Date(2018, 7, 2), Date(2018, 10, 1)]
+
+
+def test_interval_business_end_of_quarter():
+    """Test Interval.end_of('quarter') with business mode."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 12, 31))
+    result = interval.b.end_of('quarter')
+    assert result == [Date(2018, 3, 29), Date(2018, 6, 29), Date(2018, 9, 28), Date(2018, 12, 31)]
+
+
+def test_interval_business_mode_reset_after_start_of():
+    """Test that business mode is properly reset after start_of operation."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+
+    result = interval.b.start_of('month')
+
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+    assert len(result) == 4
+
+
+def test_interval_business_mode_reset_after_end_of():
+    """Test that business mode is properly reset after end_of operation."""
+    interval = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+
+    result = interval.b.end_of('month')
+
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+    assert len(result) == 4
+
+
+def test_interval_business_start_month_with_holiday_weekend():
+    """Test start_of('month') when month starts with holiday followed by weekend."""
+    interval = Interval(Date(2021, 12, 15), Date(2022, 1, 15))
+    result = interval.b.start_of('month')
+    assert result == [Date(2021, 12, 1), Date(2022, 1, 3)]
+
+
+def test_interval_business_end_month_with_holiday_weekend():
+    """Test end_of('month') when month ends with weekend followed by holiday."""
+    interval = Interval(Date(2020, 12, 15), Date(2021, 1, 15))
+    result = interval.b.end_of('month')
+    assert result == [Date(2020, 12, 31), Date(2021, 1, 29)]
+
+
+def test_interval_business_start_of_single_day_interval():
+    """Test start_of with a single-day business interval."""
+    date = Date(2018, 3, 15)
+    interval = Interval(date, date)
+    result = interval.b.start_of('month')
+    assert result == [Date(2018, 3, 1)]
+
+
+def test_interval_business_end_of_single_day_interval():
+    """Test end_of with a single-day business interval."""
+    date = Date(2018, 3, 15)
+    interval = Interval(date, date)
+    result = interval.b.end_of('month')
+    assert result == [Date(2018, 3, 29)]
+
+
+def test_interval_business_start_of_with_non_business_start():
+    """Test start_of when interval itself starts on non-business day."""
+    interval = Interval(Date(2018, 1, 1), Date(2018, 3, 31))
+    result = interval.b.start_of('month')
+    assert result == [Date(2018, 1, 2), Date(2018, 2, 1), Date(2018, 3, 1)]
+
+
+def test_interval_business_end_of_with_non_business_end():
+    """Test end_of when interval itself ends on non-business day."""
+    interval = Interval(Date(2018, 1, 1), Date(2018, 4, 1))
+    result = interval.b.end_of('month')
+    assert result == [Date(2018, 1, 31), Date(2018, 2, 28), Date(2018, 3, 29), Date(2018, 4, 30)]
+
+
+def test_interval_business_start_of_day():
+    """Test start_of('day') with business mode."""
+    interval = Interval(Date(2018, 1, 1), Date(2018, 1, 5))
+    result = interval.b.start_of('day')
+    assert result == [Date(2018, 1, 2), Date(2018, 1, 3), Date(2018, 1, 4), Date(2018, 1, 5)]
+
+
+def test_interval_business_end_of_day():
+    """Test end_of('day') with business mode."""
+    interval = Interval(Date(2018, 1, 1), Date(2018, 1, 5))
+    result = interval.b.end_of('day')
+    assert result == [Date(2018, 1, 2), Date(2018, 1, 3), Date(2018, 1, 4), Date(2018, 1, 5)]
+
+
+def test_interval_business_start_of_decade():
+    """Test start_of('decade') with business mode."""
+    interval = Interval(Date(2008, 6, 15), Date(2022, 6, 15))
+    result = interval.b.start_of('decade')
+    assert result == [Date(2000, 1, 3), Date(2010, 1, 4), Date(2020, 1, 2)]
+
+
+def test_interval_business_end_of_decade():
+    """Test end_of('decade') with business mode."""
+    interval = Interval(Date(2008, 6, 15), Date(2022, 6, 15))
+    result = interval.b.end_of('decade')
+    assert result == [Date(2009, 12, 31), Date(2019, 12, 31), Date(2029, 12, 31)]
+
+
+def test_interval_business_start_of_century():
+    """Test start_of('century') with business mode."""
+    interval = Interval(Date(2010, 6, 15), Date(2015, 6, 15))
+    result = interval.b.start_of('century')
+    assert result == [Date(2001, 1, 2)]
+
+
+def test_interval_business_end_of_century():
+    """Test end_of('century') with business mode."""
+    interval = Interval(Date(2010, 6, 15), Date(2015, 6, 15))
+    result = interval.b.end_of('century')
+    assert result == [Date(2100, 12, 31)]
+
+
+def test_interval_business_all_units_preserve_datetime_type():
+    """Test that all unit types preserve DateTime objects in business mode."""
+    from date import EST, DateTime
+
+    interval = Interval(DateTime(2018, 1, 1, 10, 0, 0, tzinfo=EST),
+                        DateTime(2018, 2, 1, 15, 0, 0, tzinfo=EST))
+
+    for unit in ['day', 'week', 'month', 'quarter', 'year']:
+        start_result = interval.b.start_of(unit)
+        assert all(isinstance(d, DateTime) for d in start_result)
+
+        end_result = interval.b.end_of(unit)
+        assert all(isinstance(d, DateTime) for d in end_result)
+
+
+def test_interval_range_resets_business_immediately():
+    """Test that range() resets business mode immediately when generator is created."""
+    interval = Interval(Date(2018, 9, 6), Date(2018, 9, 10))
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+
+    gen = interval.b.range('days')
+
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+
+    result = list(gen)
+    assert len(result) == 3
+
+
+def test_interval_range_generator_independent_of_later_operations():
+    """Test that range() generator works correctly even if other ops are called before consuming."""
+    interval = Interval(Date(2018, 9, 6), Date(2018, 9, 10))
+
+    gen = interval.b.range('days')
+
+    _ = interval.days
+
+    result = list(gen)
+    assert len(result) == 3
+    assert result == [Date(2018, 9, 6), Date(2018, 9, 7), Date(2018, 9, 10)]
+
+
+def test_interval_multiple_range_generators():
+    """Test that multiple range generators can be created and consumed independently."""
+    interval = Interval(Date(2018, 9, 6), Date(2018, 9, 10))
+
+    gen1 = interval.b.range('days')
+    gen2 = interval.range('days')
+
+    result2 = list(gen2)
+    result1 = list(gen1)
+
+    assert len(result1) == 3
+    assert len(result2) == 5
+    assert result1 == [Date(2018, 9, 6), Date(2018, 9, 7), Date(2018, 9, 10)]
+    assert result2 == [Date(2018, 9, 6), Date(2018, 9, 7), Date(2018, 9, 8),
+                       Date(2018, 9, 9), Date(2018, 9, 10)]
+
+
+def test_interval_range_non_days_unit_resets_business():
+    """Test that range() with non-days units also resets business mode."""
+    interval = Interval(Date(2018, 1, 1), Date(2018, 12, 31))
+    assert interval._business is False
+
+    gen = interval.b.range('months')
+
+    assert interval._business is False
+    assert interval._start._business is False
+    assert interval._end._business is False
+
+    result = list(gen)
+    assert len(result) == 12
 
 
 if __name__ == '__main__':

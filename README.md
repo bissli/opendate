@@ -203,6 +203,39 @@ quarter_starts = interval.start_of('quarter')
 year_starts = interval.start_of('year')
 # [2024-01-01]
 
+# Business day adjustments for period boundaries
+# When a period start/end falls on a non-business day, it's automatically adjusted
+interval_2018 = Interval(Date(2018, 1, 5), Date(2018, 4, 5))
+
+# Start of month - shifts forward to next business day if needed
+business_month_starts = interval_2018.b.start_of('month')
+# [2018-01-02, 2018-02-01, 2018-03-01, 2018-04-02]
+# Note: Jan 1 is holiday → Jan 2, Apr 1 is Sunday → Apr 2
+
+# End of month - shifts backward to previous business day if needed
+business_month_ends = interval_2018.b.end_of('month')
+# [2018-01-31, 2018-02-28, 2018-03-29, 2018-04-30]
+# Note: Mar 30 is Good Friday → Mar 29
+
+# Works for all time units
+interval_weeks = Interval(Date(2018, 1, 5), Date(2018, 1, 25))
+business_week_starts = interval_weeks.b.start_of('week')
+# [2018-01-02, 2018-01-08, 2018-01-16, 2018-01-22]
+# Note: Jan 1 (Mon) is holiday → Jan 2, Jan 15 (Mon) is MLK Day → Jan 16
+
+business_week_ends = interval_weeks.b.end_of('week')
+# [2018-01-05, 2018-01-12, 2018-01-19, 2018-01-26]
+# All Fridays (already business days)
+
+interval_years = Interval(Date(2017, 6, 1), Date(2019, 6, 1))
+business_year_starts = interval_years.b.start_of('year')
+# [2017-01-03, 2018-01-02, 2019-01-02]
+# Jan 1 falls on holidays/weekends → adjusted to first business day
+
+business_year_ends = interval_years.b.end_of('year')
+# [2017-12-29, 2018-12-31, 2019-12-31]
+# Dec 31 on weekends → adjusted to last business day before
+
 # Financial calculations (Excel-compatible)
 interval.yearfrac(0)             # US 30/360 basis (corporate bonds)
 interval.yearfrac(1)             # Actual/actual (Treasury bonds)
@@ -574,17 +607,36 @@ month_ends = interval.end_of('month')
 month_starts = interval.start_of('month')
 # [2024-01-01, 2024-02-01, ..., 2024-12-01]
 
+# Get business day month-ends (adjusts for weekends/holidays)
+business_month_ends = interval.b.end_of('month')
+# Automatically adjusts any month-end that falls on non-business day
+# to the previous business day
+
+# Get business day month-starts (adjusts for weekends/holidays)
+business_month_starts = interval.b.start_of('month')
+# Automatically adjusts any month-start that falls on non-business day
+# to the next business day
+
 # Works with other periods too
 quarter_ends = interval.end_of('quarter')
 # [2024-03-31, 2024-06-30, 2024-09-30, 2024-12-31]
 
+business_quarter_ends = interval.b.end_of('quarter')
+# Quarter-ends adjusted to business days
+
 week_starts = interval.start_of('week')
 # All Mondays in 2024
+
+business_week_starts = interval.b.start_of('week')
+# All week starts adjusted to business days (skips holidays on Mondays)
 
 # Partial year example
 partial = Interval(Date(2024, 3, 15), Date(2024, 7, 20))
 partial.end_of('month')
 # [2024-03-31, 2024-04-30, 2024-05-31, 2024-06-30, 2024-07-31]
+
+partial.b.end_of('month')
+# Same as above but adjusted for any non-business days
 ```
 
 ### Calculate Business Days Between Dates

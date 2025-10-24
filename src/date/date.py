@@ -204,6 +204,20 @@ def store_both(func=None, *, typ=None):
     return wrapper
 
 
+def reset_business(func):
+    """Decorator to reset business mode after function execution.
+    """
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            return func(self, *args, **kwargs)
+        finally:
+            self._business = False
+            self._start._business = False
+            self._end._business = False
+    return wrapper
+
+
 def prefer_utc_timezone(func, force:bool = False) -> Callable:
     """Return datetime as UTC.
     """
@@ -1437,12 +1451,59 @@ class Interval(_pendulum.Interval):
             self._start = enddate
             self._end = begdate
 
+    @staticmethod
+    def _get_quarter_start(date: Date | DateTime) -> Date | DateTime:
+        """Get the start date of the quarter containing the given date.
+        """
+        quarter_month = ((date.month - 1) // 3) * 3 + 1
+        return date.replace(month=quarter_month, day=1)
+
+    @staticmethod
+    def _get_quarter_end(date: Date | DateTime) -> Date | DateTime:
+        """Get the end date of the quarter containing the given date.
+        """
+        quarter_month = ((date.month - 1) // 3) * 3 + 3
+        return date.replace(month=quarter_month).end_of('month')
+
+    def _get_unit_handlers(self, unit: str) -> dict:
+        """Get handlers for the specified time unit.
+
+        Returns a dict with:
+            get_start: Function to get start of period containing date
+            get_end: Function to get end of period containing date
+            advance: Function to advance to next period start
+        """
+        if unit == 'quarter':
+            return {
+                'get_start': self._get_quarter_start,
+                'get_end': self._get_quarter_end,
+                'advance': lambda date: self._get_quarter_start(date.add(months=3)),
+            }
+
+        if unit == 'decade':
+            return {
+                'get_start': lambda date: date.start_of('decade'),
+                'get_end': lambda date: date.end_of('decade'),
+                'advance': lambda date: date.add(years=10).start_of('decade'),
+            }
+
+        if unit == 'century':
+            return {
+                'get_start': lambda date: date.start_of('century'),
+                'get_end': lambda date: date.end_of('century'),
+                'advance': lambda date: date.add(years=100).start_of('century'),
+            }
+
+        return {
+            'get_start': lambda date: date.start_of(unit),
+            'get_end': lambda date: date.end_of(unit),
+            'advance': lambda date: date.add(**{f'{unit}s': 1}).start_of(unit),
+        }
+
     def business(self) -> Self:
         self._business = True
-        if self._start:
-            self._start.business()
-        if self._end:
-            self._end.business()
+        self._start.business()
+        self._end.business()
         return self
 
     @property
@@ -1464,6 +1525,7 @@ class Interval(_pendulum.Interval):
         for thedate in self.range('days'):
             yield thedate.is_business_day()
 
+    @reset_business
     def range(self, unit: str = 'days', amount: int = 1) -> Iterator[DateTime | Date]:
         """Generate dates/datetimes over the interval.
 
@@ -1473,35 +1535,35 @@ class Interval(_pendulum.Interval):
 
         In business mode (for 'days' only), skips non-business days.
         """
-        # no business concept for units other than days
-        if unit != 'days':
-            yield from (type(d).instance(d) for d in super().range(unit, amount))
-            return
+        _business = self._business
+        parent_range = _pendulum.Interval.range
 
-        if self._sign == 1:
-            op = operator.le
-            this = self._start
-            thru = self._end
-        else:
-            op = operator.ge
-            this = self._end
-            thru = self._start
+        def _range_generator():
+            if unit != 'days':
+                yield from (type(d).instance(d) for d in parent_range(self, unit, amount))
+                return
 
-        while op(this, thru):
-            if self._business:
-                if this.is_business_day():
-                    yield this
+            if self._sign == 1:
+                op = operator.le
+                this = self._start
+                thru = self._end
             else:
-                yield this
-            this = this.add(days=self._sign * amount)
+                op = operator.ge
+                this = self._end
+                thru = self._start
 
-        self._business = False
-        if self._start:
-            self._start._business = False
-        if self._end:
-            self._end._business = False
+            while op(this, thru):
+                if _business:
+                    if this.is_business_day():
+                        yield this
+                else:
+                    yield this
+                this = this.add(days=self._sign * amount)
+
+        return _range_generator()
 
     @property
+    @reset_business
     def days(self) -> int:
         """Get number of days in the interval (respects business mode and sign).
         """
@@ -1663,6 +1725,7 @@ class Interval(_pendulum.Interval):
 
         raise ValueError('Basis range [0, 4]. Unknown basis {basis}.')
 
+    @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:
         """Return the start of each unit within the interval.
 
@@ -1671,14 +1734,27 @@ class Interval(_pendulum.Interval):
 
         Returns
             List of Date or DateTime objects representing start of each unit
+
+        In business mode, each start date is adjusted to the next business day
+        if it falls on a non-business day.
         """
+        handlers = self._get_unit_handlers(unit)
         result = []
-        current = self._start.start_of(unit)
+
+        current = handlers['get_start'](self._start)
+
+        if self._business:
+            current._entity = self._entity
+
         while current <= self._end:
+            if self._business:
+                current = current._business_or_next()
             result.append(current)
-            current = current.add(**{f'{unit}s': 1}).start_of(unit)
+            current = handlers['advance'](current)
+
         return result
 
+    @reset_business
     def end_of(self, unit: str = 'month') -> list[Date | DateTime]:
         """Return the end of each unit within the interval.
 
@@ -1687,12 +1763,27 @@ class Interval(_pendulum.Interval):
 
         Returns
             List of Date or DateTime objects representing end of each unit
+
+        In business mode, each end date is adjusted to the previous business day
+        if it falls on a non-business day.
         """
+        handlers = self._get_unit_handlers(unit)
         result = []
-        current = self._start.start_of(unit)
+
+        current = handlers['get_start'](self._start)
+
+        if self._business:
+            current._entity = self._entity
+
         while current <= self._end:
-            result.append(current.end_of(unit))
-            current = current.add(**{f'{unit}s': 1}).start_of(unit)
+            end_date = handlers['get_end'](current)
+
+            if self._business:
+                end_date = end_date._business_or_previous()
+            result.append(end_date)
+
+            current = handlers['advance'](current)
+
         return result
 
 
