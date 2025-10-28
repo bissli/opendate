@@ -2,8 +2,9 @@ from unittest.mock import patch
 
 import pytest
 
-from date import EST, NYSE, Date, DateTime, Interval
-from date.extras import is_business_day, is_within_business_hours, overlap_days
+from date import EST, NYSE, Date, DateTime
+from date.extras import create_ics, is_business_day, is_within_business_hours
+from date.extras import overlap_days
 
 
 def test_is_within_business_hours():
@@ -75,18 +76,16 @@ def test_is_business_day():
         assert is_business_day() is False
 
 
-def test_create_ics():
-    """Test create_ics function generates valid iCalendar format.
+def test_create_ics_with_datetime():
+    """Test create_ics with DateTime objects generates valid iCalendar format.
     """
-    from date.date import create_ics
-    
     begdate = DateTime(2024, 1, 15, 9, 30, 0, tzinfo=EST)
     enddate = DateTime(2024, 1, 15, 16, 0, 0, tzinfo=EST)
-    summary = "Test Meeting"
-    location = "Conference Room A"
-    
+    summary = 'Test Meeting'
+    location = 'Conference Room A'
+
     ics_content = create_ics(begdate, enddate, summary, location)
-    
+
     assert 'BEGIN:VCALENDAR' in ics_content
     assert 'VERSION:2.0' in ics_content
     assert 'BEGIN:VEVENT' in ics_content
@@ -96,6 +95,28 @@ def test_create_ics():
     assert 'DTEND;TZID=America/New_York:20240115T160000' in ics_content
     assert 'SUMMARY:Test Meeting' in ics_content
     assert 'LOCATION:Conference Room A' in ics_content
+
+
+def test_create_ics_with_date():
+    """Test create_ics with Date objects generates valid iCalendar format.
+    """
+
+    begdate = Date(2024, 1, 15)
+    enddate = Date(2024, 1, 15)
+    summary = 'All Day Event'
+    location = 'Virtual'
+
+    ics_content = create_ics(begdate, enddate, summary, location)
+
+    assert 'BEGIN:VCALENDAR' in ics_content
+    assert 'VERSION:2.0' in ics_content
+    assert 'BEGIN:VEVENT' in ics_content
+    assert 'END:VEVENT' in ics_content
+    assert 'END:VCALENDAR' in ics_content
+    assert 'DTSTART;TZID=America/New_York:20240115T000000' in ics_content
+    assert 'DTEND;TZID=America/New_York:20240115T000000' in ics_content
+    assert 'SUMMARY:All Day Event' in ics_content
+    assert 'LOCATION:Virtual' in ics_content
 
 
 if __name__ == '__main__':

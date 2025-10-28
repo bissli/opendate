@@ -1836,19 +1836,3 @@ class Interval(_pendulum.Interval):
             current = handlers['advance'](current)
 
         return result
-
-
-def create_ics(begdate, enddate, summary, location) -> str:
-    """Create a simple .ics file per RFC 5545 guidelines."""
-
-    return f"""BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//hacksw/handcal//NONSGML v1.0//EN
-BEGIN:VEVENT
-DTSTART;TZID=America/New_York:{begdate:%Y%m%dT%H%M%S}
-DTEND;TZID=America/New_York:{enddate:%Y%m%dT%H%M%S}
-SUMMARY:{summary}
-LOCATION:{location}
-END:VEVENT
-END:VCALENDAR
-    """

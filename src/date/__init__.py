@@ -32,6 +32,7 @@ from date.date import expect_utc_timezone
 from date.date import prefer_native_timezone
 from date.date import prefer_utc_timezone
 from date.date import Timezone
+from date.extras import create_ics 
 from date.extras import is_business_day
 from date.extras import is_within_business_hours
 from date.extras import overlap_days
@@ -153,4 +154,5 @@ __all__ = [
     'GMT',
     'UTC',
     'WEEKDAY_SHORTNAME',
+    'create_ics',
     ]
