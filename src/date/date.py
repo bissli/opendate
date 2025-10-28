@@ -40,6 +40,7 @@ __all__ = [
     'expect_date',
     'expect_datetime',
     'expect_time',
+    'expect_date_or_datetime',
     'Entity',
     'NYSE',
     'WEEKDAY_SHORTNAME',
@@ -113,17 +114,34 @@ def isdateish(x) -> bool:
 
 
 def parse_arg(typ, arg):
-    if isdateish(arg):
-        if typ == _datetime.datetime:
+    """Parse argument to specified type or 'smart' to preserve Date/DateTime.
+    """
+    if not isdateish(arg):
+        return arg
+
+    if typ == 'smart':
+        if isinstance(arg, Date | DateTime):
+            return arg
+        if isinstance(arg, _datetime.datetime | pd.Timestamp | np.datetime64):
             return DateTime.instance(arg)
-        if typ == _datetime.date:
+        if isinstance(arg, _datetime.date):
             return Date.instance(arg)
-        if typ == _datetime.time:
+        if isinstance(arg, _datetime.time):
             return Time.instance(arg)
+        return arg
+
+    if typ == _datetime.datetime:
+        return DateTime.instance(arg)
+    if typ == _datetime.date:
+        return Date.instance(arg)
+    if typ == _datetime.time:
+        return Time.instance(arg)
     return arg
 
 
 def parse_args(typ, *args):
+    """Parse args to specified type or 'smart' mode.
+    """
     this = []
     for a in args:
         if isinstance(a, Sequence) and not isinstance(a, str):
@@ -133,30 +151,31 @@ def parse_args(typ, *args):
     return this
 
 
-def expect(func, typ: type[_datetime.date], exclkw: bool = False) -> Callable:
-    """Decorator to force input type of date/datetime inputs
+def expect(func=None, *, typ: type[_datetime.date] | str = None, exclkw: bool = False) -> Callable:
+    """Decorator to force input type of date/datetime inputs.
+
+    typ can be _datetime.date, _datetime.datetime, _datetime.time, or 'smart'
     """
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        args = parse_args(typ, *args)
-        if not exclkw:
-            for k, v in kwargs.items():
-                if isdateish(v):
-                    if typ == _datetime.datetime:
-                        kwargs[k] = DateTime.instance(v)
-                        continue
-                    if typ == _datetime.date:
-                        kwargs[k] = Date.instance(v)
-                        continue
-                    if typ == _datetime.time:
-                        kwargs[k] = Time.instance(v)
-        return func(*args, **kwargs)
-    return wrapper
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            args = parse_args(typ, *args)
+            if not exclkw:
+                for k, v in kwargs.items():
+                    if isdateish(v):
+                        kwargs[k] = parse_arg(typ, v)
+            return func(*args, **kwargs)
+        return wrapper
+
+    if func is None:
+        return decorator
+    return decorator(func)
 
 
 expect_date = partial(expect, typ=_datetime.date)
 expect_datetime = partial(expect, typ=_datetime.datetime)
 expect_time = partial(expect, typ=_datetime.time)
+expect_date_or_datetime = partial(expect, typ='smart')
 
 
 def type_class(typ, obj):
@@ -215,6 +234,34 @@ def reset_business(func):
             self._business = False
             self._start._business = False
             self._end._business = False
+    return wrapper
+
+
+def normalize_date_datetime_pairs(func):
+    """Decorator to normalize mixed Date/DateTime pairs to DateTime.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if len(args) >= 3:
+            cls_or_self, begdate, enddate = args[0], args[1], args[2]
+            rest_args = args[3:]
+
+            tz = UTC
+            if isinstance(begdate, DateTime) and begdate.tzinfo:
+                tz = begdate.tzinfo
+            elif isinstance(enddate, DateTime) and enddate.tzinfo:
+                tz = enddate.tzinfo
+
+            if isinstance(begdate, Date) and not isinstance(begdate, DateTime):
+                if isinstance(enddate, DateTime):
+                    begdate = DateTime(begdate.year, begdate.month, begdate.day, tzinfo=tz)
+            elif isinstance(enddate, Date) and not isinstance(enddate, DateTime):
+                if isinstance(begdate, DateTime):
+                    enddate = DateTime(enddate.year, enddate.month, enddate.day, tzinfo=tz)
+
+            args = (cls_or_self, begdate, enddate) + rest_args
+
+        return func(*args, **kwargs)
     return wrapper
 
 
@@ -1436,11 +1483,15 @@ class Interval(_pendulum.Interval):
     _business: bool = False
     _entity: type[NYSE] = NYSE
 
+    @expect_date_or_datetime
+    @normalize_date_datetime_pairs
     def __new__(cls, begdate: Date | DateTime, enddate: Date | DateTime) -> Self:
         assert begdate and enddate, 'Interval dates cannot be None'
         instance = super().__new__(cls, begdate, enddate, False)
         return instance
 
+    @expect_date_or_datetime
+    @normalize_date_datetime_pairs
     def __init__(self, begdate: Date | DateTime, enddate: Date | DateTime) -> None:
         super().__init__(begdate, enddate, False)
         self._sign = 1 if begdate <= enddate else -1

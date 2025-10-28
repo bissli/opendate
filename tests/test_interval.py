@@ -658,5 +658,238 @@ def test_interval_range_non_days_unit_resets_business():
     assert len(result) == 12
 
 
+def test_interval_expect_date_or_datetime_with_date_objects():
+    """Test that Interval accepts datetime.date objects and converts them to Date."""
+    import datetime
+
+    d1 = datetime.date(2020, 1, 1)
+    d2 = datetime.date(2020, 1, 31)
+
+    interval = Interval(d1, d2)
+
+    assert isinstance(interval.start, Date)
+    assert isinstance(interval.end, Date)
+    assert interval.start == Date(2020, 1, 1)
+    assert interval.end == Date(2020, 1, 31)
+    assert interval.days == 30
+
+
+def test_interval_expect_date_or_datetime_with_datetime_objects():
+    """Test that Interval accepts datetime.datetime objects and converts them to DateTime."""
+    import datetime
+
+    from date import DateTime
+
+    dt1 = datetime.datetime(2020, 1, 1, 9, 30, 0)
+    dt2 = datetime.datetime(2020, 1, 1, 16, 0, 0)
+
+    interval = Interval(dt1, dt2)
+
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.year == 2020
+    assert interval.start.hour == 9
+    assert interval.end.hour == 16
+
+
+def test_interval_expect_date_or_datetime_preserves_date_type():
+    """Test that Date objects remain Date objects (not converted to DateTime)."""
+    from date import DateTime
+
+    d1 = Date(2020, 1, 1)
+    d2 = Date(2020, 1, 31)
+
+    interval = Interval(d1, d2)
+
+    assert type(interval.start).__name__ == 'Date'
+    assert type(interval.end).__name__ == 'Date'
+    assert not isinstance(interval.start, DateTime)
+
+
+def test_interval_expect_date_or_datetime_preserves_datetime_type():
+    """Test that DateTime objects remain DateTime objects."""
+    from date import UTC, DateTime
+
+    dt1 = DateTime(2020, 1, 1, 9, 30, 0, tzinfo=UTC)
+    dt2 = DateTime(2020, 1, 1, 16, 0, 0, tzinfo=UTC)
+
+    interval = Interval(dt1, dt2)
+
+    assert type(interval.start).__name__ == 'DateTime'
+    assert type(interval.end).__name__ == 'DateTime'
+    assert interval.start.tzinfo == UTC
+
+
+def test_interval_expect_date_or_datetime_with_pandas_timestamp():
+    """Test that Interval accepts pandas Timestamp and converts to DateTime."""
+    import pandas as pd
+
+    from date import DateTime
+
+    ts1 = pd.Timestamp('2020-01-01 09:30:00')
+    ts2 = pd.Timestamp('2020-01-01 16:00:00')
+
+    interval = Interval(ts1, ts2)
+
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.year == 2020
+    assert interval.start.hour == 9
+    assert interval.end.hour == 16
+
+
+def test_interval_expect_date_or_datetime_with_numpy_datetime64():
+    """Test that Interval accepts numpy datetime64 and converts to DateTime."""
+    import numpy as np
+
+    from date import DateTime
+
+    np1 = np.datetime64('2020-01-01T09:30:00')
+    np2 = np.datetime64('2020-01-01T16:00:00')
+
+    interval = Interval(np1, np2)
+
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.year == 2020
+    assert interval.start.hour == 9
+    assert interval.end.hour == 16
+
+
+def test_interval_expect_date_or_datetime_mixed_types():
+    """Test that Interval normalizes mixed Date and DateTime types to DateTime."""
+    import datetime
+    
+    from date import UTC, DateTime
+    
+    d = datetime.date(2020, 1, 1)
+    dt = datetime.datetime(2020, 1, 31, 16, 0, 0)
+    
+    interval = Interval(d, dt)
+    
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.year == 2020
+    assert interval.start.month == 1
+    assert interval.start.day == 1
+    assert interval.start.hour == 0
+    assert interval.end.year == 2020
+    assert interval.end.day == 31
+    assert interval.end.hour == 16
+    assert interval.start.tzinfo == UTC
+    assert interval.end.tzinfo == UTC
+
+
+def test_interval_expect_date_or_datetime_range_preserves_types():
+    """Test that range operations preserve the converted Date/DateTime types."""
+    import datetime
+
+    from date import DateTime
+
+    d1 = datetime.date(2020, 1, 1)
+    d2 = datetime.date(2020, 1, 5)
+
+    interval = Interval(d1, d2)
+    dates = list(interval.range('days'))
+
+    assert all(isinstance(d, Date) for d in dates)
+    assert len(dates) == 5
+
+    dt1 = datetime.datetime(2020, 1, 1, 9, 0, 0)
+    dt2 = datetime.datetime(2020, 1, 5, 9, 0, 0)
+
+    interval = Interval(dt1, dt2)
+    datetimes = list(interval.range('days'))
+
+    assert all(isinstance(dt, DateTime) for dt in datetimes)
+    assert len(datetimes) == 5
+
+
+def test_interval_expect_date_or_datetime_business_operations():
+    """Test that business operations work with converted types."""
+    import datetime
+
+    d1 = datetime.date(2018, 9, 6)
+    d2 = datetime.date(2018, 9, 10)
+
+    interval = Interval(d1, d2)
+
+    assert isinstance(interval.start, Date)
+    assert isinstance(interval.end, Date)
+
+    business_days = interval.b.days
+    assert business_days == 2
+
+    business_range = list(interval.b.range('days'))
+    assert all(isinstance(d, Date) for d in business_range)
+    assert len(business_range) == 3
+
+
+def test_interval_expect_date_or_datetime_with_timezone_aware_datetime():
+    """Test that timezone-aware datetime objects are properly handled."""
+    import datetime
+    
+    from date import EST, DateTime
+    
+    dt1 = datetime.datetime(2020, 1, 1, 9, 30, 0, tzinfo=EST)
+    dt2 = datetime.datetime(2020, 1, 1, 16, 0, 0, tzinfo=EST)
+    
+    interval = Interval(dt1, dt2)
+    
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.tzinfo == EST
+    assert interval.end.tzinfo == EST
+
+
+def test_interval_mixed_types_preserves_datetime_timezone():
+    """Test that when mixing Date and DateTime, the DateTime's timezone is preserved."""
+    import datetime
+    
+    from date import EST, DateTime
+    
+    d = datetime.date(2020, 1, 1)
+    dt = datetime.datetime(2020, 1, 31, 16, 0, 0, tzinfo=EST)
+    
+    interval = Interval(d, dt)
+    
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.tzinfo == EST
+    assert interval.end.tzinfo == EST
+    
+    interval = Interval(dt, d)
+    
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.tzinfo == EST
+    assert interval.end.tzinfo == EST
+
+
+def test_interval_expect_date_or_datetime_yearfrac_with_date():
+    """Test that yearfrac works correctly with converted date objects."""
+    import datetime
+
+    d1 = datetime.date(1978, 2, 28)
+    d2 = datetime.date(2020, 5, 17)
+
+    interval = Interval(d1, d2)
+
+    result = interval.yearfrac(0)
+    assert round(result, 4) == 42.2139
+
+
+def test_interval_expect_date_or_datetime_months_property():
+    """Test that months property works with converted date objects."""
+    import datetime
+
+    d1 = datetime.date(2020, 1, 1)
+    d2 = datetime.date(2020, 2, 1)
+
+    interval = Interval(d1, d2)
+
+    assert interval.months == 1.0
+
+
 if __name__ == '__main__':
     __import__('pytest').main([__file__])

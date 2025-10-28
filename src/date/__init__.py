@@ -26,6 +26,7 @@ from date.date import WEEKDAY_SHORTNAME
 from date.date import expect_date
 from date.date import expect_datetime
 from date.date import expect_time
+from date.date import expect_date_or_datetime
 from date.date import expect_native_timezone
 from date.date import expect_utc_timezone
 from date.date import prefer_native_timezone
@@ -128,6 +129,7 @@ __all__ = [
     'expect_date',
     'expect_datetime',
     'expect_time',
+    'expect_date_or_datetime',
     'expect_native_timezone',
     'expect_utc_timezone',
     'instance',
