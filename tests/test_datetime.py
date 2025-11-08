@@ -458,5 +458,60 @@ def test_datetime_date_extraction():
     assert d == Date(2023, 12, 31)
 
 
+def test_datetime_instance_with_pandas_nat():
+    """Test DateTime.instance correctly handles pandas NaT (Not-a-Time)."""
+    # Test with raise_err=False (default)
+    result = DateTime.instance(pd.NaT)
+    assert result is None
+
+    # Test with raise_err=True
+    with pytest.raises(ValueError, match='Empty value'):
+        DateTime.instance(pd.NaT, raise_err=True)
+
+
+def test_datetime_instance_with_numpy_nat():
+    """Test DateTime.instance correctly handles numpy datetime64 NaT."""
+    # Test with raise_err=False (default)
+    result = DateTime.instance(np.datetime64('NaT'))
+    assert result is None
+
+    # Test with raise_err=True
+    with pytest.raises(ValueError, match='Empty value'):
+        DateTime.instance(np.datetime64('NaT'), raise_err=True)
+
+
+def test_datetime_instance_with_pandas_timestamp_timezones():
+    """Test DateTime.instance preserves timezone from pandas Timestamp."""
+    ts_utc = pd.Timestamp('2022-01-01 12:00:00', tz='UTC')
+    dt = DateTime.instance(ts_utc)
+    assert dt.tzinfo == UTC
+
+    ts_est = pd.Timestamp('2022-01-01 12:00:00', tz='US/Eastern')
+    dt = DateTime.instance(ts_est)
+    assert hasattr(dt.tzinfo, 'zone') or hasattr(dt.tzinfo, 'key')
+    tz_name = dt.tzinfo.zone if hasattr(dt.tzinfo, 'zone') else dt.tzinfo.key
+    assert tz_name in {'US/Eastern', 'America/New_York'}
+
+
+def test_datetime_instance_with_numpy_datetime64_various_formats():
+    """Test DateTime.instance with various numpy datetime64 formats."""
+    # Date only (should add UTC timezone)
+    dt1 = DateTime.instance(np.datetime64('2022-01-15'))
+    assert dt1.year == 2022
+    assert dt1.month == 1
+    assert dt1.day == 15
+    assert dt1.tzinfo == UTC
+
+    # With time
+    dt2 = DateTime.instance(np.datetime64('2022-01-15T14:30:45'))
+    assert dt2.hour == 14
+    assert dt2.minute == 30
+    assert dt2.second == 45
+
+    # Microseconds
+    dt3 = DateTime.instance(np.datetime64('2022-01-15T14:30:45.123456'))
+    assert dt3.microsecond == 123456
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

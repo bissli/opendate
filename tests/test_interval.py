@@ -575,6 +575,7 @@ def test_interval_business_end_of_century():
     """Test end_of('century') with business mode."""
     interval = Interval(Date(2010, 6, 15), Date(2015, 6, 15))
     result = interval.b.end_of('century')
+    # Note: 2100-12-31 is a Friday, so it's a valid business day
     assert result == [Date(2100, 12, 31)]
 
 
@@ -733,6 +734,30 @@ def test_interval_expect_date_or_datetime_with_numpy_datetime64():
     assert interval.end.hour == 16
 
 
+def test_interval_with_pandas_nat_raises_assertion():
+    """Test that Interval correctly rejects pandas NaT values."""
+    ts1 = pd.Timestamp('2020-01-01 09:30:00')
+    
+    # NaT should be rejected (converted to None, then assertion fails)
+    with pytest.raises(AssertionError, match='Interval dates cannot be None'):
+        Interval(pd.NaT, ts1)
+    
+    with pytest.raises(AssertionError, match='Interval dates cannot be None'):
+        Interval(ts1, pd.NaT)
+
+
+def test_interval_with_numpy_nat_raises_assertion():
+    """Test that Interval correctly rejects numpy datetime64 NaT values."""
+    np1 = np.datetime64('2020-01-01T09:30:00')
+    
+    # NaT should be rejected (converted to None, then assertion fails)
+    with pytest.raises(AssertionError, match='Interval dates cannot be None'):
+        Interval(np.datetime64('NaT'), np1)
+    
+    with pytest.raises(AssertionError, match='Interval dates cannot be None'):
+        Interval(np1, np.datetime64('NaT'))
+
+
 def test_interval_expect_date_or_datetime_mixed_types():
     """Test that Interval normalizes mixed Date and DateTime types to DateTime."""
     d = datetime.date(2020, 1, 1)
@@ -844,6 +869,40 @@ def test_interval_expect_date_or_datetime_months_property():
     interval = Interval(d1, d2)
 
     assert interval.months == 1.0
+
+
+def test_interval_init_decorator_chain():
+    """Test that decorators on __init__ properly convert and normalize arguments.
+    
+    This test validates the optimization where decorators were moved from __new__
+    to __init__ to avoid double-processing. It ensures:
+    1. expect_date_or_datetime converts various date-like objects
+    2. normalize_date_datetime_pairs handles mixed Date/DateTime inputs
+    3. The decorator chain executes in correct order
+    """
+    d_date = datetime.date(2020, 1, 1)
+    d_datetime = datetime.datetime(2020, 1, 31, 16, 0, 0, tzinfo=EST)
+    
+    interval = Interval(d_date, d_datetime)
+    
+    assert isinstance(interval.start, DateTime)
+    assert isinstance(interval.end, DateTime)
+    assert interval.start.tzinfo == EST
+    assert interval.end.tzinfo == EST
+    assert interval.start.hour == 0
+    assert interval.end.hour == 16
+    
+    pd_timestamp = pd.Timestamp('2020-02-01 09:30:00')
+    np_datetime = np.datetime64('2020-02-15T16:00:00')
+    
+    interval2 = Interval(pd_timestamp, np_datetime)
+    
+    assert isinstance(interval2.start, DateTime)
+    assert isinstance(interval2.end, DateTime)
+    assert interval2.start.year == 2020
+    assert interval2.start.month == 2
+    assert interval2.start.day == 1
+    assert interval2.end.day == 15
 
 
 if __name__ == '__main__':

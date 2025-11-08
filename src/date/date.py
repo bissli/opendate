@@ -335,23 +335,70 @@ class NYSE(Entity):
 
     This entity is used as the default for business day calculations
     throughout the library.
+
+    Note: First call to business day methods loads NYSE calendar data
+          (~200ms for default 50-year range). Subsequent calls are cached
+          and very fast (~0.01ms). Additional ranges can be loaded on-demand
+          by calling business_days(begdate, enddate) explicitly.
     """
 
-    BEGDATE = _datetime.date(1900, 1, 1)
-    ENDDATE = _datetime.date(2200, 1, 1)
+    BEGDATE = _datetime.date(2000, 1, 1)
+    ENDDATE = _datetime.date(2050, 1, 1)
     calendar = mcal.get_calendar('NYSE')
 
     tz = EST
 
     @staticmethod
-    @lru_cache
-    def business_days(begdate=BEGDATE, enddate=ENDDATE) -> set:
+    def business_days(begdate=None, enddate=None) -> set:
+        """Get business days for a date range (loads and caches by decade).
+
+        Parameters
+            begdate: Start date (defaults to 2000-01-01)
+            enddate: End date (defaults to 2050-01-01)
+
+        Returns
+            Set of Date objects representing business days
+
+        Note: Calendar data is loaded and cached in decade chunks for efficiency.
+              Requesting specific date ranges will load additional decades as needed.
+        """
+        if begdate is None:
+            begdate = NYSE.BEGDATE
+        if enddate is None:
+            enddate = NYSE.ENDDATE
+
+        decade_start = _datetime.date(begdate.year // 10 * 10, 1, 1)
+        decade_end = _datetime.date((enddate.year // 10 + 1) * 10, 1, 1)
+
+        return NYSE._get_business_days_cached(decade_start, decade_end)
+
+    @staticmethod
+    @lru_cache(maxsize=32)
+    def _get_business_days_cached(begdate: _datetime.date, enddate: _datetime.date) -> set:
+        """Internal method to load and cache business days by decade.
+
+        Cache size of 32 allows ~320 years of cached data.
+        """
         return {Date.instance(d.date())
                 for d in NYSE.calendar.valid_days(begdate, enddate)}
 
     @staticmethod
     @lru_cache
-    def business_hours(begdate=BEGDATE, enddate=ENDDATE) -> dict:
+    def business_hours(begdate=None, enddate=None) -> dict:
+        """Get market hours for a date range.
+
+        Parameters
+            begdate: Start date (defaults to 2000-01-01)
+            enddate: End date (defaults to 2050-01-01)
+
+        Returns
+            Dict mapping dates to (open_time, close_time) tuples
+        """
+        if begdate is None:
+            begdate = NYSE.BEGDATE
+        if enddate is None:
+            enddate = NYSE.ENDDATE
+
         df = NYSE.calendar.schedule(begdate, enddate, tz=EST)
         open_close = [(DateTime.instance(o.to_pydatetime()),
                        DateTime.instance(c.to_pydatetime()))
@@ -360,7 +407,21 @@ class NYSE(Entity):
 
     @staticmethod
     @lru_cache
-    def business_holidays(begdate=BEGDATE, enddate=ENDDATE) -> set:
+    def business_holidays(begdate=None, enddate=None) -> set:
+        """Get business holidays for a date range.
+
+        Parameters
+            begdate: Start date (defaults to 2000-01-01)
+            enddate: End date (defaults to 2050-01-01)
+
+        Returns
+            Set of Date objects representing holidays
+        """
+        if begdate is None:
+            begdate = NYSE.BEGDATE
+        if enddate is None:
+            enddate = NYSE.ENDDATE
+
         return {Date.instance(d.date())
                 for d in map(pd.to_datetime, NYSE.calendar.holidays().holidays)
                 if begdate <= d.date() <= enddate}
@@ -543,7 +604,8 @@ class DateBusinessMixin:
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the entity calendar.
         """
-        return self in self._entity.business_days()
+        business_days = self._entity.business_days(self, self)
+        return self in business_days
 
     @expect_date
     def business_hours(self) -> 'tuple[DateTime, DateTime]':
@@ -894,16 +956,23 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         if 'yester' in s.lower():
             return cls.today().subtract(days=1)
 
+        # Try ISO format first (most common in data)
+        if m := re.match(r'^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$', s):
+            mm = int(m.group('m'))
+            dd = int(m.group('d'))
+            yy = year(m)
+            return cls(yy, mm, dd)
+
+        # Try dateutil.parser for common formats
         with contextlib.suppress(TypeError, ValueError):
             return cls.instance(_dateutil.parser.parse(s))
 
-        # Regex with Month Numbers
+        # Regex with Month Numbers (ordered by frequency)
         exps = (
             r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{4})$',
+            r'^(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})$',
             r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{1,2})$',
             r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})$',
-            r'^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$',
-            r'^(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})$',
         )
         for exp in exps:
             if m := re.match(exp, s):
@@ -964,11 +1033,16 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
                 raise ValueError('Empty value')
             return
 
-        if obj.__class__ == cls:
+        if type(obj) is cls:
             return obj
 
-        if isinstance(obj, np.datetime64 | pd.Timestamp):
-            obj = DateTime.instance(obj)
+        if isinstance(obj, pd.Timestamp):
+            obj = obj.to_pydatetime()
+            return cls(obj.year, obj.month, obj.day)
+        
+        if isinstance(obj, np.datetime64):
+            obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
+            return cls(obj.year, obj.month, obj.day)
 
         return cls(obj.year, obj.month, obj.day)
 
@@ -1141,7 +1215,7 @@ class Time(_pendulum.Time):
                 raise ValueError('Empty value')
             return
 
-        if obj.__class__ == cls and not tz:
+        if type(obj) is cls and not tz:
             return obj
 
         tz = tz or obj.tzinfo or UTC
@@ -1440,25 +1514,38 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 raise ValueError('Empty value')
             return
 
-        if obj.__class__ == cls and not tz:
+        if type(obj) is cls and not tz:
             return obj
 
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
-            return cls.instance(obj, tz=tz or UTC)
+            tz = tz or obj.tzinfo or UTC
+            if tz is _datetime.timezone.utc:
+                tz = UTC
+            elif hasattr(tz, 'zone'):
+                tz = Timezone(tz.zone)
+            elif isinstance(tz, str):
+                tz = Timezone(tz)
+            return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
+                       obj.second, obj.microsecond, tzinfo=tz)
+        
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
-            return cls.instance(obj, tz=tz or UTC)
+            tz = tz or UTC
+            return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
+                       obj.second, obj.microsecond, tzinfo=tz)
 
-        if obj.__class__ == Date:
+        if type(obj) is Date:
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
+        
         if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
 
         tz = tz or obj.tzinfo or UTC
 
-        if obj.__class__ == Time:
+        if type(obj) is Time:
             return cls.combine(Date.today(), obj, tzinfo=tz)
+        
         if isinstance(obj, _datetime.time):
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
@@ -1618,6 +1705,8 @@ class Interval(_pendulum.Interval):
     def days(self) -> int:
         """Get number of days in the interval (respects business mode and sign).
         """
+        if not self._business:
+            return self._sign * (self._end - self._start).days
         return self._sign * len(tuple(self.range('days'))) - self._sign
 
     @property

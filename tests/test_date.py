@@ -2,6 +2,7 @@ import copy
 import datetime
 import pickle
 
+import numpy as np
 import pandas as pd
 import pendulum
 import pytest
@@ -664,6 +665,54 @@ def test_date_farthest():
     d2 = Date(2022, 6, 5)
     result = d.farthest(d1, d2)
     assert result == d2
+
+
+def test_date_instance_with_pandas_nat():
+    """Test Date.instance correctly handles pandas NaT (Not-a-Time)."""
+    # Test with raise_err=False (default)
+    result = Date.instance(pd.NaT)
+    assert result is None
+
+    # Test with raise_err=True
+    with pytest.raises(ValueError, match='Empty value'):
+        Date.instance(pd.NaT, raise_err=True)
+
+
+def test_date_instance_with_numpy_nat():
+    """Test Date.instance correctly handles numpy datetime64 NaT."""
+    # Test with raise_err=False (default)
+    result = Date.instance(np.datetime64('NaT'))
+    assert result is None
+
+    # Test with raise_err=True
+    with pytest.raises(ValueError, match='Empty value'):
+        Date.instance(np.datetime64('NaT'), raise_err=True)
+
+
+def test_date_instance_with_pandas_timestamp_valid_dates():
+    """Test Date.instance with various valid pandas Timestamps."""
+    # Test with different date formats
+    ts1 = pd.Timestamp('2022-06-15')
+    assert Date.instance(ts1) == Date(2022, 6, 15)
+
+    ts2 = pd.Timestamp('2022-12-31 23:59:59')
+    assert Date.instance(ts2) == Date(2022, 12, 31)
+
+    ts3 = pd.Timestamp('2020-02-29')  # Leap year
+    assert Date.instance(ts3) == Date(2020, 2, 29)
+
+
+def test_date_instance_with_numpy_datetime64_valid_dates():
+    """Test Date.instance with various valid numpy datetime64 objects."""
+    # Test with different formats
+    dt1 = np.datetime64('2022-06-15')
+    assert Date.instance(dt1) == Date(2022, 6, 15)
+
+    dt2 = np.datetime64('2022-12-31T23:59:59')
+    assert Date.instance(dt2) == Date(2022, 12, 31)
+
+    dt3 = np.datetime64('2020-02-29')  # Leap year
+    assert Date.instance(dt3) == Date(2020, 2, 29)
 
 
 if __name__ == '__main__':
