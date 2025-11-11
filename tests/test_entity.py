@@ -57,5 +57,16 @@ def test_nyse_timezone():
     assert NYSE.tz == EST
 
 
+def test_nyse_business_days_with_max_date():
+    """Test NYSE.business_days handles dates near datetime.MAXYEAR without overflow.
+    """
+    begdate = Date(9999, 1, 1)
+    enddate = Date(9999, 12, 31)
+
+    business_days = NYSE.business_days(begdate, enddate)
+    assert isinstance(business_days, set)
+    assert all(isinstance(d, Date) for d in business_days)
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

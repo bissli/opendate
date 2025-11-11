@@ -361,14 +361,25 @@ class NYSE(Entity):
 
         Note: Calendar data is loaded and cached in decade chunks for efficiency.
               Requesting specific date ranges will load additional decades as needed.
+              Queries for dates beyond year 2100 return an empty set to avoid
+              pandas timestamp overflow and NYSE calendar data limitations.
         """
         if begdate is None:
             begdate = NYSE.BEGDATE
         if enddate is None:
             enddate = NYSE.ENDDATE
 
+        max_year = 2100
+        
+        if begdate.year > max_year:
+            return set()
+
         decade_start = _datetime.date(begdate.year // 10 * 10, 1, 1)
-        decade_end = _datetime.date((enddate.year // 10 + 1) * 10, 1, 1)
+        next_decade_year = (enddate.year // 10 + 1) * 10
+        if next_decade_year > max_year:
+            decade_end = _datetime.date(max_year, 12, 31)
+        else:
+            decade_end = _datetime.date(next_decade_year, 1, 1)
 
         return NYSE._get_business_days_cached(decade_start, decade_end)
 
