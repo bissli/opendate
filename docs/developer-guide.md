@@ -110,15 +110,19 @@ make build
 maturin develop --release
 ```
 
-### Production Build
+### Local Wheel Build (for testing)
 
 ```bash
-# Build a wheel for your current platform
+# Build a wheel for your current platform only
 maturin build --release
 
 # Wheel is created in rust/target/wheels/
 ls rust/target/wheels/
 ```
+
+> **Note:** For releases, GitHub Actions automatically builds wheels for all platforms
+> (Linux, macOS, Windows) and Python versions (3.9-3.13). Do not manually upload
+> wheels to PyPI—use the release process below instead.
 
 ### Clean Build Artifacts
 
