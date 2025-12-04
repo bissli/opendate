@@ -703,7 +703,7 @@ class DateBusinessMixin:
         return self in business_days
 
     @expect_date
-    def business_hours(self) -> 'tuple[DateTime, DateTime]':
+    def business_hours(self) -> tuple[DateTime, DateTime]:
         """Get market open and close times for this date.
 
         Returns (None, None) if not a business day.

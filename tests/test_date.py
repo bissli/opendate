@@ -8,6 +8,7 @@ import pendulum
 import pytest
 
 from date import NYSE, WEEKDAY_SHORTNAME, Date, WeekDay, expect_date
+import pathlib
 
 
 def test_end_of_week():
@@ -369,9 +370,9 @@ def test_pickle(tmp_path):
     d = Date(2022, 1, 1)
 
     pickle_file = tmp_path / 'date.pkl'
-    with open(pickle_file, 'wb') as f:
+    with pathlib.Path(pickle_file).open('wb') as f:
         pickle.dump(d, f)
-    with open(pickle_file, 'rb') as f:
+    with pathlib.Path(pickle_file).open('rb') as f:
         d_ = pickle.load(f)
 
     assert d == d_
@@ -413,7 +414,6 @@ def test_lookback():
     # Test with business lookback
     assert test_date.b.lookback('last') == Date(2018, 12, 6)
     assert test_date.b.lookback('month') == Date(2018, 11, 7)
-
 
 
 def test_third_wednesday():
@@ -603,32 +603,32 @@ def test_date_today():
 def test_date_to_string():
     """Test the to_string method with various format strings."""
     d = Date(2022, 1, 15)
-    
+
     assert d.to_string('%Y-%m-%d') == '2022-01-15'
     assert d.to_string('%m/%d/%Y') == '01/15/2022'
     assert d.to_string('%B %d, %Y') == 'January 15, 2022'
     assert d.to_string('%d-%b-%Y') == '15-Jan-2022'
-    
+
     # Test platform-specific format (%-d on Unix, %#d on Windows)
     result = d.to_string('%-d')
-    assert result in ('15', '%#d')  # Handles both platforms
+    assert result in {'15', '%#d'}  # Handles both platforms
 
 
 def test_date_replace():
     """Test the replace method preserves Date type and entity."""
     d = Date(2022, 1, 15).entity(NYSE)
-    
+
     result = d.replace(year=2023)
     assert result == Date(2023, 1, 15)
     assert isinstance(result, Date)
     assert result._entity == NYSE
-    
+
     result = d.replace(month=6)
     assert result == Date(2022, 6, 15)
-    
+
     result = d.replace(day=1)
     assert result == Date(2022, 1, 1)
-    
+
     result = d.replace(year=2024, month=12, day=31)
     assert result == Date(2024, 12, 31)
 
@@ -636,14 +636,14 @@ def test_date_replace():
 def test_date_closest():
     """Test the closest method returns the closest of two dates."""
     d = Date(2022, 6, 15)
-    
+
     d1 = Date(2022, 6, 10)
     d2 = Date(2022, 6, 25)
-    
+
     result = d.closest(d1, d2)
     assert result == d1
     assert isinstance(result, Date)
-    
+
     d1 = Date(2022, 6, 18)
     d2 = Date(2022, 6, 10)
     result = d.closest(d1, d2)
@@ -653,14 +653,14 @@ def test_date_closest():
 def test_date_farthest():
     """Test the farthest method returns the farthest of two dates."""
     d = Date(2022, 6, 15)
-    
+
     d1 = Date(2022, 6, 10)
     d2 = Date(2022, 6, 25)
-    
+
     result = d.farthest(d1, d2)
     assert result == d2
     assert isinstance(result, Date)
-    
+
     d1 = Date(2022, 6, 20)
     d2 = Date(2022, 6, 5)
     result = d.farthest(d1, d2)

@@ -10,6 +10,7 @@ import pytest
 from pendulum.tz import Timezone
 
 from date import EST, NYSE, UTC, Date, DateTime, Time, expect_datetime, now
+import pathlib
 
 
 def test_add():
@@ -107,9 +108,9 @@ def test_pickle(tmp_path):
     d = DateTime(2022, 1, 1, 12, 30, tzinfo=UTC)
 
     pickle_file = tmp_path / 'datetime.pkl'
-    with open(pickle_file, 'wb') as f:
+    with pathlib.Path(pickle_file).open('wb') as f:
         pickle.dump(d, f)
-    with open(pickle_file, 'rb') as f:
+    with pathlib.Path(pickle_file).open('rb') as f:
         d_ = pickle.load(f)
 
     assert d == d_

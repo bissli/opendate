@@ -1,7 +1,7 @@
 import pendulum
 import pytest
 
-from date import LCL, UTC, Date, DateTime, Time
+from date import UTC, Date, DateTime, Time
 
 
 def test_time_constructor():
@@ -9,7 +9,7 @@ def test_time_constructor():
     """
     T = Time()
     assert T == pendulum.Time()
-    assert type(T) == Time
+    assert isinstance(T, Time)
 
 
 def test_datetime_to_time():
@@ -38,11 +38,11 @@ def test_time_instance_basic():
     """Test Time.instance with various input types.
     """
     import datetime
-    
+
     assert Time.instance(datetime.time(12, 30, 1)) == Time(12, 30, 1, tzinfo=UTC)
     assert Time.instance(pendulum.Time(12, 30, 1)) == Time(12, 30, 1, tzinfo=UTC)
     assert Time.instance(None) is None
-    
+
     result = Time.instance(Time(12, 30, 1))
     assert result == Time(12, 30, 1)
     assert result.tzinfo is None
@@ -52,12 +52,12 @@ def test_time_in_timezone():
     """Test timezone conversion for Time objects.
     """
     from date import Timezone
-    
+
     result = Time(12, 0).in_timezone(Timezone('America/Sao_Paulo'))
     assert result.hour == 9
     assert result.minute == 0
     assert result.second == 0
-    
+
     result = Time(12, 0, tzinfo=Timezone('Europe/Moscow')).in_timezone(Timezone('America/Sao_Paulo'))
     assert result.hour == 6
     assert result.minute == 0
