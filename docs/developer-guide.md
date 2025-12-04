@@ -209,7 +209,6 @@ opendate/
 ├── Makefile                # Development shortcuts
 ├── rust/
 │   ├── Cargo.toml          # Rust package config
-│   ├── pyproject.toml      # Maturin build config
 │   └── src/
 │       ├── lib.rs          # Module exports
 │       ├── calendar.rs     # BusinessCalendar implementation
@@ -234,7 +233,6 @@ opendate/
 ```
 rust/
 ├── Cargo.toml              # ✓ Rust package config
-├── pyproject.toml          # ✓ Maturin build config
 └── src/
     ├── lib.rs              # ✓ Module exports
     ├── calendar.rs         # ✓ BusinessCalendar implementation
