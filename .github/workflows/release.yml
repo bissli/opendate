@@ -35,23 +35,25 @@ jobs:
       - name: Verify tag matches pyproject.toml
         run: |
           TAG=${GITHUB_REF#refs/tags/}
+          TAG_VERSION=${TAG#v}  # Strip 'v' prefix if present
           VERSION=$(grep -Po '(?<=^version = ")[^"]*' pyproject.toml)
-          if [ "$TAG" != "$VERSION" ]; then
+          if [ "$TAG_VERSION" != "$VERSION" ]; then
             echo "ERROR: Tag ($TAG) does not match pyproject.toml version ($VERSION)"
             exit 1
           fi
-          echo "Version verified: $TAG"
+          echo "Version verified: $TAG_VERSION"
 
       - name: Check if version exists on PyPI
         id: check-pypi
         run: |
           TAG=${GITHUB_REF#refs/tags/}
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://pypi.org/pypi/opendate/$TAG/json)
+          VERSION=${TAG#v}  # Strip 'v' prefix if present
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://pypi.org/pypi/opendate/$VERSION/json)
           if [ "$HTTP_STATUS" = "200" ]; then
-            echo "Version $TAG already exists on PyPI, skipping publish"
+            echo "Version $VERSION already exists on PyPI, skipping publish"
             echo "should_publish=false" >> $GITHUB_OUTPUT
           else
-            echo "Version $TAG not found on PyPI, will publish"
+            echo "Version $VERSION not found on PyPI, will publish"
             echo "should_publish=true" >> $GITHUB_OUTPUT
           fi
 
