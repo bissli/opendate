@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pandas_market_calendars as mcal
 import pendulum as _pendulum
+from _opendate import BusinessCalendar as _BusinessCalendar
 
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
@@ -92,6 +93,32 @@ MONTH_SHORTNAME = {
 }
 
 DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
+
+_DATE_PATTERNS = [
+    # ISO format: YYYY-MM-DD (most common in data)
+    re.compile(r'^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$'),
+    # US format: MM/DD/YYYY or MM-DD-YYYY
+    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{4})$'),
+    # Compact: YYYYMMDD
+    re.compile(r'^(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})$'),
+    # Short year: MM/DD/YY
+    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{2})$'),
+    # No year: MM/DD
+    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})$'),
+]
+
+_DATE_PATTERNS_NAMED = [
+    # DD-Mon-YYYY or DD Mon YYYY
+    re.compile(r'^(?P<d>\d{1,2})[- ](?P<m>[A-Za-z]{3,})[- ](?P<y>\d{4})$'),
+    # Mon-DD-YYYY or Mon DD YYYY
+    re.compile(r'^(?P<m>[A-Za-z]{3,})[- ](?P<d>\d{1,2})[- ](?P<y>\d{4})$'),
+    # Mon DD, YYYY
+    re.compile(r'^(?P<m>[A-Za-z]{3,}) (?P<d>\d{1,2}), (?P<y>\d{4})$'),
+    # DDMONYYYY (compact) - handles 15JAN2024 or 15Jan2024
+    re.compile(r'^(?P<d>\d{2})(?P<m>[A-Za-z]{3})(?P<y>\d{4})$'),
+    # DD-Mon-YY or DD-MON-YY
+    re.compile(r'^(?P<d>\d{1,2})-(?P<m>[A-Za-z]{3})-(?P<y>\d{2})$'),
+]
 
 
 # def caller_entity(func):
@@ -370,7 +397,7 @@ class NYSE(Entity):
             enddate = NYSE.ENDDATE
 
         max_year = 2100
-        
+
         if begdate.year > max_year:
             return set()
 
@@ -436,6 +463,29 @@ class NYSE(Entity):
         return {Date.instance(d.date())
                 for d in map(pd.to_datetime, NYSE.calendar.holidays().holidays)
                 if begdate <= d.date() <= enddate}
+
+    @staticmethod
+    @lru_cache(maxsize=32)
+    def _get_fast_calendar(decade_start: _datetime.date, decade_end: _datetime.date):
+        """Get a BusinessCalendar for O(1) business day operations.
+        """
+        business_days = NYSE._get_business_days_cached(decade_start, decade_end)
+        ordinals = sorted(d.toordinal() for d in business_days)
+        return _BusinessCalendar(ordinals)
+
+    @staticmethod
+    def _get_calendar(date):
+        """Get the business calendar covering the decade containing the given date.
+        """
+        if date.year > 2100 or date.year < 1900:
+            return None
+        decade_start = _datetime.date(date.year // 10 * 10, 1, 1)
+        next_decade_year = (date.year // 10 + 1) * 10
+        if next_decade_year > 2100:
+            decade_end = _datetime.date(2100, 12, 31)
+        else:
+            decade_end = _datetime.date(next_decade_year, 1, 1)
+        return NYSE._get_fast_calendar(decade_start, decade_end)
 
 
 class DateBusinessMixin:
@@ -511,6 +561,15 @@ class DateBusinessMixin:
                 return self._business_or_next()
             if days < 0:
                 return self.business().subtract(days=abs(days))
+            cal = self._entity._get_calendar(self)
+            if cal is not None:
+                start_ord = self.toordinal()
+                first_bd = cal.next_business_day(start_ord + 1)
+                if first_bd is not None:
+                    result_ord = cal.add_business_days(first_bd, days - 1)
+                    if result_ord is not None:
+                        days_diff = result_ord - start_ord
+                        return super().add(days=days_diff)
             while days > 0:
                 self = self._business_next(days=1)
                 days -= 1
@@ -530,6 +589,15 @@ class DateBusinessMixin:
                 return self._business_or_previous()
             if days < 0:
                 return self.business().add(days=abs(days))
+            cal = self._entity._get_calendar(self)
+            if cal is not None:
+                start_ord = self.toordinal()
+                first_bd = cal.prev_business_day(start_ord - 1)
+                if first_bd is not None:
+                    result_ord = cal.add_business_days(first_bd, -(days - 1))
+                    if result_ord is not None:
+                        days_diff = result_ord - start_ord
+                        return super().add(days=days_diff)
             while days > 0:
                 self = self._business_previous(days=1)
                 days -= 1
@@ -967,42 +1035,17 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         if 'yester' in s.lower():
             return cls.today().subtract(days=1)
 
-        # Try ISO format first (most common in data)
-        if m := re.match(r'^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$', s):
-            mm = int(m.group('m'))
-            dd = int(m.group('d'))
-            yy = year(m)
-            return cls(yy, mm, dd)
-
-        # Try dateutil.parser for common formats
-        with contextlib.suppress(TypeError, ValueError):
-            return cls.instance(_dateutil.parser.parse(s))
-
-        # Regex with Month Numbers (ordered by frequency)
-        exps = (
-            r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{4})$',
-            r'^(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})$',
-            r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{1,2})$',
-            r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})$',
-        )
-        for exp in exps:
-            if m := re.match(exp, s):
+        # Try pre-compiled numeric date patterns first (fast path)
+        for pattern in _DATE_PATTERNS:
+            if m := pattern.match(s):
                 mm = int(m.group('m'))
                 dd = int(m.group('d'))
                 yy = year(m)
                 return cls(yy, mm, dd)
 
-        # Regex with Month Name
-        exps = (
-            r'^(?P<d>\d{1,2})[- ](?P<m>[A-Za-z]{3,})[- ](?P<y>\d{4})$',
-            r'^(?P<m>[A-Za-z]{3,})[- ](?P<d>\d{1,2})[- ](?P<y>\d{4})$',
-            r'^(?P<m>[A-Za-z]{3,}) (?P<d>\d{1,2}), (?P<y>\d{4})$',
-            r'^(?P<d>\d{2})(?P<m>[A-Z][a-z]{2})(?P<y>\d{4})$',
-            r'^(?P<d>\d{1,2})-(?P<m>[A-Z][a-z][a-z])-(?P<y>\d{2})$',
-            r'^(?P<d>\d{1,2})-(?P<m>[A-Z]{3})-(?P<y>\d{2})$',
-        )
-        for exp in exps:
-            if m := re.match(exp, s):
+        # Try pre-compiled named month patterns
+        for pattern in _DATE_PATTERNS_NAMED:
+            if m := pattern.match(s):
                 try:
                     mm = MONTH_SHORTNAME[m.group('m').lower()[:3]]
                 except KeyError:
@@ -1011,6 +1054,10 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
                 dd = int(m.group('d'))
                 yy = year(m)
                 return cls(yy, mm, dd)
+
+        # Last resort: try dateutil.parser for unusual formats
+        with contextlib.suppress(TypeError, ValueError):
+            return cls.instance(_dateutil.parser.parse(s))
 
         if raise_err:
             raise ValueError('Failed to parse date: %s', s)
@@ -1050,7 +1097,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
             return cls(obj.year, obj.month, obj.day)
-        
+
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
             return cls(obj.year, obj.month, obj.day)
@@ -1539,7 +1586,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 tz = Timezone(tz)
             return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
                        obj.second, obj.microsecond, tzinfo=tz)
-        
+
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
             tz = tz or UTC
@@ -1548,7 +1595,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
 
         if type(obj) is Date:
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
-        
+
         if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
 
@@ -1556,7 +1603,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
 
         if type(obj) is Time:
             return cls.combine(Date.today(), obj, tzinfo=tz)
-        
+
         if isinstance(obj, _datetime.time):
             return cls.combine(Date.today(), obj, tzinfo=tz)
 

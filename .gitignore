@@ -38,3 +38,11 @@ poetry.toml
 poetry.lock
 TODO.*
 *.pkl
+
+# Native extension build artifacts
+rust/target/
+rust/Cargo.lock
+*.so
+
+# Benchmarks
+benchmarks/
