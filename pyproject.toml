@@ -1,12 +1,15 @@
-[tool.poetry]
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
 name = "opendate"
 version = "0.1.23"
 description = "Python business datetimes"
-authors = ["bissli <bissli.xyz@protonmail.com>"]
 readme = "README.md"
-license = "MIT"
-packages = [{ include = "date", from = "src" }]
-repository = "https://github.com/bissli/opendate"
+license = { text = "MIT" }
+authors = [{ name = "bissli", email = "bissli.xyz@protonmail.com" }]
+requires-python = ">=3.9"
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -15,23 +18,15 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
 ]
+dependencies = [
+  "pandas-market-calendars",
+  "pendulum",
+  "wrapt",
+  "typing-extensions",
+  "regex",
+]
 
-[tool.poetry.dependencies]
-python = "^3.9"
-
-pandas-market-calendars = "*"
-pendulum = "*"
-wrapt = "*"
-typing-extensions = "*"
-regex = "*"
-
-# = test
-asserts = { version = "*", optional = true }
-pytest = { version = "*", optional = true }
-pdbpp = { version = "*", optional = true }
-bump2version = { version = "*", optional = true }
-
-[tool.poetry.extras]
+[project.optional-dependencies]
 test = [
   "asserts",
   "pdbpp",
@@ -39,6 +34,12 @@ test = [
   "bump2version",
 ]
 
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+[project.urls]
+Repository = "https://github.com/bissli/opendate"
+
+[tool.maturin]
+module-name = "date._opendate"
+features = ["pyo3/extension-module"]
+python-packages = ["date"]
+python-source = "src"
+manifest-path = "rust/Cargo.toml"

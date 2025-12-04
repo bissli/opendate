@@ -699,6 +699,15 @@ days_fraction = Interval(issue_date, settlement_date).yearfrac(2)
 accrued_interest = coupon_rate * days_fraction
 ```
 
+## Developer Guide
+
+See [docs/developer-guide.md](docs/developer-guide.md) for instructions on:
+
+- Setting up the development environment
+- Building locally with Rust
+- Version management with bump2version
+- Releasing to GitHub and PyPI
+
 ## Testing
 
 OpenDate includes comprehensive test coverage:

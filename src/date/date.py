@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 import pandas_market_calendars as mcal
 import pendulum as _pendulum
-from _opendate import BusinessCalendar as _BusinessCalendar
+from date._opendate import BusinessCalendar as _BusinessCalendar
 
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
