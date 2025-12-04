@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Legacy compatibility functions for OpenDate.
 
 This module contains functions that exist primarily for backward compatibility

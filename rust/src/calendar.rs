@@ -41,7 +41,7 @@ impl BusinessCalendar {
     pub fn prev_business_day(&self, ordinal: i32) -> Option<i32> {
         match self.days.binary_search(&ordinal) {
             Ok(_) => Some(ordinal),
-            Err(idx) if idx == 0 => None,
+            Err(0) => None,
             Err(idx) => self.days.get(idx - 1).copied(),
         }
     }

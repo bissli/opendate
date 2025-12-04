@@ -17,6 +17,27 @@
   pip install maturin
   ```
 
+## Quick Start
+
+```bash
+git clone https://github.com/bissli/opendate.git
+cd opendate
+make dev      # Install dependencies and build native extension
+make test     # Run tests
+```
+
+## Makefile Commands
+
+| Command | Description |
+|---------|-------------|
+| `make dev` | Install dependencies and build native extension |
+| `make build` | Build native extension only |
+| `make test` | Run all tests |
+| `make lint` | Run all linters (Python + Rust) |
+| `make lint-rust` | Check Rust formatting and clippy |
+| `make format-rust` | Auto-format Rust code |
+| `make clean` | Remove build artifacts |
+
 ## Setting Up the Development Environment
 
 ```bash
@@ -24,17 +45,15 @@
 git clone https://github.com/bissli/opendate.git
 cd opendate
 
-# Install dependencies with poetry
-poetry install --extras test
+# Option 1: Use make (recommended)
+make dev
 
-# Build and install the native extension locally
+# Option 2: Manual steps
+poetry install --extras test
 maturin develop --release
 
 # Verify installation
 python -c "from date import Date; print(Date.today())"
-
-# Run tests to confirm everything works
-pytest tests/
 ```
 
 ## Development Workflow
@@ -44,34 +63,39 @@ pytest tests/
 ```bash
 # Edit Python files in src/date/
 # Then run tests
-pytest tests/
+make test
 ```
 
 ### Making Changes to Rust Code
 
 ```bash
 # Edit Rust files in rust/src/
-# Rebuild the native extension
-maturin develop --release
-
-# Run tests
-pytest tests/
+# Rebuild and test
+make build
+make test
 ```
 
 ### Running Tests
 
 ```bash
-# Run all tests
-pytest tests/
+# Run all tests (recommended)
+make test
 
-# Run specific test file
-pytest tests/test_date.py
+# Or use pytest directly for more options:
+pytest tests/              # Run all tests
+pytest tests/test_date.py  # Run specific test file
+pytest tests/ -v           # Verbose output
+pytest tests/ --cov=date   # With coverage
+```
 
-# Run with verbose output
-pytest tests/ -v
+### Linting
 
-# Run with coverage
-pytest tests/ --cov=date
+```bash
+# Check Rust formatting and lints
+make lint-rust
+
+# Auto-format Rust code
+make format-rust
 ```
 
 ## Building
@@ -79,7 +103,10 @@ pytest tests/ --cov=date
 ### Development Build
 
 ```bash
-# Build and install in development mode (editable)
+# Recommended
+make build
+
+# Or manually
 maturin develop --release
 ```
 
@@ -91,6 +118,12 @@ maturin build --release
 
 # Wheel is created in rust/target/wheels/
 ls rust/target/wheels/
+```
+
+### Clean Build Artifacts
+
+```bash
+make clean
 ```
 
 ## Version Management
@@ -117,9 +150,11 @@ This automatically:
 
 ### Release Process
 
-1. **Ensure all changes are committed:**
+1. **Ensure all changes are committed and tests pass:**
    ```bash
-   git status  # Should be clean
+   git status    # Should be clean
+   make test     # Should pass
+   make lint     # Should pass
    ```
 
 2. **Bump the version:**
@@ -167,6 +202,7 @@ This automatically:
 ```
 opendate/
 ├── pyproject.toml          # Project config (maturin build-backend)
+├── Makefile                # Development shortcuts
 ├── rust/
 │   ├── Cargo.toml          # Rust package config
 │   ├── pyproject.toml      # Maturin build config
@@ -184,7 +220,8 @@ opendate/
 │   └── developer-guide.md  # This file
 └── .github/
     └── workflows/
-        └── release.yml     # CI/CD pipeline
+        ├── release.yml     # Release pipeline
+        └── tests.yml       # CI tests
 ```
 
 ## Rust Files: What to Commit
@@ -229,14 +266,14 @@ pip install maturin
 ### "No module named '_opendate'"
 The native extension is not built. Run:
 ```bash
-maturin develop --release
+make build
 ```
 
 ### Tests fail after changing Rust code
 Rebuild the extension:
 ```bash
-maturin develop --release
-pytest tests/
+make build
+make test
 ```
 
 ### PyPI publish fails with "version already exists"

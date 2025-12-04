@@ -61,8 +61,11 @@ jobs:
           pip install maturin pytest
           pip install pandas-market-calendars pendulum wrapt typing-extensions regex
 
-      - name: Build native extension
-        run: maturin develop --release --manifest-path rust/Cargo.toml
+      - name: Build and install native extension
+        shell: bash
+        run: |
+          maturin build --release --manifest-path rust/Cargo.toml
+          pip install rust/target/wheels/*.whl
 
       - name: Run tests
         run: pytest tests/ -v

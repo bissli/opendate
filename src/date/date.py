@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import calendar
 import contextlib
 import datetime as _datetime
@@ -5,20 +7,33 @@ import logging
 import operator
 import os
 import re
+import sys
 import time
 import warnings
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
 from functools import lru_cache, partial, wraps
-from typing import Self
 
 import dateutil as _dateutil
 import numpy as np
 import pandas as pd
 import pandas_market_calendars as mcal
 import pendulum as _pendulum
-from date._opendate import BusinessCalendar as _BusinessCalendar
+
+if sys.version_info >= (3, 11):
+    from typing import Self
+else:
+    from typing_extensions import Self
+
+try:
+    from date._opendate import BusinessCalendar as _BusinessCalendar
+except ImportError:
+    try:
+        from _opendate import BusinessCalendar as _BusinessCalendar
+    except ImportError:
+        _BusinessCalendar = None
+
 
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
@@ -137,7 +152,7 @@ _DATE_PATTERNS_NAMED = [
 
 
 def isdateish(x) -> bool:
-    return isinstance(x, _datetime.date | _datetime.datetime | _datetime.time | pd.Timestamp | np.datetime64)
+    return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
 
 
 def parse_arg(typ, arg):
@@ -147,9 +162,9 @@ def parse_arg(typ, arg):
         return arg
 
     if typ == 'smart':
-        if isinstance(arg, Date | DateTime):
+        if isinstance(arg, (Date, DateTime)):
             return arg
-        if isinstance(arg, _datetime.datetime | pd.Timestamp | np.datetime64):
+        if isinstance(arg, (_datetime.datetime, pd.Timestamp, np.datetime64)):
             return DateTime.instance(arg)
         if isinstance(arg, _datetime.date):
             return Date.instance(arg)
@@ -467,8 +482,9 @@ class NYSE(Entity):
     @staticmethod
     @lru_cache(maxsize=32)
     def _get_fast_calendar(decade_start: _datetime.date, decade_end: _datetime.date):
-        """Get a BusinessCalendar for O(1) business day operations.
-        """
+        """Get a BusinessCalendar for O(1) business day operations."""
+        if _BusinessCalendar is None:
+            return None
         business_days = NYSE._get_business_days_cached(decade_start, decade_end)
         ordinals = sorted(d.toordinal() for d in business_days)
         return _BusinessCalendar(ordinals)
@@ -1505,10 +1521,10 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 raise ValueError('Empty value')
             return
 
-        if not isinstance(s, str | int | float):
+        if not isinstance(s, (str, int, float)):
             raise TypeError(f'Invalid type for datetime parse: {s.__class__}')
 
-        if isinstance(s, int | float):
+        if isinstance(s, (int, float)):
             if len(str(int(s))) == 13:
                 s /= 1000  # Convert from milliseconds to seconds
             iso = _datetime.datetime.fromtimestamp(s).isoformat()

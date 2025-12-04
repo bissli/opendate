@@ -65,15 +65,18 @@ def test_time_in_timezone():
 
 
 def test_combine():
-    """By default, combine return LCL"""
+    """Test DateTime.combine with different timezones"""
 
     D = Date(2022, 1, 1)
     T = Time(12, 30)
 
-    _ = DateTime(2022, 1, 1, 12, 30, tzinfo=LCL)
-    assert _.tzinfo == LCL
+    # Use EST instead of LCL to ensure timezone differs from UTC in CI
+    from date import EST
 
-    comb = DateTime.combine(D, T, tzinfo=LCL)
+    _ = DateTime(2022, 1, 1, 12, 30, tzinfo=EST)
+    assert _.tzinfo == EST
+
+    comb = DateTime.combine(D, T, tzinfo=EST)
     assert comb == _
 
     comb = DateTime.combine(D, T, tzinfo=UTC)
@@ -81,10 +84,10 @@ def test_combine():
 
     # ==
 
-    _ = DateTime(2022, 1, 1, 12, 30, tzinfo=LCL)
-    assert _.tzinfo == LCL
+    _ = DateTime(2022, 1, 1, 12, 30, tzinfo=EST)
+    assert _.tzinfo == EST
 
-    comb = DateTime.combine(D, T, tzinfo=LCL)
+    comb = DateTime.combine(D, T, tzinfo=EST)
     assert comb == _
 
     comb = DateTime.combine(D, T, tzinfo=UTC)
@@ -98,7 +101,7 @@ def test_combine():
     comb = DateTime.combine(D, T, tzinfo=UTC)
     assert comb == _
 
-    comb = DateTime.combine(D, T, tzinfo=LCL)
+    comb = DateTime.combine(D, T, tzinfo=EST)
     assert comb != _
 
 
