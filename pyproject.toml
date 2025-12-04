@@ -7,7 +7,7 @@ name = "opendate"
 version = "0.1.24"
 description = "Python business datetimes"
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [{ name = "bissli", email = "bissli.xyz@protonmail.com" }]
 requires-python = ">=3.9"
 classifiers = [
