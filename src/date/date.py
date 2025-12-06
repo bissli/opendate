@@ -115,47 +115,6 @@ MONTH_SHORTNAME = {
 
 DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
 
-_DATE_PATTERNS = [
-    # ISO format: YYYY-MM-DD (most common in data)
-    re.compile(r'^(?P<y>\d{4})-(?P<m>\d{1,2})-(?P<d>\d{1,2})$'),
-    # US format: MM/DD/YYYY or MM-DD-YYYY
-    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{4})$'),
-    # Compact: YYYYMMDD
-    re.compile(r'^(?P<y>\d{4})(?P<m>\d{2})(?P<d>\d{2})$'),
-    # Short year: MM/DD/YY
-    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})[/-](?P<y>\d{2})$'),
-    # No year: MM/DD
-    re.compile(r'^(?P<m>\d{1,2})[/-](?P<d>\d{1,2})$'),
-]
-
-_DATE_PATTERNS_NAMED = [
-    # DD-Mon-YYYY or DD Mon YYYY
-    re.compile(r'^(?P<d>\d{1,2})[- ](?P<m>[A-Za-z]{3,})[- ](?P<y>\d{4})$'),
-    # Mon-DD-YYYY or Mon DD YYYY
-    re.compile(r'^(?P<m>[A-Za-z]{3,})[- ](?P<d>\d{1,2})[- ](?P<y>\d{4})$'),
-    # Mon DD, YYYY
-    re.compile(r'^(?P<m>[A-Za-z]{3,}) (?P<d>\d{1,2}), (?P<y>\d{4})$'),
-    # DDMONYYYY (compact) - handles 15JAN2024 or 15Jan2024
-    re.compile(r'^(?P<d>\d{2})(?P<m>[A-Za-z]{3})(?P<y>\d{4})$'),
-    # DD-Mon-YY or DD-MON-YY
-    re.compile(r'^(?P<d>\d{1,2})-(?P<m>[A-Za-z]{3})-(?P<y>\d{2})$'),
-]
-
-
-# def caller_entity(func):
-    # """Helper to get current entity from function"""
-    # # general frame args inspect
-    # import inspect
-    # frame = inspect.currentframe()
-    # outer_frames = inspect.getouterframes(frame)
-    # caller_frame = outer_frames[1][0]
-    # args = inspect.getargvalues(caller_frame)
-    # # find our entity
-    # param = inspect.signature(func).parameters.get('entity')
-    # default = param.default if param else NYSE
-    # entity = args.locals['kwargs'].get('entity', default)
-    # return entity
-
 
 def isdateish(x) -> bool:
     return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
@@ -1105,26 +1064,6 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             return cls.today()
         if 'yester' in s.lower():
             return cls.today().subtract(days=1)
-
-        # Try pre-compiled numeric date patterns first (fast path)
-        for pattern in _DATE_PATTERNS:
-            if m := pattern.match(s):
-                mm = int(m.group('m'))
-                dd = int(m.group('d'))
-                yy = year(m)
-                return cls(yy, mm, dd)
-
-        # Try pre-compiled named month patterns
-        for pattern in _DATE_PATTERNS_NAMED:
-            if m := pattern.match(s):
-                try:
-                    mm = MONTH_SHORTNAME[m.group('m').lower()[:3]]
-                except KeyError:
-                    logger.debug('Month name did not match MONTH_SHORTNAME')
-                    continue
-                dd = int(m.group('d'))
-                yy = year(m)
-                return cls(yy, mm, dd)
 
         parsed = _rust_parse_datetime(s)
         if parsed is not None:
