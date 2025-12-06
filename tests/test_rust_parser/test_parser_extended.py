@@ -4,6 +4,7 @@ These tests cover more complex parsing scenarios and edge cases.
 """
 
 import pytest
+
 from date._opendate import Parser, parse
 
 
@@ -139,7 +140,6 @@ class TestParserTimezoneOffsets:
         r = parse('2024-01-15T10:30:00+05')
         assert r.tzoffset == 5 * 3600
 
-    @pytest.mark.xfail(reason="Named timezone capture not yet implemented in general parser")
     def test_parse_est(self):
         """Test EST timezone name (name captured, offset requires tzinfos)."""
         r = parse('2024-01-15 10:30:00 EST')
@@ -147,14 +147,12 @@ class TestParserTimezoneOffsets:
         # Note: Named timezones don't have default offsets (matches dateutil behavior)
         # Offsets require tzinfos parameter
 
-    @pytest.mark.xfail(reason="Named timezone capture not yet implemented in general parser")
     def test_parse_pst(self):
         """Test PST timezone name (name captured, offset requires tzinfos)."""
         r = parse('2024-01-15 10:30:00 PST')
         assert r.tzname == 'PST'
         # Note: Named timezones don't have default offsets (matches dateutil behavior)
 
-    @pytest.mark.xfail(reason="Named timezone capture not yet implemented in general parser")
     def test_parse_cet(self):
         """Test CET timezone name (name captured, offset requires tzinfos)."""
         r = parse('2024-01-15 10:30:00 CET')

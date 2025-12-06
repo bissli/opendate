@@ -3,7 +3,7 @@
 These tests verify comprehensive ISO 8601 date/time parsing.
 """
 
-import pytest
+
 from date._opendate import IsoParser, isoparse
 
 

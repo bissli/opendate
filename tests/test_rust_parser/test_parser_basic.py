@@ -181,14 +181,12 @@ class TestParserTimeFormats:
 class TestParserTimezones:
     """Test timezone parsing."""
 
-    @pytest.mark.xfail(reason="UTC token handling not yet implemented in general parser")
     def test_parse_utc(self):
         """Test UTC timezone."""
         r = parse('2024-01-15 10:30:00 UTC')
         assert r.tzoffset == 0
         assert r.tzname == 'UTC'
 
-    @pytest.mark.xfail(reason="GMT token handling not yet implemented in general parser")
     def test_parse_gmt(self):
         """Test GMT timezone."""
         r = parse('2024-01-15 10:30:00 GMT')
@@ -216,13 +214,11 @@ class TestParserTimezones:
         r = parse('2024-01-15 10:30:00+0530')
         assert r.tzoffset == 5 * 3600 + 30 * 60
 
-    @pytest.mark.xfail(reason="GMT+N sign reversal not yet implemented")
     def test_parse_gmt_plus_sign_reversal(self):
         """Test GMT+3 sign reversal (GMT+3 means -3 hours from GMT)."""
         r = parse('2024-01-15 10:30:00 GMT+3')
         assert r.tzoffset == -3 * 3600
 
-    @pytest.mark.xfail(reason="GMT-N sign reversal not yet implemented")
     def test_parse_gmt_minus_sign_reversal(self):
         """Test GMT-5 sign reversal (GMT-5 means +5 hours from GMT)."""
         r = parse('2024-01-15 10:30:00 GMT-5')
