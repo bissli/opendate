@@ -1,7 +1,14 @@
+use once_cell::sync::Lazy;
 use pyo3::prelude::*;
 
 use crate::calendar;
 use crate::parser::{IsoParser, Parser, PyParseResult};
+
+/// Static default parser instance - avoids recreating HashMaps on every parse() call.
+static DEFAULT_PARSER: Lazy<Parser> = Lazy::new(Parser::default);
+
+/// Static ISO parser instance.
+static DEFAULT_ISO_PARSER: Lazy<IsoParser> = Lazy::new(IsoParser::new);
 
 #[pyclass(name = "BusinessCalendar")]
 pub struct PyBusinessCalendar {
@@ -98,8 +105,8 @@ impl PyIsoParser {
 /// Parse an ISO-8601 datetime string (convenience function).
 #[pyfunction]
 fn isoparse(dt_str: &str) -> PyResult<PyParseResult> {
-    let parser = IsoParser::new();
-    let result = parser.isoparse(dt_str)?;
+    // Use static ISO parser instance
+    let result = DEFAULT_ISO_PARSER.isoparse(dt_str)?;
     Ok(result.into())
 }
 
@@ -171,8 +178,8 @@ fn parse(
     fuzzy: bool,
     fuzzy_with_tokens: bool,
 ) -> PyResult<PyParseResultOrTuple> {
-    let parser = Parser::default();
-    let (result, tokens) = parser.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
+    // Use static default parser to avoid HashMap recreation on every call
+    let (result, tokens) = DEFAULT_PARSER.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
 
     if fuzzy_with_tokens {
         Ok(PyParseResultOrTuple::WithTokens(result.into(), tokens.unwrap_or_default()))
