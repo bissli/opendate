@@ -99,60 +99,24 @@ def test_months_cross_year():
     assert round(result, 2) == 0.68
 
 
-def test_yearfrac_basis_0():
-    """Test yearfrac with basis 0 (US 30/360).
-    """
+@pytest.mark.parametrize(('basis', 'expected'), [
+    (0, 42.2139),   # US 30/360
+    (1, 42.2142),   # Actual/actual
+    (2, 42.8306),   # Actual/360
+    (3, 42.2438),   # Actual/365
+    (4, 42.2194),   # European 30/360
+])
+def test_yearfrac_basis(basis, expected):
+    """Test yearfrac with different basis values."""
     begdate = Date(1978, 2, 28)
     enddate = Date(2020, 5, 17)
 
-    result = Interval(begdate, enddate).yearfrac(0)
-    assert round(result, 4) == 42.2139
+    result = Interval(begdate, enddate).yearfrac(basis)
+    assert round(result, 4) == expected
 
-    result = Interval(enddate, begdate).yearfrac(0)
-    assert round(result, 4) == -42.2139
-
-
-def test_yearfrac_basis_1():
-    """Test yearfrac with basis 1 (Actual/actual).
-    """
-    begdate = Date(1978, 2, 28)
-    enddate = Date(2020, 5, 17)
-
-    result = Interval(begdate, enddate).yearfrac(1)
-    assert round(result, 4) == 42.2142
-
-
-def test_yearfrac_basis_2():
-    """Test yearfrac with basis 2 (Actual/360).
-    """
-    begdate = Date(1978, 2, 28)
-    enddate = Date(2020, 5, 17)
-
-    result = Interval(begdate, enddate).yearfrac(2)
-    assert round(result, 4) == 42.8306
-
-
-def test_yearfrac_basis_3():
-    """Test yearfrac with basis 3 (Actual/365).
-    """
-    begdate = Date(1978, 2, 28)
-    enddate = Date(2020, 5, 17)
-
-    result = Interval(begdate, enddate).yearfrac(3)
-    assert round(result, 4) == 42.2438
-
-
-def test_yearfrac_basis_4():
-    """Test yearfrac with basis 4 (European 30/360).
-    """
-    begdate = Date(1978, 2, 28)
-    enddate = Date(2020, 5, 17)
-
-    result = Interval(begdate, enddate).yearfrac(4)
-    assert round(result, 4) == 42.2194
-
-    result = Interval(enddate, begdate).yearfrac(4)
-    assert round(result, 4) == -42.2194
+    # Test negative (reverse direction)
+    result = Interval(enddate, begdate).yearfrac(basis)
+    assert round(result, 4) == -expected
 
 
 def test_yearfrac_leap_year_edge_case():
@@ -737,11 +701,11 @@ def test_interval_expect_date_or_datetime_with_numpy_datetime64():
 def test_interval_with_pandas_nat_raises_assertion():
     """Test that Interval correctly rejects pandas NaT values."""
     ts1 = pd.Timestamp('2020-01-01 09:30:00')
-    
+
     # NaT should be rejected (converted to None, then assertion fails)
     with pytest.raises(AssertionError, match='Interval dates cannot be None'):
         Interval(pd.NaT, ts1)
-    
+
     with pytest.raises(AssertionError, match='Interval dates cannot be None'):
         Interval(ts1, pd.NaT)
 
@@ -749,11 +713,11 @@ def test_interval_with_pandas_nat_raises_assertion():
 def test_interval_with_numpy_nat_raises_assertion():
     """Test that Interval correctly rejects numpy datetime64 NaT values."""
     np1 = np.datetime64('2020-01-01T09:30:00')
-    
+
     # NaT should be rejected (converted to None, then assertion fails)
     with pytest.raises(AssertionError, match='Interval dates cannot be None'):
         Interval(np.datetime64('NaT'), np1)
-    
+
     with pytest.raises(AssertionError, match='Interval dates cannot be None'):
         Interval(np1, np.datetime64('NaT'))
 
@@ -873,7 +837,7 @@ def test_interval_expect_date_or_datetime_months_property():
 
 def test_interval_init_decorator_chain():
     """Test that decorators on __init__ properly convert and normalize arguments.
-    
+
     This test validates the optimization where decorators were moved from __new__
     to __init__ to avoid double-processing. It ensures:
     1. expect_date_or_datetime converts various date-like objects
@@ -882,21 +846,21 @@ def test_interval_init_decorator_chain():
     """
     d_date = datetime.date(2020, 1, 1)
     d_datetime = datetime.datetime(2020, 1, 31, 16, 0, 0, tzinfo=EST)
-    
+
     interval = Interval(d_date, d_datetime)
-    
+
     assert isinstance(interval.start, DateTime)
     assert isinstance(interval.end, DateTime)
     assert interval.start.tzinfo == EST
     assert interval.end.tzinfo == EST
     assert interval.start.hour == 0
     assert interval.end.hour == 16
-    
+
     pd_timestamp = pd.Timestamp('2020-02-01 09:30:00')
     np_datetime = np.datetime64('2020-02-15T16:00:00')
-    
+
     interval2 = Interval(pd_timestamp, np_datetime)
-    
+
     assert isinstance(interval2.start, DateTime)
     assert isinstance(interval2.end, DateTime)
     assert interval2.start.year == 2020

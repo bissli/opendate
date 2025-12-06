@@ -18,20 +18,22 @@ def test_datetime_to_time():
     assert Time.instance(D.time()) == Time(12, 30, tzinfo=UTC)
 
 
-def test_time_parse_formats():
-    """Test Time.parse with various format strings.
-    """
-    assert Time.parse('9:30') == Time(9, 30, 0, tzinfo=UTC)
-    assert Time.parse('9:30:15') == Time(9, 30, 15, tzinfo=UTC)
-    assert Time.parse('9:30:15.751') == Time(9, 30, 15, 751000, tzinfo=UTC)
-    assert Time.parse('9:30 AM') == Time(9, 30, 0, tzinfo=UTC)
-    assert Time.parse('9:30 pm') == Time(21, 30, 0, tzinfo=UTC)
-    assert Time.parse('9:30:15.751 PM') == Time(21, 30, 15, 751000, tzinfo=UTC)
-    assert Time.parse('0930') == Time(9, 30, 0, tzinfo=UTC)
-    assert Time.parse('093015') == Time(9, 30, 15, tzinfo=UTC)
-    assert Time.parse('093015,751') == Time(9, 30, 15, 751000, tzinfo=UTC)
-    assert Time.parse('0930 pm') == Time(21, 30, 0, tzinfo=UTC)
-    assert Time.parse('093015,751 PM') == Time(21, 30, 15, 751000, tzinfo=UTC)
+@pytest.mark.parametrize(('input_str', 'expected'), [
+    ('9:30', Time(9, 30, 0, tzinfo=UTC)),
+    ('9:30:15', Time(9, 30, 15, tzinfo=UTC)),
+    ('9:30:15.751', Time(9, 30, 15, 751000, tzinfo=UTC)),
+    ('9:30 AM', Time(9, 30, 0, tzinfo=UTC)),
+    ('9:30 pm', Time(21, 30, 0, tzinfo=UTC)),
+    ('9:30:15.751 PM', Time(21, 30, 15, 751000, tzinfo=UTC)),
+    ('0930', Time(9, 30, 0, tzinfo=UTC)),
+    ('093015', Time(9, 30, 15, tzinfo=UTC)),
+    ('093015,751', Time(9, 30, 15, 751000, tzinfo=UTC)),
+    ('0930 pm', Time(21, 30, 0, tzinfo=UTC)),
+    ('093015,751 PM', Time(21, 30, 15, 751000, tzinfo=UTC)),
+])
+def test_time_parse_formats(input_str, expected):
+    """Test Time.parse with various format strings."""
+    assert Time.parse(input_str) == expected
 
 
 def test_time_instance_basic():

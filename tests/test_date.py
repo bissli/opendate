@@ -1,5 +1,6 @@
 import copy
 import datetime
+import pathlib
 import pickle
 
 import numpy as np
@@ -8,7 +9,6 @@ import pendulum
 import pytest
 
 from date import NYSE, WEEKDAY_SHORTNAME, Date, WeekDay, expect_date
-import pathlib
 
 
 def test_end_of_week():
@@ -289,37 +289,40 @@ def test_parse():
     assert Date.parse('100.264400') is None
 
 
-def test_parse_date_formats():
-    """Test Date.parse with various date format strings."""
+@pytest.mark.parametrize(('input_str', 'expected'), [
     # m/d/yyyy format (with 4-digit year)
-    assert Date.parse('6-23-2006') == Date(2006, 6, 23)
-    assert Date.parse('01/15/2024') == Date(2024, 1, 15)
-
+    ('6-23-2006', Date(2006, 6, 23)),
+    ('01/15/2024', Date(2024, 1, 15)),
     # m/d/yy format (with 2-digit year)
-    assert Date.parse('6/23/06') == Date(2006, 6, 23)
-
+    ('6/23/06', Date(2006, 6, 23)),
     # yyyy-mm-dd format
-    assert Date.parse('2006-6-23') == Date(2006, 6, 23)
-
+    ('2006-6-23', Date(2006, 6, 23)),
     # yyyymmdd format
-    assert Date.parse('20060623') == Date(2006, 6, 23)
+    ('20060623', Date(2006, 6, 23)),
+    # Named month formats
+    ('23-JUN-2006', Date(2006, 6, 23)),
+    ('20 Jan 2009', Date(2009, 1, 20)),
+    ('June 23, 2006', Date(2006, 6, 23)),
+    ('23-May-12', Date(2012, 5, 23)),
+    ('23May2012', Date(2012, 5, 23)),
+    ('Jan. 13, 2014', Date(2014, 1, 13)),
+    ('Jan-15-2024', Date(2024, 1, 15)),
+    ('Jan 15 2024', Date(2024, 1, 15)),
+])
+def test_parse_date_formats(input_str, expected):
+    """Test Date.parse with various date format strings."""
+    assert Date.parse(input_str) == expected
 
-    # m/d format (no year - uses current year)
+
+def test_parse_date_no_year():
+    """Test m/d format (no year - uses current year)."""
     result = Date.parse('01/15')
     assert result.month == 1
     assert result.day == 15
 
-    # Named month formats
-    assert Date.parse('23-JUN-2006') == Date(2006, 6, 23)
-    assert Date.parse('20 Jan 2009') == Date(2009, 1, 20)
-    assert Date.parse('June 23, 2006') == Date(2006, 6, 23)
-    assert Date.parse('23-May-12') == Date(2012, 5, 23)
-    assert Date.parse('23May2012') == Date(2012, 5, 23)
-    assert Date.parse('Jan. 13, 2014') == Date(2014, 1, 13)
-    assert Date.parse('Jan-15-2024') == Date(2024, 1, 15)
-    assert Date.parse('Jan 15 2024') == Date(2024, 1, 15)
 
-    # Custom format string
+def test_parse_date_custom_format():
+    """Test Date.parse with custom format string."""
     assert Date.parse('Oct. 24, 2007', fmt='%b. %d, %Y') == Date(2007, 10, 24)
 
 
@@ -404,12 +407,15 @@ def test_expects():
     assert isinstance(func((df, p))[0], pd.DataFrame)
 
 
-def test_isoweek():
+@pytest.mark.parametrize(('date', 'expected_week'), [
+    (Date(2023, 1, 2), 1),
+    (Date(2023, 4, 27), 17),
+    (Date(2023, 12, 31), 52),
+    (Date(2023, 1, 1), 52),  # Belongs to previous year's week
+])
+def test_isoweek(date, expected_week):
     """Test the isoweek method returns correct ISO week numbers."""
-    assert Date(2023, 1, 2).isoweek() == 1
-    assert Date(2023, 4, 27).isoweek() == 17
-    assert Date(2023, 12, 31).isoweek() == 52
-    assert Date(2023, 1, 1).isoweek() == 52  # Belongs to previous year's week
+    assert date.isoweek() == expected_week
 
 
 def test_lookback():
@@ -426,13 +432,15 @@ def test_lookback():
     assert test_date.b.lookback('month') == Date(2018, 11, 7)
 
 
-def test_third_wednesday():
-    """Test third_wednesday class method and its alias."""
-    # Test class method
-    assert Date.third_wednesday(2022, 6) == Date(2022, 6, 15)
-    assert Date.third_wednesday(2023, 3) == Date(2023, 3, 15)
-    assert Date.third_wednesday(2022, 12) == Date(2022, 12, 21)
-    assert Date.third_wednesday(2023, 6) == Date(2023, 6, 21)
+@pytest.mark.parametrize(('year', 'month', 'expected'), [
+    (2022, 6, Date(2022, 6, 15)),
+    (2023, 3, Date(2023, 3, 15)),
+    (2022, 12, Date(2022, 12, 21)),
+    (2023, 6, Date(2023, 6, 21)),
+])
+def test_third_wednesday(year, month, expected):
+    """Test third_wednesday class method."""
+    assert Date.third_wednesday(year, month) == expected
 
 
 def test_nearest_start_and_end_of_month():

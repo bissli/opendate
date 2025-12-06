@@ -1,5 +1,6 @@
 import copy
 import datetime
+import pathlib
 import pickle
 from unittest import mock
 
@@ -10,7 +11,6 @@ import pytest
 from pendulum.tz import Timezone
 
 from date import EST, NYSE, UTC, Date, DateTime, Time, expect_datetime, now
-import pathlib
 
 
 def test_add():
@@ -310,41 +310,21 @@ def test_instance_with_different_types():
     assert dt.second == 15
 
 
-def test_datetime_strptime():
+@pytest.mark.parametrize(('input_str', 'fmt', 'expected'), [
+    ('2022-01-15', '%Y-%m-%d', (2022, 1, 15, 0, 0, 0)),
+    ('2022-01-15 14:30:45', '%Y-%m-%d %H:%M:%S', (2022, 1, 15, 14, 30, 45)),
+    ('15/Jan/2022', '%d/%b/%Y', (2022, 1, 15, 0, 0, 0)),
+    ('3:30 PM, Jan 15, 2022', '%I:%M %p, %b %d, %Y', (2022, 1, 15, 15, 30, 0)),
+])
+def test_datetime_strptime(input_str, fmt, expected):
     """Test the strptime class method parses strings according to format strings."""
-    # Test basic date format
-    dt = DateTime.strptime('2022-01-15', '%Y-%m-%d')
-    assert dt.year == 2022
-    assert dt.month == 1
-    assert dt.day == 15
-    assert dt.hour == 0
-    assert dt.minute == 0
-    assert dt.second == 0
-
-    # Test with time components
-    dt = DateTime.strptime('2022-01-15 14:30:45', '%Y-%m-%d %H:%M:%S')
-    assert dt.year == 2022
-    assert dt.month == 1
-    assert dt.day == 15
-    assert dt.hour == 14
-    assert dt.minute == 30
-    assert dt.second == 45
-
-    # Test with different format
-    dt = DateTime.strptime('15/Jan/2022', '%d/%b/%Y')
-    assert dt.year == 2022
-    assert dt.month == 1
-    assert dt.day == 15
-
-    # Test with AM/PM
-    dt = DateTime.strptime('3:30 PM, Jan 15, 2022', '%I:%M %p, %b %d, %Y')
-    assert dt.year == 2022
-    assert dt.month == 1
-    assert dt.day == 15
-    assert dt.hour == 15  # 3 PM = 15:00
-    assert dt.minute == 30
-
-    # Verify result is DateTime instance
+    dt = DateTime.strptime(input_str, fmt)
+    assert dt.year == expected[0]
+    assert dt.month == expected[1]
+    assert dt.day == expected[2]
+    assert dt.hour == expected[3]
+    assert dt.minute == expected[4]
+    assert dt.second == expected[5]
     assert isinstance(dt, DateTime)
 
 

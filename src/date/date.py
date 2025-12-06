@@ -1531,7 +1531,6 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
             iso = _datetime.datetime.fromtimestamp(s).isoformat()
             return cls.parse(iso).replace(tzinfo=LCL)
 
-        # Use Rust parser as primary method
         parsed = _rust_parse_datetime(s)
         if parsed is not None:
             return cls.instance(parsed)
