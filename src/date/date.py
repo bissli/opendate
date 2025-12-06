@@ -15,7 +15,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
 from functools import lru_cache, partial, wraps
 
-import dateutil as _dateutil
 import numpy as np
 import pandas as pd
 import pandas_market_calendars as mcal
@@ -28,16 +27,23 @@ else:
 
 try:
     from date._opendate import BusinessCalendar as _BusinessCalendar
+    from date._opendate import IsoParser as _RustIsoParser
+    from date._opendate import Parser as _RustParser
 except ImportError:
     try:
         from _opendate import BusinessCalendar as _BusinessCalendar
+        from _opendate import IsoParser as _RustIsoParser
+        from _opendate import Parser as _RustParser
     except ImportError:
         _BusinessCalendar = None
+        _RustParser = None
+        _RustIsoParser = None
 
 
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
+
 
 __all__ = [
     'Date',
@@ -153,6 +159,55 @@ _DATE_PATTERNS_NAMED = [
 
 def isdateish(x) -> bool:
     return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
+
+
+def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False, fuzzy: bool = True) -> _datetime.datetime | None:
+    """Parse datetime string using Rust parser, return Python datetime or None.
+
+    This is an internal helper that bridges the Rust parser to Python datetime objects.
+    Returns None if parsing fails or no meaningful components are found.
+    Uses current year as default when year is missing but month/day are present.
+    """
+    if _RustParser is None:
+        return None
+
+    try:
+        parser = _RustParser(dayfirst, yearfirst)
+        result = parser.parse(s, dayfirst=dayfirst, yearfirst=yearfirst, fuzzy=fuzzy)
+
+        # Handle fuzzy_with_tokens tuple return
+        if isinstance(result, tuple):
+            result = result[0]
+
+        if result is None:
+            return None
+
+        # Check if we have any meaningful date/time components
+        has_date = result.year is not None or result.month is not None or result.day is not None
+        has_time = result.hour is not None or result.minute is not None or result.second is not None
+
+        if not has_date and not has_time:
+            return None
+
+        # Build datetime from components, using defaults for missing values
+        now = _datetime.datetime.now()
+        year = result.year if result.year is not None else now.year
+        month = result.month if result.month is not None else (now.month if has_time and not has_date else 1)
+        day = result.day if result.day is not None else (now.day if has_time and not has_date else 1)
+        hour = result.hour if result.hour is not None else 0
+        minute = result.minute if result.minute is not None else 0
+        second = result.second if result.second is not None else 0
+        microsecond = result.microsecond if result.microsecond is not None else 0
+
+        # Handle timezone
+        tzinfo = None
+        if result.tzoffset is not None:
+            tzinfo = _datetime.timezone(_datetime.timedelta(seconds=result.tzoffset))
+
+        return _datetime.datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tzinfo)
+    except Exception as e:
+        logger.debug(f'Rust parser failed: {e}')
+        return None
 
 
 def parse_arg(typ, arg):
@@ -1071,9 +1126,9 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
                 yy = year(m)
                 return cls(yy, mm, dd)
 
-        # Last resort: try dateutil.parser for unusual formats
-        with contextlib.suppress(TypeError, ValueError):
-            return cls.instance(_dateutil.parser.parse(s))
+        parsed = _rust_parse_datetime(s)
+        if parsed is not None:
+            return cls.instance(parsed)
 
         if raise_err:
             raise ValueError('Failed to parse date: %s', s)
@@ -1221,7 +1276,13 @@ class Time(_pendulum.Time):
 
         def micros(m):
             try:
-                return int(m.group('u'))
+                u_str = m.group('u')
+                if u_str:
+                    # Normalize to 6 digits (microseconds)
+                    # Pad right with zeros if shorter, truncate if longer
+                    u_str = u_str[:6].ljust(6, '0')
+                    return int(u_str)
+                return 0
             except Exception:
                 return 0
 
@@ -1260,10 +1321,11 @@ class Time(_pendulum.Time):
                 uu = micros(m)
                 if is_pm(m) and hh < 12:
                     hh += 12
-                return cls(hh, mm, ss, uu * 1000)
+                return cls(hh, mm, ss, uu)
 
-        with contextlib.suppress(TypeError, ValueError):
-            return cls.instance(_dateutil.parser.parse(s))
+        parsed = _rust_parse_datetime(s)
+        if parsed is not None:
+            return cls.instance(parsed)
 
         if raise_err:
             raise ValueError('Failed to parse time: %s', s)
@@ -1530,8 +1592,10 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
             iso = _datetime.datetime.fromtimestamp(s).isoformat()
             return cls.parse(iso).replace(tzinfo=LCL)
 
-        with contextlib.suppress(ValueError, TypeError):
-            return cls.instance(_dateutil.parser.parse(s))
+        # Use Rust parser as primary method
+        parsed = _rust_parse_datetime(s)
+        if parsed is not None:
+            return cls.instance(parsed)
 
         for delim in (' ', ':'):
             bits = s.split(delim, 1)
