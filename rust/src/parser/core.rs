@@ -74,7 +74,12 @@ impl Parser {
     ) -> Result<(ParseResult, Vec<String>), ParserError> {
         // Try ISO format first if the string looks like ISO (starts with YYYY- or is YYYYMMDD format)
         if Self::looks_like_iso(timestr) {
-            if let Ok(result) = super::IsoParser::new().isoparse(timestr) {
+            if let Ok(mut result) = super::IsoParser::new().isoparse(timestr) {
+                // Check for trailing timezone name that ISO parser might have missed
+                // This handles cases like "2024-01-15 10:30:00 UTC" or "2024-01-15T10:30:00 GMT+3"
+                if result.tzoffset.is_none() && result.hour.is_some() {
+                    result = self.extract_trailing_timezone(timestr, result);
+                }
                 return Ok((result, Vec::new()));
             }
         }
@@ -636,6 +641,56 @@ impl Parser {
             let microseconds: u32 = padded[..6].parse().unwrap_or(0);
             (seconds, microseconds)
         }
+    }
+
+    /// Extract trailing timezone name from a string after ISO parsing.
+    ///
+    /// Handles cases like "2024-01-15 10:30:00 UTC" or "2024-01-15T10:30:00 GMT+3"
+    /// where the ISO parser parsed the datetime but not the timezone.
+    fn extract_trailing_timezone(&self, timestr: &str, mut result: ParseResult) -> ParseResult {
+        // Find the last space-separated token(s) that could be timezone info
+        let parts: Vec<&str> = timestr.split_whitespace().collect();
+        if parts.len() < 2 {
+            return result;
+        }
+
+        // Check the last part for timezone name
+        let last_part = parts[parts.len() - 1];
+
+        // Handle "UTC", "GMT", etc. (pure timezone name)
+        if self.info.utczone(last_part) {
+            result.tzname = Some(last_part.to_uppercase());
+            result.tzoffset = Some(0);
+            return result;
+        }
+
+        // Handle "EST", "PST", etc. (timezone abbreviation without defined offset)
+        if last_part.len() <= 5 && last_part.chars().all(|c| c.is_ascii_uppercase()) {
+            result.tzname = Some(last_part.to_string());
+            // No offset - user needs tzinfos to resolve
+            return result;
+        }
+
+        // Handle "GMT+3", "GMT-5", etc.
+        if last_part.len() >= 4 {
+            let upper = last_part.to_uppercase();
+            if upper.starts_with("GMT") || upper.starts_with("UTC") {
+                let rest = &last_part[3..];
+                if let Some((sign, offset_str)) = rest.strip_prefix('+').map(|s| (-1i32, s))
+                    .or_else(|| rest.strip_prefix('-').map(|s| (1i32, s)))
+                {
+                    // GMT+N means "my time + N = GMT", so offset is -N
+                    // GMT-N means "my time - N = GMT", so offset is +N
+                    if let Ok(hours) = offset_str.parse::<i32>() {
+                        result.tzoffset = Some(sign * hours * 3600);
+                        // Don't set tzname for GMT+N since it's not actually GMT
+                        return result;
+                    }
+                }
+            }
+        }
+
+        result
     }
 
     /// Recombine skipped tokens.

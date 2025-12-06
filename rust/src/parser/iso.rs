@@ -210,18 +210,24 @@ impl IsoParser {
 
             let mut dayno = 1i32;
             if dt_str.len() > pos {
-                let day_has_sep = dt_str.get(pos) == Some(&b'-');
-                if day_has_sep != has_sep {
-                    return Err(ParserError::ParseError(
-                        "Inconsistent use of dash separator".to_string(),
-                    ));
-                }
-                if day_has_sep {
-                    pos += 1;
-                }
-                if pos < dt_str.len() && dt_str[pos].is_ascii_digit() {
-                    dayno = (dt_str[pos] - b'0') as i32;
-                    pos += 1;
+                let next_byte = dt_str.get(pos);
+                // Check if this is the time separator (T or space) - no day follows
+                if next_byte == Some(&b'T') || next_byte == Some(&b' ') || next_byte == Some(&b't') {
+                    // No day, just time separator - leave dayno as 1 (Monday)
+                } else {
+                    let day_has_sep = next_byte == Some(&b'-');
+                    if day_has_sep != has_sep {
+                        return Err(ParserError::ParseError(
+                            "Inconsistent use of dash separator".to_string(),
+                        ));
+                    }
+                    if day_has_sep {
+                        pos += 1;
+                    }
+                    if pos < dt_str.len() && dt_str[pos].is_ascii_digit() {
+                        dayno = (dt_str[pos] - b'0') as i32;
+                        pos += 1;
+                    }
                 }
             }
 
