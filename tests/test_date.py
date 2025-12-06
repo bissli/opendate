@@ -291,8 +291,11 @@ def test_parse():
 
 def test_parse_date_formats():
     """Test Date.parse with various date format strings."""
-    # m/d/yyyy format
+    # m/d/yyyy format (with 4-digit year)
     assert Date.parse('6-23-2006') == Date(2006, 6, 23)
+    assert Date.parse('01/15/2024') == Date(2024, 1, 15)
+
+    # m/d/yy format (with 2-digit year)
     assert Date.parse('6/23/06') == Date(2006, 6, 23)
 
     # yyyy-mm-dd format
@@ -301,6 +304,11 @@ def test_parse_date_formats():
     # yyyymmdd format
     assert Date.parse('20060623') == Date(2006, 6, 23)
 
+    # m/d format (no year - uses current year)
+    result = Date.parse('01/15')
+    assert result.month == 1
+    assert result.day == 15
+
     # Named month formats
     assert Date.parse('23-JUN-2006') == Date(2006, 6, 23)
     assert Date.parse('20 Jan 2009') == Date(2009, 1, 20)
@@ -308,6 +316,8 @@ def test_parse_date_formats():
     assert Date.parse('23-May-12') == Date(2012, 5, 23)
     assert Date.parse('23May2012') == Date(2012, 5, 23)
     assert Date.parse('Jan. 13, 2014') == Date(2014, 1, 13)
+    assert Date.parse('Jan-15-2024') == Date(2024, 1, 15)
+    assert Date.parse('Jan 15 2024') == Date(2024, 1, 15)
 
     # Custom format string
     assert Date.parse('Oct. 24, 2007', fmt='%b. %d, %Y') == Date(2007, 10, 24)
