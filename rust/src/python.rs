@@ -199,22 +199,45 @@ fn parse(
     }
 }
 
-/// Parse a standalone time string (convenience function).
+/// Python wrapper for standalone time parsing.
 ///
-/// Handles formats:
-/// - HHMM: "0930" → 09:30
-/// - HHMMSS: "093015" → 09:30:15
-/// - HHMMSS with fraction: "093015.751" or "093015,751"
-/// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
-/// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
-///
-/// Returns None for invalid inputs.
-#[pyfunction]
-fn parse_time(timestr: &str) -> PyResult<Option<PyParseResult>> {
-    match DEFAULT_PARSER.parse_time_only(timestr) {
-        Ok(result) => Ok(Some(result.into())),
-        Err(_) => Ok(None),
+/// Provides a class-based interface for parsing time strings,
+/// consistent with Parser and IsoParser patterns.
+#[pyclass(name = "TimeParser")]
+pub struct PyTimeParser {
+    inner: Parser,
+}
+
+#[pymethods]
+impl PyTimeParser {
+    #[new]
+    fn new() -> Self {
+        PyTimeParser {
+            inner: Parser::default(),
+        }
     }
+
+    /// Parse a time-only string.
+    ///
+    /// Handles formats:
+    /// - HHMM: "0930" → 09:30
+    /// - HHMMSS: "093015" → 09:30:15
+    /// - HHMMSS with fraction: "093015.751" or "093015,751"
+    /// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
+    /// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
+    ///
+    /// Raises ValueError for invalid inputs.
+    fn parse(&self, timestr: &str) -> PyResult<PyParseResult> {
+        let result = self.inner.parse_time_only(timestr)?;
+        Ok(result.into())
+    }
+}
+
+/// Parse a time-only string (convenience function).
+#[pyfunction]
+fn timeparse(timestr: &str) -> PyResult<PyParseResult> {
+    let result = DEFAULT_PARSER.parse_time_only(timestr)?;
+    Ok(result.into())
 }
 
 #[pymodule]
@@ -223,8 +246,9 @@ pub fn _opendate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyParseResult>()?;
     m.add_class::<PyIsoParser>()?;
     m.add_class::<PyParser>()?;
+    m.add_class::<PyTimeParser>()?;
     m.add_function(wrap_pyfunction!(isoparse, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
-    m.add_function(wrap_pyfunction!(parse_time, m)?)?;
+    m.add_function(wrap_pyfunction!(timeparse, m)?)?;
     Ok(())
 }

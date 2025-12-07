@@ -13,23 +13,24 @@ try:
     from date._opendate import BusinessCalendar as _BusinessCalendar
     from date._opendate import IsoParser as _RustIsoParser
     from date._opendate import Parser as _RustParser
-    from date._opendate import parse_time as _rust_parse_time
+    from date._opendate import TimeParser as _RustTimeParser
 except ImportError:
     try:
         from _opendate import BusinessCalendar as _BusinessCalendar
         from _opendate import IsoParser as _RustIsoParser
         from _opendate import Parser as _RustParser
-        from _opendate import parse_time as _rust_parse_time
+        from _opendate import TimeParser as _RustTimeParser
     except ImportError:
         _BusinessCalendar = None
         _RustParser = None
         _RustIsoParser = None
-        _rust_parse_time = None
+        _RustTimeParser = None
 
 logger = logging.getLogger(__name__)
 
 _cached_parser: _RustParser | None = None
 _cached_iso_parser: _RustIsoParser | None = None
+_cached_time_parser: _RustTimeParser | None = None
 
 
 def _get_parser() -> _RustParser | None:
@@ -52,6 +53,17 @@ def _get_iso_parser() -> _RustIsoParser | None:
     if _cached_iso_parser is None:
         _cached_iso_parser = _RustIsoParser()
     return _cached_iso_parser
+
+
+def _get_time_parser() -> _RustTimeParser | None:
+    """Get cached TimeParser instance.
+    """
+    global _cached_time_parser
+    if _RustTimeParser is None:
+        return None
+    if _cached_time_parser is None:
+        _cached_time_parser = _RustTimeParser()
+    return _cached_time_parser
 
 
 def isdateish(x: Any) -> bool:
@@ -124,6 +136,26 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
         )
     except Exception as e:
         logger.debug(f'Rust parser failed: {e}')
+        return None
+
+
+def _rust_parse_time(s: str) -> tuple[int, int, int, int] | None:
+    """Parse time string using Rust TimeParser, return (h, m, s, us) or None.
+
+    This is an internal helper that bridges the Rust TimeParser to Python.
+    Returns None if parsing fails.
+    """
+    time_parser = _get_time_parser()
+    if time_parser is None:
+        return None
+    try:
+        result = time_parser.parse(s)
+        hour = result.hour if result.hour is not None else 0
+        minute = result.minute if result.minute is not None else 0
+        second = result.second if result.second is not None else 0
+        microsecond = result.microsecond if result.microsecond is not None else 0
+        return (hour, minute, second, microsecond)
+    except Exception:
         return None
 
 

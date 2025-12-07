@@ -4,7 +4,6 @@ import datetime as _datetime
 import sys
 import time
 import zoneinfo as _zoneinfo
-from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -18,9 +17,6 @@ if sys.version_info >= (3, 11):
     from typing import Self
 else:
     from typing_extensions import Self
-
-if TYPE_CHECKING:
-    pass
 
 
 class Time(_pendulum.Time):
@@ -95,14 +91,10 @@ class Time(_pendulum.Time):
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
 
-        if _rust_parse_time is not None:
-            result = _rust_parse_time(s)
-            if result is not None:
-                hour = result.hour if result.hour is not None else 0
-                minute = result.minute if result.minute is not None else 0
-                second = result.second if result.second is not None else 0
-                microsecond = result.microsecond if result.microsecond is not None else 0
-                return cls(hour, minute, second, microsecond)
+        result = _rust_parse_time(s)
+        if result is not None:
+            hour, minute, second, microsecond = result
+            return cls(hour, minute, second, microsecond)
 
         if raise_err:
             raise ValueError('Failed to parse time: %s', s)
