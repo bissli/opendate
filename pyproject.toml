@@ -26,7 +26,6 @@ dependencies = [
   "pendulum",
   "wrapt",
   "typing-extensions",
-  "regex",
 ]
 
 [project.optional-dependencies]

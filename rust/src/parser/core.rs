@@ -34,6 +34,249 @@ impl Parser {
         Parser { info }
     }
 
+    /// Parse a standalone time string.
+    ///
+    /// Handles formats:
+    /// - HHMM: "0930" → 09:30
+    /// - HHMMSS: "093015" → 09:30:15
+    /// - HHMMSS with fraction: "093015.751" or "093015,751" → 09:30:15.751
+    /// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
+    /// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
+    ///
+    /// Returns None for invalid inputs (e.g., hour > 23, minute > 59).
+    pub fn parse_time_only(&self, timestr: &str) -> Result<ParseResult, ParserError> {
+        let s = timestr.trim();
+        if s.is_empty() {
+            return Err(ParserError::ParseError("Empty time string".to_string()));
+        }
+
+        // Extract optional AM/PM suffix
+        let (time_part, ampm) = self.extract_ampm_suffix(s);
+
+        // Try compact format first (HHMM, HHMMSS)
+        if let Some(result) = self.try_parse_compact_time(time_part, ampm)? {
+            return Ok(result);
+        }
+
+        // Try separated format (H:MM, HH:MM, H.MM, HH.MM, with optional seconds)
+        if let Some(result) = self.try_parse_separated_time(time_part, ampm)? {
+            return Ok(result);
+        }
+
+        Err(ParserError::ParseError(format!(
+            "Invalid time format: {}",
+            timestr
+        )))
+    }
+
+    /// Extract AM/PM suffix from time string.
+    fn extract_ampm_suffix<'a>(&self, s: &'a str) -> (&'a str, Option<u32>) {
+        let s_upper = s.to_uppercase();
+        if s_upper.ends_with(" AM") {
+            (&s[..s.len() - 3], Some(0))
+        } else if s_upper.ends_with(" PM") {
+            (&s[..s.len() - 3], Some(1))
+        } else {
+            (s, None)
+        }
+    }
+
+    /// Try to parse compact time format (HHMM or HHMMSS with optional fraction).
+    fn try_parse_compact_time(
+        &self,
+        s: &str,
+        ampm: Option<u32>,
+    ) -> Result<Option<ParseResult>, ParserError> {
+        // Find fraction separator position (. or ,)
+        let (digits_part, frac_part) = if let Some(pos) = s.find(['.', ',']) {
+            (&s[..pos], Some(&s[pos + 1..]))
+        } else {
+            (s, None)
+        };
+
+        // Must be exactly 4 or 6 digits
+        if !digits_part.chars().all(|c| c.is_ascii_digit()) {
+            return Ok(None);
+        }
+
+        let len = digits_part.len();
+        if len != 4 && len != 6 {
+            return Ok(None);
+        }
+
+        // Parse components
+        let hour: u32 = digits_part[0..2]
+            .parse()
+            .map_err(|_| ParserError::ParseError("Invalid hour".to_string()))?;
+        let minute: u32 = digits_part[2..4]
+            .parse()
+            .map_err(|_| ParserError::ParseError("Invalid minute".to_string()))?;
+        let second: u32 = if len == 6 {
+            digits_part[4..6]
+                .parse()
+                .map_err(|_| ParserError::ParseError("Invalid second".to_string()))?
+        } else {
+            0
+        };
+
+        // Validate ranges (before AM/PM adjustment)
+        let max_hour = if ampm.is_some() { 12 } else { 23 };
+        if hour > max_hour || minute > 59 || second > 59 {
+            return Err(ParserError::ParseError(format!(
+                "Time values out of range: {:02}:{:02}:{:02}",
+                hour, minute, second
+            )));
+        }
+
+        // Parse microseconds
+        let microsecond = if let Some(frac) = frac_part {
+            let padded = format!("{:0<6}", &frac[..frac.len().min(6)]);
+            padded.parse::<u32>().unwrap_or(0)
+        } else {
+            0
+        };
+
+        // Build result
+        let mut result = ParseResult::default();
+        if ampm.is_some() {
+            result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
+        } else {
+            result.hour = Some(hour);
+        }
+        result.minute = Some(minute);
+        result.second = Some(second);
+        result.microsecond = Some(microsecond);
+        result.ampm = ampm;
+
+        Ok(Some(result))
+    }
+
+    /// Try to parse separated time format (H:MM, HH:MM, H.MM, HH.MM with optional seconds).
+    fn try_parse_separated_time(
+        &self,
+        s: &str,
+        ampm: Option<u32>,
+    ) -> Result<Option<ParseResult>, ParserError> {
+        // Pattern: H:MM or HH:MM or H.MM or HH.MM, optionally with :SS or .SS and fraction
+        // Use tokenizer to split
+        let tokens: Vec<String> = Tokenizer::split(s);
+
+        if tokens.is_empty() {
+            return Ok(None);
+        }
+
+        let hour: u32;
+        let minute: u32;
+        let mut second: u32 = 0;
+        let mut microsecond: u32 = 0;
+
+        // Check if first token is a decimal like "9.30" (tokenizer keeps H.MM as one token)
+        if tokens[0].contains('.') && !tokens[0].starts_with('.') {
+            let parts: Vec<&str> = tokens[0].split('.').collect();
+            if parts.len() >= 2 {
+                let hour_str = parts[0];
+                let min_str = parts[1];
+
+                if hour_str.len() <= 2
+                    && min_str.len() == 2
+                    && hour_str.chars().all(|c| c.is_ascii_digit())
+                    && min_str.chars().all(|c| c.is_ascii_digit())
+                {
+                    hour = hour_str.parse().unwrap_or(0);
+                    minute = min_str.parse().unwrap_or(0);
+
+                    // Check for seconds in parts[2] if present
+                    if parts.len() >= 3 {
+                        let (sec, micro) = self.parsems(parts[2]);
+                        second = sec;
+                        microsecond = micro;
+                    }
+
+                    // Validate ranges
+                    let max_hour = if ampm.is_some() { 12 } else { 23 };
+                    if hour > max_hour || minute > 59 || second > 59 {
+                        return Err(ParserError::ParseError(format!(
+                            "Time values out of range: {:02}:{:02}:{:02}",
+                            hour, minute, second
+                        )));
+                    }
+
+                    // Build result
+                    let mut result = ParseResult::default();
+                    if ampm.is_some() {
+                        result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
+                    } else {
+                        result.hour = Some(hour);
+                    }
+                    result.minute = Some(minute);
+                    result.second = Some(second);
+                    result.microsecond = Some(microsecond);
+                    result.ampm = ampm;
+
+                    return Ok(Some(result));
+                }
+            }
+        }
+
+        // Standard token-based parsing (H:MM, etc.)
+        if tokens.len() < 3 {
+            return Ok(None);
+        }
+
+        // First token should be hour (1-2 digits)
+        let hour_str = &tokens[0];
+        if !hour_str.chars().all(|c| c.is_ascii_digit()) || hour_str.len() > 2 {
+            return Ok(None);
+        }
+
+        // Second token should be separator (: or .)
+        let sep = &tokens[1];
+        if sep != ":" && sep != "." {
+            return Ok(None);
+        }
+
+        // Third token should be minute (2 digits)
+        let min_str = &tokens[2];
+        if !min_str.chars().all(|c| c.is_ascii_digit()) || min_str.len() != 2 {
+            return Ok(None);
+        }
+
+        hour = hour_str.parse().unwrap_or(0);
+        minute = min_str.parse().unwrap_or(0);
+
+        // Check for seconds: :SS or .SS
+        if tokens.len() >= 5 && (tokens[3] == ":" || tokens[3] == ".") {
+            // Parse seconds (may include fraction like "45.123")
+            let sec_str = &tokens[4];
+            let (sec, micro) = self.parsems(sec_str);
+            second = sec;
+            microsecond = micro;
+        }
+
+        // Validate ranges
+        let max_hour = if ampm.is_some() { 12 } else { 23 };
+        if hour > max_hour || minute > 59 || second > 59 {
+            return Err(ParserError::ParseError(format!(
+                "Time values out of range: {:02}:{:02}:{:02}",
+                hour, minute, second
+            )));
+        }
+
+        // Build result
+        let mut result = ParseResult::default();
+        if ampm.is_some() {
+            result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
+        } else {
+            result.hour = Some(hour);
+        }
+        result.minute = Some(minute);
+        result.second = Some(second);
+        result.microsecond = Some(microsecond);
+        result.ampm = ampm;
+
+        Ok(Some(result))
+    }
+
     /// Parse a datetime string.
     ///
     /// # Arguments
@@ -873,5 +1116,163 @@ mod tests {
         assert_eq!(res.hour, Some(2));
         assert_eq!(res.minute, Some(30));
         assert_eq!(res.second, Some(45));
+    }
+
+    // Tests for parse_time_only()
+
+    #[test]
+    fn test_time_only_compact_hhmm() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("0930").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(0));
+    }
+
+    #[test]
+    fn test_time_only_compact_hhmmss() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("093015").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+    }
+
+    #[test]
+    fn test_time_only_compact_with_dot_fraction() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("093015.751").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+        assert_eq!(res.microsecond, Some(751000));
+    }
+
+    #[test]
+    fn test_time_only_compact_with_comma_fraction() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("093015,751").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+        assert_eq!(res.microsecond, Some(751000));
+    }
+
+    #[test]
+    fn test_time_only_compact_pm() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("0930 PM").unwrap();
+        assert_eq!(res.hour, Some(21));
+        assert_eq!(res.minute, Some(30));
+    }
+
+    #[test]
+    fn test_time_only_compact_with_fraction_pm() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("093015,751 PM").unwrap();
+        assert_eq!(res.hour, Some(21));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+        assert_eq!(res.microsecond, Some(751000));
+    }
+
+    #[test]
+    fn test_time_only_12am_midnight() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("1200 AM").unwrap();
+        assert_eq!(res.hour, Some(0)); // 12 AM = midnight
+        assert_eq!(res.minute, Some(0));
+    }
+
+    #[test]
+    fn test_time_only_12pm_noon() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("1200 PM").unwrap();
+        assert_eq!(res.hour, Some(12)); // 12 PM = noon
+        assert_eq!(res.minute, Some(0));
+    }
+
+    #[test]
+    fn test_time_only_separated_colon() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9:30").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+    }
+
+    #[test]
+    fn test_time_only_separated_dot() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9.30").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+    }
+
+    #[test]
+    fn test_time_only_separated_with_seconds() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9:30:15").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+    }
+
+    #[test]
+    fn test_time_only_separated_dot_seconds() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9.30.15").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+    }
+
+    #[test]
+    fn test_time_only_separated_with_microseconds() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9:30:15.751").unwrap();
+        assert_eq!(res.hour, Some(9));
+        assert_eq!(res.minute, Some(30));
+        assert_eq!(res.second, Some(15));
+        assert_eq!(res.microsecond, Some(751000));
+    }
+
+    #[test]
+    fn test_time_only_separated_pm() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("9:30 PM").unwrap();
+        assert_eq!(res.hour, Some(21));
+        assert_eq!(res.minute, Some(30));
+    }
+
+    #[test]
+    fn test_time_only_separated_12pm() {
+        let parser = Parser::default();
+        let res = parser.parse_time_only("12:00 PM").unwrap();
+        assert_eq!(res.hour, Some(12)); // 12 PM = noon
+        assert_eq!(res.minute, Some(0));
+    }
+
+    #[test]
+    fn test_time_only_invalid_hour() {
+        let parser = Parser::default();
+        assert!(parser.parse_time_only("9930").is_err());
+    }
+
+    #[test]
+    fn test_time_only_invalid_minute() {
+        let parser = Parser::default();
+        assert!(parser.parse_time_only("0970").is_err());
+    }
+
+    #[test]
+    fn test_time_only_invalid_3_digits() {
+        let parser = Parser::default();
+        assert!(parser.parse_time_only("930").is_err());
+    }
+
+    #[test]
+    fn test_time_only_invalid_5_digits() {
+        let parser = Parser::default();
+        assert!(parser.parse_time_only("09301").is_err());
     }
 }

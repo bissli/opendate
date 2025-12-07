@@ -188,6 +188,24 @@ fn parse(
     }
 }
 
+/// Parse a standalone time string (convenience function).
+///
+/// Handles formats:
+/// - HHMM: "0930" → 09:30
+/// - HHMMSS: "093015" → 09:30:15
+/// - HHMMSS with fraction: "093015.751" or "093015,751"
+/// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
+/// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
+///
+/// Returns None for invalid inputs.
+#[pyfunction]
+fn parse_time(timestr: &str) -> PyResult<Option<PyParseResult>> {
+    match DEFAULT_PARSER.parse_time_only(timestr) {
+        Ok(result) => Ok(Some(result.into())),
+        Err(_) => Ok(None),
+    }
+}
+
 #[pymodule]
 pub fn _opendate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBusinessCalendar>()?;
@@ -196,5 +214,6 @@ pub fn _opendate(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyParser>()?;
     m.add_function(wrap_pyfunction!(isoparse, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_time, m)?)?;
     Ok(())
 }

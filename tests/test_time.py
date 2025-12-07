@@ -19,21 +19,42 @@ def test_datetime_to_time():
 
 
 @pytest.mark.parametrize(('input_str', 'expected'), [
+    # Colon-separated formats
     ('9:30', Time(9, 30, 0, tzinfo=UTC)),
     ('9:30:15', Time(9, 30, 15, tzinfo=UTC)),
     ('9:30:15.751', Time(9, 30, 15, 751000, tzinfo=UTC)),
     ('9:30 AM', Time(9, 30, 0, tzinfo=UTC)),
     ('9:30 pm', Time(21, 30, 0, tzinfo=UTC)),
     ('9:30:15.751 PM', Time(21, 30, 15, 751000, tzinfo=UTC)),
+    # Compact formats
     ('0930', Time(9, 30, 0, tzinfo=UTC)),
     ('093015', Time(9, 30, 15, tzinfo=UTC)),
     ('093015,751', Time(9, 30, 15, 751000, tzinfo=UTC)),
+    ('093015.751', Time(9, 30, 15, 751000, tzinfo=UTC)),  # dot fraction
     ('0930 pm', Time(21, 30, 0, tzinfo=UTC)),
     ('093015,751 PM', Time(21, 30, 15, 751000, tzinfo=UTC)),
+    # Dot-separated formats
+    ('9.30', Time(9, 30, 0, tzinfo=UTC)),
+    ('9.30.15', Time(9, 30, 15, tzinfo=UTC)),
+    # Midnight and noon edge cases
+    ('1200 AM', Time(0, 0, 0, tzinfo=UTC)),   # 12 AM = midnight
+    ('12:00 PM', Time(12, 0, 0, tzinfo=UTC)),  # 12 PM = noon
+    ('12:00 AM', Time(0, 0, 0, tzinfo=UTC)),  # 12 AM = midnight (colon format)
 ])
 def test_time_parse_formats(input_str, expected):
     """Test Time.parse with various format strings."""
     assert Time.parse(input_str) == expected
+
+
+@pytest.mark.parametrize('input_str', [
+    '9930',   # invalid hour (99)
+    '0970',   # invalid minute (70)
+    '930',    # 3 digits (invalid)
+    '09301',  # 5 digits (invalid)
+])
+def test_time_parse_invalid(input_str):
+    """Test Time.parse returns None for invalid inputs."""
+    assert Time.parse(input_str) is None
 
 
 def test_time_instance_basic():

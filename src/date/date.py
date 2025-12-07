@@ -29,15 +29,18 @@ try:
     from date._opendate import BusinessCalendar as _BusinessCalendar
     from date._opendate import IsoParser as _RustIsoParser
     from date._opendate import Parser as _RustParser
+    from date._opendate import parse_time as _rust_parse_time
 except ImportError:
     try:
         from _opendate import BusinessCalendar as _BusinessCalendar
         from _opendate import IsoParser as _RustIsoParser
         from _opendate import Parser as _RustParser
+        from _opendate import parse_time as _rust_parse_time
     except ImportError:
         _BusinessCalendar = None
         _RustParser = None
         _RustIsoParser = None
+        _rust_parse_time = None
 
 
 warnings.simplefilter(action='ignore', category=DeprecationWarning)
@@ -1206,31 +1209,6 @@ class Time(_pendulum.Time):
             Custom format:
             Time.parse('14-30-45', fmt='%H-%M-%S') → Time(14, 30, 45, 0, tzinfo=UTC)
         """
-
-        def seconds(m):
-            try:
-                return int(m.group('s'))
-            except Exception:
-                return 0
-
-        def micros(m):
-            try:
-                u_str = m.group('u')
-                if u_str:
-                    # Normalize to 6 digits (microseconds)
-                    # Pad right with zeros if shorter, truncate if longer
-                    u_str = u_str[:6].ljust(6, '0')
-                    return int(u_str)
-                return 0
-            except Exception:
-                return 0
-
-        def is_pm(m):
-            try:
-                return m.group('ap').lower() == 'pm'
-            except Exception:
-                return False
-
         if not s:
             if raise_err:
                 raise ValueError('Empty value')
@@ -1247,24 +1225,14 @@ class Time(_pendulum.Time):
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
 
-        exps = (
-            r'^(?P<h>\d{1,2})[:.](?P<m>\d{2})([:.](?P<s>\d{2})([.,](?P<u>\d+))?)?( +(?P<ap>[aApP][mM]))?$',
-            r'^(?P<h>\d{2})(?P<m>\d{2})((?P<s>\d{2})([.,](?P<u>\d+))?)?( +(?P<ap>[aApP][mM]))?$',
-        )
-
-        for exp in exps:
-            if m := re.match(exp, s):
-                hh = int(m.group('h'))
-                mm = int(m.group('m'))
-                ss = seconds(m)
-                uu = micros(m)
-                if is_pm(m) and hh < 12:
-                    hh += 12
-                return cls(hh, mm, ss, uu)
-
-        parsed = _rust_parse_datetime(s)
-        if parsed is not None:
-            return cls.instance(parsed)
+        if _rust_parse_time is not None:
+            result = _rust_parse_time(s)
+            if result is not None:
+                hour = result.hour if result.hour is not None else 0
+                minute = result.minute if result.minute is not None else 0
+                second = result.second if result.second is not None else 0
+                microsecond = result.microsecond if result.microsecond is not None else 0
+                return cls(hour, minute, second, microsecond)
 
         if raise_err:
             raise ValueError('Failed to parse time: %s', s)
