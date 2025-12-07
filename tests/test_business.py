@@ -142,5 +142,53 @@ def test_date_previous():
     assert d == Date(2023, 4, 9)
 
 
+def test_previous_friday_snaps_backward_when_landing_on_july4():
+    """previous(FRIDAY) in business mode should snap backward when landing on holiday.
+
+    July 4, 2025 is Friday (Independence Day - holiday)
+    July 7, 2025 is Monday
+
+    d.b.previous(FRIDAY) from Monday finds previous Friday = July 4 (holiday).
+    Should snap BACKWARD to July 3 (Thursday).
+    """
+    d = Date(2025, 7, 7)  # Monday
+    result = d.b.previous(WeekDay.FRIDAY)  # Previous Friday = July 4 (holiday)
+
+    # Should be July 3 (Thursday) - snap backward from holiday
+    assert result == Date(2025, 7, 3), f'Expected July 3, got {result}'
+
+
+def test_next_monday_snaps_forward_when_landing_on_memorial_day():
+    """next(MONDAY) in business mode should snap forward when landing on holiday.
+
+    Memorial Day 2024: May 27 is Monday (holiday)
+    May 24, 2024 is Friday
+
+    d.b.next(MONDAY) from Friday finds next Monday = May 27 (holiday).
+    Should snap FORWARD to May 28 (Tuesday).
+    """
+    d = Date(2024, 5, 24)  # Friday
+    result = d.b.next(WeekDay.MONDAY)  # Next Monday = May 27 (Memorial Day)
+
+    # Should be May 28 (Tuesday) - snap forward from holiday
+    assert result == Date(2024, 5, 28), f'Expected May 28, got {result}'
+
+
+def test_previous_thursday_snaps_backward_when_landing_on_thanksgiving():
+    """previous(THURSDAY) in business mode should snap backward for Thanksgiving.
+
+    Thanksgiving 2024: November 28 is Thursday (holiday)
+    December 2, 2024 is Monday
+
+    d.b.previous(THURSDAY) from Monday finds previous Thursday = Nov 28 (holiday).
+    Should snap BACKWARD to November 27 (Wednesday).
+    """
+    d = Date(2024, 12, 2)  # Monday
+    result = d.b.previous(WeekDay.THURSDAY)  # Previous Thursday = Nov 28 (Thanksgiving)
+
+    # Should be Nov 27 (Wednesday) - snap backward from holiday
+    assert result == Date(2024, 11, 27), f'Expected Nov 27, got {result}'
+
+
 if __name__ == '__main__':
     __import__('pytest').main([__file__])

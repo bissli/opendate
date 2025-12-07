@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from date.constants import WeekDay
+from date.constants import _MAX_YEAR, _MIN_YEAR, WeekDay
 from date.decorators import expect_date, store_calendar
 
 if sys.version_info >= (3, 11):
@@ -53,7 +53,7 @@ class DateBusinessMixin:
         """
         return self.business()
 
-    def calendar(self, cal: str | 'Calendar | None' = None) -> Self:
+    def calendar(self, cal: str | Calendar | None = None) -> Self:
         """Set the calendar for business day calculations.
 
         Parameters
@@ -78,7 +78,7 @@ class DateBusinessMixin:
         return self
 
     @property
-    def _active_calendar(self) -> 'Calendar':
+    def _active_calendar(self) -> Calendar:
         """Get the active calendar (uses module default if not set).
         """
         from date.calendars import get_calendar, get_default_calendar
@@ -86,6 +86,14 @@ class DateBusinessMixin:
         if self._calendar is None:
             return get_calendar(get_default_calendar())
         return self._calendar
+
+    def _check_calendar_range(self) -> None:
+        """Raise ValueError if date is outside valid calendar range."""
+        if self.year < _MIN_YEAR or self.year > _MAX_YEAR:
+            raise ValueError(
+                f'Date {self} is outside the valid calendar range '
+                f'({_MIN_YEAR}-{_MAX_YEAR})'
+            )
 
     @store_calendar
     def add(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
@@ -182,29 +190,37 @@ class DateBusinessMixin:
     @store_calendar
     def previous(self, day_of_week: WeekDay | None = None) -> Self:
         """Modify to the previous occurrence of a given day of the week.
+
+        In business mode, snaps BACKWARD to maintain 'previous' semantics.
         """
         _business = self._business
         self._business = False
         self = super().previous(day_of_week)
         if _business:
-            self = self._business_or_next()
+            self = self._business_or_previous()
         return self
 
     @store_calendar
     def next(self, day_of_week: WeekDay | None = None) -> Self:
         """Modify to the next occurrence of a given day of the week.
+
+        In business mode, snaps FORWARD to maintain 'next' semantics.
         """
         _business = self._business
         self._business = False
         self = super().next(day_of_week)
         if _business:
-            self = self._business_or_previous()
+            self = self._business_or_next()
         return self
 
     @expect_date
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the calendar.
+
+        Raises
+            ValueError: If date is outside valid calendar range (1900-2100)
         """
+        self._check_calendar_range()
         cal = self._active_calendar._get_calendar(self)
         if cal is None:
             return False
@@ -223,7 +239,12 @@ class DateBusinessMixin:
             .get(self, (None, None))
 
     def _add_business_days(self, days: int) -> Self | None:
-        """Add business days using Rust calendar, returns None if outside range."""
+        """Add business days using Rust calendar.
+
+        Raises
+            ValueError: If date is outside valid calendar range (1900-2100)
+        """
+        self._check_calendar_range()
         cal = self._active_calendar._get_calendar(self)
         if cal is None:
             return None
@@ -240,8 +261,13 @@ class DateBusinessMixin:
 
     @store_calendar
     def _snap_to_business_day(self, forward: bool = True) -> Self:
-        """Snap to nearest business day if not already on one."""
+        """Snap to nearest business day if not already on one.
+
+        Raises
+            ValueError: If date is outside valid calendar range (1900-2100)
+        """
         self._business = False
+        self._check_calendar_range()
         if self.is_business_day():
             return self
         cal = self._active_calendar._get_calendar(self)
