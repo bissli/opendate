@@ -54,13 +54,25 @@ impl IsoParser {
             if self.sep.is_none() || Some(sep_byte) == self.sep {
                 // Not a digit means it's a separator
                 if !sep_byte.is_ascii_digit() {
-                    let time_result = self.parse_isotime_internal(&bytes[pos + 1..])?;
+                    let time_bytes = &bytes[pos + 1..];
+                    let (time_result, time_pos) = self.parse_isotime_internal(time_bytes)?;
                     result.hour = time_result.hour;
                     result.minute = time_result.minute;
                     result.second = time_result.second;
                     result.microsecond = time_result.microsecond;
                     result.tzoffset = time_result.tzoffset;
                     result.tzname = time_result.tzname;
+
+                    // Check for unconsumed input after time portion
+                    if time_pos < time_bytes.len() {
+                        let remaining = &time_bytes[time_pos..];
+                        if !remaining.iter().all(|&b| b == b' ' || b == b'\t') {
+                            return Err(ParserError::ParseError(format!(
+                                "String contains unknown ISO components: {:?}",
+                                std::str::from_utf8(remaining).unwrap_or("?")
+                            )));
+                        }
+                    }
                 }
             } else {
                 return Err(ParserError::ParseError(
@@ -103,7 +115,19 @@ impl IsoParser {
             return Err(ParserError::EmptyString);
         }
 
-        let mut result = self.parse_isotime_internal(bytes)?;
+        let (mut result, pos) = self.parse_isotime_internal(bytes)?;
+
+        // Check for unconsumed input (reject trailing characters)
+        if pos < bytes.len() {
+            // Allow trailing whitespace only
+            let remaining = &bytes[pos..];
+            if !remaining.iter().all(|&b| b == b' ' || b == b'\t') {
+                return Err(ParserError::ParseError(format!(
+                    "String contains unknown ISO components: {:?}",
+                    &timestr[pos..]
+                )));
+            }
+        }
 
         // Handle 24:00:00 midnight
         if result.hour == Some(24) {
@@ -267,7 +291,7 @@ impl IsoParser {
         Ok((result, pos))
     }
 
-    fn parse_isotime_internal(&self, timestr: &[u8]) -> Result<ParseResult, ParserError> {
+    fn parse_isotime_internal(&self, timestr: &[u8]) -> Result<(ParseResult, usize), ParserError> {
         let len_str = timestr.len();
         let mut result = ParseResult::new();
         result.hour = Some(0);
@@ -295,6 +319,8 @@ impl IsoParser {
                     if tz_offset == Some(0) {
                         result.tzname = Some("UTC".to_string());
                     }
+                    // Consume the timezone string
+                    pos = len_str;
                     break;
                 }
             }
@@ -311,12 +337,12 @@ impl IsoParser {
             // Handle separator after minute (before second)
             else if comp == 2 && has_sep {
                 if let Some(&b) = timestr.get(pos) {
-                    if b != b':' {
-                        return Err(ParserError::ParseError(
-                            "Inconsistent use of colon separator".to_string(),
-                        ));
+                    if b == b':' {
+                        pos += 1;
+                    } else {
+                        // No colon means no seconds component - break out
+                        break;
                     }
-                    pos += 1;
                 }
             }
 
@@ -369,7 +395,7 @@ impl IsoParser {
             ));
         }
 
-        Ok(result)
+        Ok((result, pos))
     }
 
     fn parse_tzstr_internal(
@@ -722,5 +748,54 @@ mod tests {
         assert!(!is_leap_year(2023));
         assert!(is_leap_year(2000));
         assert!(!is_leap_year(1900));
+    }
+
+    #[test]
+    fn test_invalid_time_trailing_digit() {
+        let parser = IsoParser::new();
+
+        // '09301' - 5 digits should fail (trailing '1')
+        assert!(parser.parse_isotime("09301").is_err());
+
+        // '143045X' - trailing non-digit
+        assert!(parser.parse_isotime("143045X").is_err());
+    }
+
+    #[test]
+    fn test_invalid_time_trailing_text() {
+        let parser = IsoParser::new();
+
+        // '0930 pm' - AM/PM suffix should fail (ISO doesn't support this)
+        assert!(parser.parse_isotime("0930 pm").is_err());
+        assert!(parser.parse_isotime("09:30 pm").is_err());
+        assert!(parser.parse_isotime("09:30am").is_err());
+
+        // Trailing text
+        assert!(parser.parse_isotime("14:30extra").is_err());
+        assert!(parser.parse_isotime("14:30:45.123extra").is_err());
+    }
+
+    #[test]
+    fn test_invalid_datetime_trailing_text() {
+        let parser = IsoParser::new();
+
+        // DateTime with trailing text should fail
+        assert!(parser.isoparse("2024-01-15T09:30extra").is_err());
+        assert!(parser.isoparse("2024-01-15T093015X").is_err());
+    }
+
+    #[test]
+    fn test_valid_time_trailing_whitespace() {
+        let parser = IsoParser::new();
+
+        // Trailing whitespace should be allowed
+        let r = parser.parse_isotime("14:30 ").unwrap();
+        assert_eq!(r.hour, Some(14));
+        assert_eq!(r.minute, Some(30));
+
+        let r = parser.parse_isotime("14:30:45\t").unwrap();
+        assert_eq!(r.hour, Some(14));
+        assert_eq!(r.minute, Some(30));
+        assert_eq!(r.second, Some(45));
     }
 }

@@ -3,6 +3,7 @@
 These tests verify comprehensive ISO 8601 date/time parsing.
 """
 
+import pytest
 
 from date._opendate import IsoParser, isoparse
 
@@ -329,3 +330,54 @@ class TestIsoparserFormats:
         for offset_str, expected in offsets:
             r = isoparse(f'2024-01-15T10:30:45{offset_str}')
             assert r.tzoffset == expected, f'Failed for offset {offset_str}'
+
+
+class TestIsoparserInvalidFormats:
+    """Test that invalid formats are rejected."""
+
+    def test_time_trailing_digit(self):
+        """Test that trailing digit is rejected: 09301 (5 digits)."""
+        parser = IsoParser()
+        with pytest.raises(Exception):
+            parser.parse_isotime('09301')
+
+    def test_time_trailing_text(self):
+        """Test that trailing text is rejected: 14:30extra."""
+        parser = IsoParser()
+        with pytest.raises(Exception):
+            parser.parse_isotime('14:30extra')
+
+    def test_time_ampm_suffix(self):
+        """Test that AM/PM suffixes are rejected (ISO doesn't support)."""
+        parser = IsoParser()
+        with pytest.raises(Exception):
+            parser.parse_isotime('0930 pm')
+        with pytest.raises(Exception):
+            parser.parse_isotime('09:30 pm')
+        with pytest.raises(Exception):
+            parser.parse_isotime('09:30am')
+
+    def test_time_microseconds_trailing_text(self):
+        """Test that trailing text after microseconds is rejected."""
+        parser = IsoParser()
+        with pytest.raises(Exception):
+            parser.parse_isotime('14:30:45.123extra')
+
+    def test_datetime_trailing_text(self):
+        """Test that datetime with trailing text is rejected."""
+        with pytest.raises(Exception):
+            isoparse('2024-01-15T09:30extra')
+        with pytest.raises(Exception):
+            isoparse('2024-01-15T093015X')
+
+    def test_time_trailing_whitespace_allowed(self):
+        """Test that trailing whitespace IS allowed."""
+        parser = IsoParser()
+        r = parser.parse_isotime('14:30 ')
+        assert r.hour == 14
+        assert r.minute == 30
+
+        r = parser.parse_isotime('14:30:45\t')
+        assert r.hour == 14
+        assert r.minute == 30
+        assert r.second == 45
