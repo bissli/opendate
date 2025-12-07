@@ -4,6 +4,7 @@ import sys
 from typing import TYPE_CHECKING
 
 from date.constants import WEEKDAY_SHORTNAME, WeekDay
+from date.decorators import store_calendar
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -30,42 +31,40 @@ class DateExtrasMixin:
     needed in financial applications and reporting scenarios.
     """
 
+    @store_calendar
     def nearest_start_of_month(self) -> Self:
         """Get the nearest start of month.
 
         If day <= 15, returns start of current month.
         If day > 15, returns start of next month.
-        In business mode, adjusts to next business day if needed.
+        In business mode, snaps to next business day if needed.
         """
         _business = self._business
         self._business = False
         if self.day > 15:
-            d = self.end_of('month')
-            if _business:
-                return d.business().add(days=1)
-            return d.add(days=1)
-        d = self.start_of('month')
+            d = self.end_of('month').add(days=1)  # First of next month
+        else:
+            d = self.start_of('month')  # First of current month
         if _business:
-            return d.business().add(days=1)
+            d = d._business_or_next()
         return d
 
+    @store_calendar
     def nearest_end_of_month(self) -> Self:
         """Get the nearest end of month.
 
         If day <= 15, returns end of previous month.
         If day > 15, returns end of current month.
-        In business mode, adjusts to previous business day if needed.
+        In business mode, snaps to previous business day if needed.
         """
         _business = self._business
         self._business = False
         if self.day <= 15:
-            d = self.start_of('month')
-            if _business:
-                return d.business().subtract(days=1)
-            return d.subtract(days=1)
-        d = self.end_of('month')
+            d = self.start_of('month').subtract(days=1)  # End of previous month
+        else:
+            d = self.end_of('month')  # End of current month
         if _business:
-            return d.business().subtract(days=1)
+            d = d._business_or_previous()
         return d
 
     def next_relative_date_of_week_by_day(self, day='MO') -> Self:

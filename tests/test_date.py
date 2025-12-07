@@ -194,9 +194,9 @@ def test_add():
         i -= 1
     assert thedate == Date(2021, 11, 24)
 
-    # Infinite date
-    d = Date.instance(datetime.date(9999, 12, 31)).b.add(days=1)
-    assert d == Date(9999, 12, 31)
+    # Out-of-range date raises ValueError
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        Date.instance(datetime.date(9999, 12, 31)).b.add(days=1)
 
     # In one week (from following doctests)
     d = Date.instance(datetime.date(2018, 11, 29)).b.add(days=5)
@@ -461,6 +461,48 @@ def test_nearest_start_and_end_of_month():
     assert Date(2015, 1, 31).b.nearest_end_of_month() == Date(2015, 1, 30)
 
 
+def test_nearest_start_of_month_business_snapping():
+    """Test that nearest_start_of_month snaps (not snap+add) in business mode."""
+    # Early in month (day <= 15), start is business day
+    # March 1, 2024 is Friday (business day)
+    d = Date(2024, 3, 10).b.nearest_start_of_month()
+    assert d == Date(2024, 3, 1), f'Expected March 1, got {d}'
+
+    # Early in month, start is weekend
+    # December 1, 2024 is Sunday → December 2 is Monday
+    d = Date(2024, 12, 10).b.nearest_start_of_month()
+    assert d == Date(2024, 12, 2), f'Expected December 2, got {d}'
+
+    # Late in month (day > 15), next month start is business day
+    # April 1, 2024 is Monday (business day)
+    d = Date(2024, 3, 20).b.nearest_start_of_month()
+    assert d == Date(2024, 4, 1), f'Expected April 1, got {d}'
+
+    # Late in month, next month start is weekend
+    # December 1, 2024 is Sunday → December 2 is Monday
+    d = Date(2024, 11, 20).b.nearest_start_of_month()
+    assert d == Date(2024, 12, 2), f'Expected December 2, got {d}'
+
+
+def test_nearest_end_of_month_business_snapping():
+    """Test that nearest_end_of_month snaps (not snap+subtract) in business mode."""
+    # Early in month (day <= 15), prev month end is business day
+    # Feb 29, 2024 is Thursday (business day)
+    d = Date(2024, 3, 10).b.nearest_end_of_month()
+    assert d == Date(2024, 2, 29), f'Expected Feb 29, got {d}'
+
+    # Early in month, prev month end is weekend
+    # June 30, 2024 is Sunday → June 28 is Friday
+    d = Date(2024, 7, 10).b.nearest_end_of_month()
+    assert d == Date(2024, 6, 28), f'Expected June 28, got {d}'
+
+    # Late in month (day > 15), current month end is weekend + holiday
+    # March 31, 2024 is Sunday, March 29 is Good Friday (holiday)
+    # → March 28 is Thursday
+    d = Date(2024, 3, 20).b.nearest_end_of_month()
+    assert d == Date(2024, 3, 28), f'Expected March 28, got {d}'
+
+
 def test_weekday_or_previous_friday():
     """Test weekday_or_previous_friday method."""
     # Test with weekday
@@ -509,6 +551,33 @@ def test_business_methods():
     open_time, close_time = Date(2024, 5, 27).business_hours()  # Memorial day
     assert open_time is None
     assert close_time is None
+
+
+def test_out_of_range_date_raises_error():
+    """Dates outside 1900-2100 should raise ValueError for business operations."""
+    # Year > 2100
+    d = Date(9999, 12, 31)
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        d.is_business_day()
+
+    d = Date(2101, 1, 1)
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        d.is_business_day()
+
+    # Year < 1900
+    d = Date(1899, 12, 31)
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        d.is_business_day()
+
+    # business().add() should also raise
+    d = Date(9999, 12, 30)
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        d.business().add(days=1)
+
+    # business().subtract() should also raise
+    d = Date(1899, 1, 2)
+    with pytest.raises(ValueError, match='outside.*valid.*range'):
+        d.business().subtract(days=1)
 
 
 def test_date_average():
