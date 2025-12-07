@@ -277,6 +277,30 @@ class CustomCalendar(Calendar):
 
 
 _calendar_cache: dict[str, Calendar] = {}
+_default_calendar: str = 'NYSE'
+
+
+def get_default_calendar() -> str:
+    """Get the default calendar name used when no calendar is specified.
+
+    Returns
+        Current default calendar name (initially 'NYSE')
+    """
+    return _default_calendar
+
+
+def set_default_calendar(name: str) -> None:
+    """Set the default calendar used when no calendar is specified.
+
+    Parameters
+        name: Calendar name (e.g., 'NYSE', 'LSE', or a registered custom name)
+
+    Raises
+        ValueError: If calendar name is not recognized
+    """
+    global _default_calendar
+    get_calendar(name)
+    _default_calendar = name.upper()
 
 
 def get_calendar(name: str) -> Calendar:

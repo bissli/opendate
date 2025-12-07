@@ -310,12 +310,15 @@ DateTime.parse('P')              # Previous business day at 00:00:00
 ### Calendars
 
 ```python
-from date import Date, get_calendar
+from date import Date, get_calendar, set_default_calendar
 
-# Use default NYSE calendar
+# Use default calendar (NYSE)
 date = Date.today().business().add(days=5)
 
-# Set calendar explicitly
+# Change default calendar module-wide
+set_default_calendar('LSE')  # All operations now use London Stock Exchange
+
+# Or set calendar explicitly per-operation
 date = Date.today().calendar('NYSE').business().add(days=5)
 
 # Check business day status
@@ -534,15 +537,16 @@ date.b.lookback('month')  # One month ago, adjusted to business day
 
 ## Compatibility
 
-OpenDate maintains compatibility with:
+OpenDate maintains compatibility with Python datetime, Pandas, and NumPy. It extends Pendulum with some intentional differences for financial use cases:
 
-- **Pendulum**: Most Pendulum methods work as expected, with some notable differences:
-  - `Interval.months` returns float (with fractional months) instead of int
-  - `DateTime.today()` returns start of day (00:00:00) instead of current time
-  - Methods preserve business day status and entity when chaining
-- **Python datetime**: Seamless conversion via `instance()` methods
-- **Pandas**: Works with pandas Timestamp and datetime64
-- **NumPy**: Supports numpy datetime64 conversion
+| Feature                          | Pendulum     | OpenDate                 |
+| ---------                        | ----------   | ----------               |
+| `DateTime.today()`               | Current time | Start of day (00:00:00)  |
+| `DateTime.instance()` default tz | None         | UTC                      |
+| `Time.parse()` default tz        | None         | UTC                      |
+| `Interval.months`                | int          | float (fractional)       |
+| Business day support             | No           | Yes (configurable)       |
+| Default calendar                 | N/A          | `set_default_calendar()` |
 
 ```python
 from date import Date, DateTime

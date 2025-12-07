@@ -53,11 +53,11 @@ class DateBusinessMixin:
         """
         return self.business()
 
-    def calendar(self, cal: str | Calendar = 'NYSE') -> Self:
+    def calendar(self, cal: str | 'Calendar | None' = None) -> Self:
         """Set the calendar for business day calculations.
 
         Parameters
-            cal: Calendar name (str) or Calendar instance
+            cal: Calendar name (str), Calendar instance, or None for default
 
         Returns
             Self instance for method chaining
@@ -67,8 +67,10 @@ class DateBusinessMixin:
             d.calendar('LSE').b.subtract(days=5)
             d.calendar(my_custom_calendar).is_business_day()
         """
-        from date.calendars import get_calendar
+        from date.calendars import get_calendar, get_default_calendar
 
+        if cal is None:
+            cal = get_default_calendar()
         if isinstance(cal, str):
             self._calendar = get_calendar(cal)
         else:
@@ -76,13 +78,13 @@ class DateBusinessMixin:
         return self
 
     @property
-    def _active_calendar(self) -> Calendar:
-        """Get the active calendar (default to NYSE if not set).
+    def _active_calendar(self) -> 'Calendar':
+        """Get the active calendar (uses module default if not set).
         """
-        from date.calendars import get_calendar
+        from date.calendars import get_calendar, get_default_calendar
 
         if self._calendar is None:
-            return get_calendar('NYSE')
+            return get_calendar(get_default_calendar())
         return self._calendar
 
     @store_calendar

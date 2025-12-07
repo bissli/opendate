@@ -7,6 +7,7 @@ import zoneinfo as _zoneinfo
 
 from date.calendars import Calendar, CustomCalendar, ExchangeCalendar
 from date.calendars import available_calendars, get_calendar
+from date.calendars import get_default_calendar, set_default_calendar
 from date.calendars import register_calendar
 from date.constants import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Timezone
 from date.constants import WeekDay
@@ -78,9 +79,11 @@ def interval(begdate: Date | DateTime, enddate: Date | DateTime) -> Interval:
     return Interval(begdate, enddate)
 
 
-def parse(s: str | None, calendar: str | Calendar = 'NYSE', raise_err: bool = False) -> DateTime | None:
+def parse(s: str | None, calendar: str | Calendar | None = None, raise_err: bool = False) -> DateTime | None:
     """Parse using DateTime.parse
     """
+    if calendar is None:
+        calendar = get_default_calendar()
     return DateTime.parse(s, calendar=calendar, raise_err=raise_err)
 
 
@@ -117,6 +120,8 @@ __all__ = [
     'ExchangeCalendar',
     'CustomCalendar',
     'get_calendar',
+    'get_default_calendar',
+    'set_default_calendar',
     'available_calendars',
     'register_calendar',
     'expect_date',

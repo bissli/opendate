@@ -11,7 +11,7 @@ New code should prefer using the built-in methods on Date, DateTime, and
 Interval objects where applicable.
 """
 
-from date.calendars import Calendar, get_calendar
+from date.calendars import Calendar, get_calendar, get_default_calendar
 from date.date_ import Date
 from date.datetime_ import DateTime
 from date.interval import Interval
@@ -24,9 +24,11 @@ __all__ = [
 ]
 
 
-def is_within_business_hours(calendar: str | Calendar = 'NYSE') -> bool:
+def is_within_business_hours(calendar: str | Calendar | None = None) -> bool:
     """Return whether the current native datetime is between open and close of business hours.
     """
+    if calendar is None:
+        calendar = get_default_calendar()
     if isinstance(calendar, str):
         calendar = get_calendar(calendar)
     this = DateTime.now()
@@ -35,9 +37,11 @@ def is_within_business_hours(calendar: str | Calendar = 'NYSE') -> bool:
     return this_cal.business_open() and (bounds[0] <= this.astimezone(calendar.tz) <= bounds[1])
 
 
-def is_business_day(calendar: str | Calendar = 'NYSE') -> bool:
+def is_business_day(calendar: str | Calendar | None = None) -> bool:
     """Return whether the current native datetime is a business day.
     """
+    if calendar is None:
+        calendar = get_default_calendar()
     if isinstance(calendar, str):
         calendar = get_calendar(calendar)
     return DateTime.now(tz=calendar.tz).calendar(calendar).is_business_day()

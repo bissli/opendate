@@ -118,14 +118,16 @@ class Interval(_pendulum.Interval):
     def b(self) -> Self:
         return self.business()
 
-    def calendar(self, cal: str | Calendar = 'NYSE') -> Self:
+    def calendar(self, cal: str | 'Calendar | None' = None) -> Self:
         """Set the calendar for business day calculations.
 
         Parameters
-            cal: Calendar name (str) or Calendar instance
+            cal: Calendar name (str), Calendar instance, or None for default
         """
-        from date.calendars import get_calendar
+        from date.calendars import get_calendar, get_default_calendar
 
+        if cal is None:
+            cal = get_default_calendar()
         if isinstance(cal, str):
             cal = get_calendar(cal)
         self._calendar = cal
