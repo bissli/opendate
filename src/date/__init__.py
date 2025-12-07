@@ -5,15 +5,25 @@ __version__ = '0.1.27'
 import datetime as _datetime
 import zoneinfo as _zoneinfo
 
-from date.date import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Calendar
-from date.date import CustomCalendar, Date, DateTime, ExchangeCalendar
-from date.date import Interval, Time, Timezone, WeekDay, available_calendars
-from date.date import expect_date, expect_date_or_datetime, expect_datetime
-from date.date import expect_native_timezone, expect_time, expect_utc_timezone
-from date.date import get_calendar, prefer_native_timezone
-from date.date import prefer_utc_timezone, register_calendar
+from date.calendars import Calendar, CustomCalendar, ExchangeCalendar
+from date.calendars import available_calendars, get_calendar
+from date.calendars import register_calendar
+from date.constants import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Timezone
+from date.constants import WeekDay
+from date.date_ import Date
+from date.datetime_ import DateTime
+from date.decorators import expect_date, expect_date_or_datetime
+from date.decorators import expect_datetime, expect_native_timezone
+from date.decorators import expect_time, expect_utc_timezone
+from date.decorators import prefer_native_timezone, prefer_utc_timezone
 from date.extras import create_ics, is_business_day, is_within_business_hours
 from date.extras import overlap_days
+from date.interval import Interval
+from date.time_ import Time
+
+# Import order matters - constants first, then helpers, decorators, etc.
+# Core classes imported in dependency order: Date before DateTime
+
 
 timezone = Timezone
 

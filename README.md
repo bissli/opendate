@@ -6,11 +6,11 @@ A powerful date and time library for Python, built on top of [Pendulum](https://
 
 OpenDate extends Pendulum's excellent date/time handling with:
 
-- **Business Day Calculations**: NYSE calendar by default (extensible to other calendars)
-- **Enhanced Parsing**: Support for special codes, business day offsets, and multiple formats
-- **Financial Functions**: Excel-compatible yearfrac, fractional months, and period calculations
+- **Business Day Calculations**: NYSE calendar by default, extensible via `exchange-calendars`
+- **Enhanced Parsing**: Special codes (`T`, `Y`, `P`), business day offsets (`T-3b`), multiple formats
+- **Financial Functions**: Excel-compatible yearfrac, fractional months, period calculations
 - **Type Safety**: Comprehensive type annotations and conversion decorators
-- **Timezone Handling**: Smart defaults and easy timezone conversions
+- **Modular Architecture**: Clean separation following Pendulum's patterns
 
 ## Installation
 
@@ -49,7 +49,7 @@ yearfrac = interval.yearfrac(0)  # Financial year fraction
 Extended `pendulum.Date` with business day awareness:
 
 ```python
-from date import Date, NYSE
+from date import Date, get_calendar
 
 # Create dates
 today = Date.today()
@@ -146,7 +146,7 @@ Extended `pendulum.Interval` with business day and financial calculations:
 **Note:** Unlike Pendulum's `Interval.months` (which returns int), OpenDate's returns float with fractional months calculated from actual day counts.
 
 ```python
-from date import Date, Interval, NYSE
+from date import Date, Interval
 
 # Create intervals
 start = Date(2024, 1, 1)
@@ -161,7 +161,7 @@ interval.quarters                # 4.0 (approximate, based on days/365*4)
 
 # Business day calculations
 interval.b.days                  # ~252 (only business days)
-interval.entity(NYSE).b.days     # Explicitly set calendar entity
+interval.calendar('NYSE').b.days # Explicitly set calendar
 
 # Check which days are business days
 business_flags = list(interval.is_business_day_range())
@@ -307,16 +307,16 @@ DateTime.parse('P')              # Previous business day at 00:00:00
 
 ## Business Day Operations
 
-### Calendar Entities
+### Calendars
 
 ```python
-from date import Date, NYSE, Entity
+from date import Date, get_calendar
 
 # Use default NYSE calendar
 date = Date.today().business().add(days=5)
 
-# Set entity explicitly
-date = Date.today().entity(NYSE).business().add(days=5)
+# Set calendar explicitly
+date = Date.today().calendar('NYSE').business().add(days=5)
 
 # Check business day status
 Date(2024, 1, 1).is_business_day()          # False (New Year's Day)
@@ -482,13 +482,13 @@ overlap_days(int3, int4, days=True)           # -9 (negative = no overlap)
 
 ### Method Chaining
 
-Date and DateTime operations preserve type and state (business mode, entity), allowing for clean method chaining:
+Date and DateTime operations preserve type and state (business mode, calendar), allowing for clean method chaining:
 
 ```python
-from date import Date, NYSE
+from date import Date
 
 result = Date(2024, 1, 15)\
-    .entity(NYSE)\
+    .calendar('NYSE')\
     .business()\
     .end_of('month')\
     .subtract(days=5)\
@@ -675,12 +675,13 @@ third_friday = today.add(months=1).start_of('month').nth_of('month', 3, WeekDay.
 ### Working with Market Hours
 
 ```python
-from date import DateTime, NYSE
+from date import DateTime, get_calendar
 
-now = DateTime.now(tz=NYSE.tz)
+nyse = get_calendar('NYSE')
+now = DateTime.now(tz=nyse.tz)
 
-if now.is_business_day():
-    open_time, close_time = now.business_hours()
+if now.calendar('NYSE').is_business_day():
+    open_time, close_time = now.calendar('NYSE').business_hours()
     if open_time <= now <= close_time:
         print("Market is open")
 ```

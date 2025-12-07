@@ -11,7 +11,10 @@ New code should prefer using the built-in methods on Date, DateTime, and
 Interval objects where applicable.
 """
 
-from date import Calendar, Date, DateTime, Interval, get_calendar
+from date.calendars import Calendar, get_calendar
+from date.date_ import Date
+from date.datetime_ import DateTime
+from date.interval import Interval
 
 __all__ = [
     'is_within_business_hours',

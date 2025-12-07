@@ -212,12 +212,23 @@ opendate/
 │   └── src/
 │       ├── lib.rs          # Module exports
 │       ├── calendar.rs     # BusinessCalendar implementation
+│       ├── parser.rs       # Date/time parsing
 │       └── python.rs       # PyO3 bindings
 ├── src/
 │   └── date/
-│       ├── __init__.py
-│       ├── date.py         # Main implementation
-│       └── extras.py       # Legacy functions
+│       ├── __init__.py     # Public API and factory functions
+│       ├── constants.py    # Timezone instances, WeekDay enum
+│       ├── helpers.py      # Utility functions, Rust parser bridge
+│       ├── decorators.py   # Type conversion decorators
+│       ├── calendars.py    # Calendar classes (NYSE, custom)
+│       ├── date_.py        # Date class
+│       ├── time_.py        # Time class
+│       ├── datetime_.py    # DateTime class
+│       ├── interval.py     # Interval class
+│       ├── extras.py       # Legacy compatibility functions
+│       └── mixins/         # Shared behavior mixins
+│           ├── business.py # Business day calculations
+│           └── extras_.py  # Additional date utilities
 ├── tests/
 ├── docs/
 │   └── developer-guide.md  # This file
@@ -226,6 +237,11 @@ opendate/
         ├── release.yml     # Release pipeline
         └── tests.yml       # CI tests
 ```
+
+The Python code follows a modular architecture inspired by Pendulum:
+- Core classes in separate files (`date_.py`, `datetime_.py`, etc.)
+- Shared behavior via mixins
+- Circular imports avoided using `import date` at module level
 
 ## Rust Files: What to Commit
 
