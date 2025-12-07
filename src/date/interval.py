@@ -27,7 +27,7 @@ class Interval(_pendulum.Interval):
     """Interval class extending pendulum.Interval with business day awareness.
 
     This class represents the difference between two dates or datetimes with
-    additional support for business day calculations, entity awareness, and
+    additional support for business day calculations, calendar awareness, and
     financial period calculations.
 
     Unlike pendulum.Interval:

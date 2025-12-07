@@ -6,10 +6,8 @@ import zoneinfo as _zoneinfo
 
 import pendulum as _pendulum
 
-# Cache platform check for to_string() performance
 _IS_WINDOWS = os.name == 'nt'
 
-# Year bounds for calendar caching
 _MIN_YEAR = 1900
 _MAX_YEAR = 2100
 

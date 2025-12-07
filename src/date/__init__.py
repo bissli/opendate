@@ -7,8 +7,8 @@ import zoneinfo as _zoneinfo
 
 from date.calendars import Calendar, CustomCalendar, ExchangeCalendar
 from date.calendars import available_calendars, get_calendar
-from date.calendars import get_default_calendar, set_default_calendar
-from date.calendars import register_calendar
+from date.calendars import get_default_calendar, register_calendar
+from date.calendars import set_default_calendar
 from date.constants import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Timezone
 from date.constants import WeekDay
 from date.date_ import Date
@@ -21,10 +21,6 @@ from date.extras import create_ics, is_business_day, is_within_business_hours
 from date.extras import overlap_days
 from date.interval import Interval
 from date.time_ import Time
-
-# Import order matters - constants first, then helpers, decorators, etc.
-# Core classes imported in dependency order: Date before DateTime
-
 
 timezone = Timezone
 
