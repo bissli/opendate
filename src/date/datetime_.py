@@ -10,8 +10,8 @@ import pandas as pd
 import pendulum as _pendulum
 
 from date.constants import LCL, UTC, Timezone
-from date.decorators import store_calendar
 from date.helpers import _rust_parse_datetime
+from date.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
 from date.mixins import DateBusinessMixin
 
 if sys.version_info >= (3, 11):
@@ -25,7 +25,12 @@ if TYPE_CHECKING:
     from date.time_ import Time
 
 
-class DateTime(DateBusinessMixin, _pendulum.DateTime):
+class DateTime(
+    DateBusinessMixin,
+    _pendulum.DateTime,
+    metaclass=DateContextMeta,
+    methods_to_wrap=DATETIME_METHODS_RETURNING_DATETIME
+):
     """DateTime class extending pendulum.DateTime with business day and additional functionality.
 
     This class inherits all pendulum.DateTime functionality while adding:
@@ -44,30 +49,6 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         """Translate a datetime object into unix seconds since epoch
         """
         return self.timestamp()
-
-    @store_calendar(typ='DateTime')
-    def astimezone(self, *args, **kwargs):
-        """Convert to a timezone-aware datetime in a different timezone.
-        """
-        return _pendulum.DateTime.astimezone(self, *args, **kwargs)
-
-    @store_calendar(typ='DateTime')
-    def in_timezone(self, *args, **kwargs):
-        """Convert to a timezone-aware datetime in a different timezone.
-        """
-        return _pendulum.DateTime.in_timezone(self, *args, **kwargs)
-
-    @store_calendar(typ='DateTime')
-    def in_tz(self, *args, **kwargs):
-        """Convert to a timezone-aware datetime in a different timezone.
-        """
-        return _pendulum.DateTime.in_tz(self, *args, **kwargs)
-
-    @store_calendar(typ='DateTime')
-    def replace(self, *args, **kwargs):
-        """Replace method that preserves entity and business status.
-        """
-        return _pendulum.DateTime.replace(self, *args, **kwargs)
 
     @classmethod
     def fromordinal(cls, *args, **kwargs) -> Self:

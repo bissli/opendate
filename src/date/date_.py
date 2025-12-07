@@ -10,8 +10,8 @@ import pandas as pd
 import pendulum as _pendulum
 
 from date.constants import _IS_WINDOWS, DATEMATCH, LCL, UTC
-from date.decorators import store_calendar
 from date.helpers import _rust_parse_datetime
+from date.metaclass import DATE_METHODS_RETURNING_DATE, DateContextMeta
 from date.mixins import DateBusinessMixin, DateExtrasMixin
 
 if sys.version_info >= (3, 11):
@@ -23,7 +23,13 @@ if TYPE_CHECKING:
     from date.calendars import Calendar
 
 
-class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
+class Date(
+    DateExtrasMixin,
+    DateBusinessMixin,
+    _pendulum.Date,
+    metaclass=DateContextMeta,
+    methods_to_wrap=DATE_METHODS_RETURNING_DATE
+):
     """Date class extending pendulum.Date with business day and additional functionality.
 
     This class inherits all pendulum.Date functionality while adding:
@@ -42,37 +48,6 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         Automatically converts '%-' format codes to '%#' on Windows.
         """
         return self.strftime(fmt.replace('%-', '%#') if _IS_WINDOWS else fmt)
-
-    @store_calendar(typ='Date')
-    def replace(self, *args, **kwargs):
-        """Replace method that preserves entity and business status.
-        """
-        return _pendulum.Date.replace(self, *args, **kwargs)
-
-    @store_calendar(typ='Date')
-    def closest(self, *args, **kwargs):
-        """Closest method that preserves entity and business status.
-        """
-        return _pendulum.Date.closest(self, *args, **kwargs)
-
-    @store_calendar(typ='Date')
-    def farthest(self, *args, **kwargs):
-        """Farthest method that preserves entity and business status.
-        """
-        return _pendulum.Date.farthest(self, *args, **kwargs)
-
-    @store_calendar(typ='Date')
-    def average(self, dt=None):
-        """Modify the current instance to the average
-        of a given instance (default now) and the current instance.
-
-        Parameters
-            dt: The date to average with (defaults to today)
-
-        Returns
-            A new Date object representing the average date
-        """
-        return _pendulum.Date.average(self, dt)
 
     @classmethod
     def fromordinal(cls, *args, **kwargs) -> Self:
@@ -98,28 +73,9 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         Returns
             Date instance
         """
-        # Ensure timezone is always applied to get consistent results
         tz = tz or UTC
         dt = _datetime.datetime.fromtimestamp(timestamp, tz=tz)
         return cls(dt.year, dt.month, dt.day)
-
-    @store_calendar(typ='Date')
-    def nth_of(self, unit: str, nth: int, day_of_week) -> Self:
-        """Returns a new instance set to the given occurrence
-        of a given day of the week in the current unit.
-
-        Parameters
-            unit: The unit to use ("month", "quarter", or "year")
-            nth: The position of the day in the unit (1 to 5)
-            day_of_week: The day of the week (pendulum.MONDAY to pendulum.SUNDAY)
-
-        Returns
-            A new Date object for the nth occurrence
-
-        Raises
-            ValueError: If the occurrence can't be found
-        """
-        return _pendulum.Date.nth_of(self, unit, nth, day_of_week)
 
     @classmethod
     def parse(

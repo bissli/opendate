@@ -122,20 +122,6 @@ def store_calendar(func=None, *, typ=None):
     return wrapper
 
 
-def store_both(func=None, *, typ=None):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        _calendar = self._calendar
-        _business = self._business
-        d = type_class(typ, self).instance(func(self, *args, **kwargs))
-        d._calendar = _calendar
-        d._business = _business
-        return d
-    if func is None:
-        return partial(store_both, typ=typ)
-    return wrapper
-
-
 def reset_business(func):
     """Decorator to reset business mode after function execution.
     """
