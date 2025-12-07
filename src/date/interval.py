@@ -51,7 +51,7 @@ class Interval(_pendulum.Interval):
     @normalize_date_datetime_pairs
     def __init__(self, begdate: Date | DateTime, enddate: Date | DateTime) -> None:
         super().__init__(begdate, enddate, False)
-        self._sign = 1 if begdate <= enddate else -1
+        self._direction = 1 if begdate <= enddate else -1
         if begdate <= enddate:
             self._start = begdate
             self._end = enddate
@@ -118,7 +118,7 @@ class Interval(_pendulum.Interval):
     def b(self) -> Self:
         return self.business()
 
-    def calendar(self, cal: str | 'Calendar | None' = None) -> Self:
+    def calendar(self, cal: str | Calendar | None = None) -> Self:
         """Set the calendar for business day calculations.
 
         Parameters
@@ -162,7 +162,7 @@ class Interval(_pendulum.Interval):
                 yield from (type(d).instance(d) for d in parent_range(self, unit, amount))
                 return
 
-            if self._sign == 1:
+            if self._direction == 1:
                 op = operator.le
                 this = self._start
                 thru = self._end
@@ -177,7 +177,7 @@ class Interval(_pendulum.Interval):
                         yield this
                 else:
                     yield this
-                this = this.add(days=self._sign * amount)
+                this = this.add(days=self._direction * amount)
 
         return _range_generator()
 
@@ -187,8 +187,8 @@ class Interval(_pendulum.Interval):
         """Get number of days in the interval (respects business mode and sign).
         """
         if not self._business:
-            return self._sign * (self._end - self._start).days
-        return self._sign * len(tuple(self.range('days'))) - self._sign
+            return self._direction * (self._end - self._start).days
+        return self._direction * len(tuple(self.range('days'))) - self._direction
 
     @property
     def months(self) -> float:
@@ -211,7 +211,7 @@ class Interval(_pendulum.Interval):
             day_diff = (days_in_start_month - self._start.day) + self._end.day
             fraction = day_diff / days_in_start_month
 
-        return self._sign * (total_months + fraction)
+        return self._direction * (total_months + fraction)
 
     @property
     def quarters(self) -> float:
@@ -219,7 +219,7 @@ class Interval(_pendulum.Interval):
 
         Note: This is an approximation using day count / 365 * 4.
         """
-        return self._sign * 4 * self.days / 365.0
+        return self._direction * 4 * self.days / 365.0
 
     @property
     def years(self) -> int:
@@ -229,7 +229,7 @@ class Interval(_pendulum.Interval):
         if self._end.month < self._start.month or \
            (self._end.month == self._start.month and self._end.day < self._start.day):
             year_diff -= 1
-        return self._sign * year_diff
+        return self._direction * year_diff
 
     def yearfrac(self, basis: int = 0) -> float:
         """Calculate the fraction of years between two dates (Excel-compatible).
@@ -334,15 +334,15 @@ class Interval(_pendulum.Interval):
         if self._start == self._end:
             return 0.0
         if basis == 0:
-            return basis0(self._start, self._end) * self._sign
+            return basis0(self._start, self._end) * self._direction
         if basis == 1:
-            return basis1(self._start, self._end) * self._sign
+            return basis1(self._start, self._end) * self._direction
         if basis == 2:
-            return basis2(self._start, self._end) * self._sign
+            return basis2(self._start, self._end) * self._direction
         if basis == 3:
-            return basis3(self._start, self._end) * self._sign
+            return basis3(self._start, self._end) * self._direction
         if basis == 4:
-            return basis4(self._start, self._end) * self._sign
+            return basis4(self._start, self._end) * self._direction
 
         raise ValueError(f'Basis range [0, 4]. Unknown basis {basis}.')
 

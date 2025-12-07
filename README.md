@@ -36,10 +36,10 @@ set_default_calendar('LSE')
 | `datetime(y, m, d, h, m, s, tz)` | Create DateTime |
 | `time(h, m, s, tz)` | Create Time |
 | `interval(start, end)` | Create Interval |
-| `parse(s)` | Parse to DateTime |
-| `instance(obj)` | Convert datetime/date/time |
-| `now(tz=None)` | Current DateTime |
-| `today(tz=None)` | Today at 00:00:00 |
+| `parse(s)` | Parse to DateTime (defaults to UTC) |
+| `instance(obj)` | Convert datetime/date/time (defaults to UTC) |
+| `now(tz=None)` | Current DateTime (defaults to local tz) |
+| `today(tz=None)` | Today at 00:00:00 (defaults to local tz) |
 | `get_calendar(name)` | Get calendar instance |
 | `set_default_calendar(name)` | Set module default calendar |
 | `get_default_calendar()` | Get current default calendar name |
@@ -121,12 +121,12 @@ Inherited from pendulum: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `
 | Method | Description |
 |--------|-------------|
 | `DateTime(y, m, d, h, m, s, us, tzinfo)` | Create from components |
-| `DateTime.now(tz=None)` | Current time |
-| `DateTime.today(tz=None)` | Today at 00:00:00 (**differs from pendulum**) |
-| `DateTime.parse(s, calendar='NYSE')` | Parse string or timestamp |
-| `DateTime.instance(obj, tz=None)` | From datetime, Timestamp, datetime64 |
+| `DateTime.now(tz=None)` | Current time (local tz if None) |
+| `DateTime.today(tz=None)` | Today at 00:00:00 (local tz if None, **differs from pendulum**) |
+| `DateTime.parse(s, calendar='NYSE')` | Parse string (UTC) or timestamp (local tz) |
+| `DateTime.instance(obj, tz=None)` | From datetime, Timestamp, datetime64 (UTC if None) |
 | `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time |
-| `DateTime.fromtimestamp(ts, tz=None)` | From Unix timestamp |
+| `DateTime.fromtimestamp(ts, tz=None)` | From Unix timestamp (local tz if None) |
 | `DateTime.utcfromtimestamp(ts)` | From timestamp as UTC |
 | `DateTime.utcnow()` | Current UTC time |
 | `DateTime.strptime(s, fmt)` | Parse with format |
@@ -242,7 +242,9 @@ Interval(start, end)  # start/end are Date or DateTime
 
 ## Parsing
 
-### Date Special Codes
+OpenDate uses a dateutil-compatible Rust parser that handles virtually any date/time format. The parser supports fuzzy matching, multiple locales, and automatic format detection.
+
+### Special Codes
 
 | Code | Meaning |
 |------|---------|
@@ -251,44 +253,29 @@ Interval(start, end)  # start/end are Date or DateTime
 | `P` | Previous business day |
 | `M` | Last day of previous month |
 
-### Date Offsets
+### Business Day Offsets
 
 | Pattern | Example | Meaning |
 |---------|---------|---------|
 | `{code}±{n}` | `T-5` | 5 calendar days ago |
 | `{code}±{n}b` | `T-3b` | 3 business days ago |
 
-### Supported Date Formats
+### Parser Capabilities
 
+- **Dates**: ISO 8601, US/European formats, compact, natural language
+- **Times**: 12/24-hour, with/without seconds, AM/PM, timezones
+- **Combined**: Any date + time combination, Unix timestamps (auto-detects ms/s)
+- **Fuzzy**: Extracts dates from text containing other content
+
+```python
+# All of these work
+Date.parse('2024-01-15')
+Date.parse('Jan 15, 2024')
+Date.parse('15/01/2024')
+DateTime.parse('2024-01-15T09:30:00Z')
+DateTime.parse(1640995200)  # Unix timestamp
+DateTime.parse('meeting on Jan 15 at 3pm')  # Fuzzy
 ```
-2024-01-15       YYYY-MM-DD
-01/15/2024       MM/DD/YYYY
-01/15/24         MM/DD/YY
-20240115         YYYYMMDD
-15-Jan-2024      DD-MON-YYYY
-Jan 15, 2024     MON DD, YYYY
-January 15, 2024 Full month name
-15JAN2024        Compact
-```
-
-### Supported Time Formats
-
-```
-14:30            HH:MM
-14:30:45         HH:MM:SS
-14:30:45.123456  With microseconds
-2:30 PM          12-hour with AM/PM
-143045           Compact HHMMSS
-1430             Compact HHMM
-```
-
-### DateTime Parsing
-
-- Unix timestamps: `DateTime.parse(1640995200)` (auto-detects ms)
-- ISO 8601: `DateTime.parse('2024-01-15T09:30:00Z')`
-- Combined: `DateTime.parse('2024-01-15 09:30:00')`
-- Date only: returns at 00:00:00
-- Time only: uses today's date
 
 ---
 
