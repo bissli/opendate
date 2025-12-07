@@ -321,11 +321,6 @@ def test_parse_date_no_year():
     assert result.day == 15
 
 
-def test_parse_date_custom_format():
-    """Test Date.parse with custom format string."""
-    assert Date.parse('Oct. 24, 2007', fmt='%b. %d, %Y') == Date(2007, 10, 24)
-
-
 def test_parse_special_strings():
     """Test Date.parse with special string keywords."""
     # Today variations

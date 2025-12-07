@@ -3,7 +3,6 @@ from __future__ import annotations
 import contextlib
 import datetime as _datetime
 import sys
-import time
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -126,7 +125,6 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
     def parse(
         cls,
         s: str | None,
-        fmt: str = None,
         calendar: str | Calendar = 'NYSE',
         raise_err: bool = False,
     ) -> Self | None:
@@ -137,11 +135,9 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         - Named months: DD-MON-YYYY, MON-DD-YYYY, Month DD, YYYY
         - Special codes: T (today), Y (yesterday), P (previous business day)
         - Business day offsets: T-3b, P+2b (add/subtract business days)
-        - Custom format strings via fmt parameter
 
         Parameters
             s: String to parse or None
-            fmt: Optional strftime format string for custom parsing
             calendar: Calendar name or instance for business day calculations (default 'NYSE')
             raise_err: If True, raises ValueError on parse failure instead of returning None
 
@@ -170,9 +166,6 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             Date.parse('T-3b') → 3 business days ago
             Date.parse('P+2b') → 2 business days after previous business day
             Date.parse('T+5') → 5 calendar days from today
-
-            Custom format:
-            Date.parse('15-Jan-2020', fmt='%d-%b-%Y') → Date(2020, 1, 15)
         """
 
         def date_for_symbol(s):
@@ -194,14 +187,6 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
 
         if not isinstance(s, str):
             raise TypeError(f'Invalid type for date parse: {s.__class__}')
-
-        if fmt:
-            try:
-                return cls(*time.strptime(s, fmt)[:3])
-            except (ValueError, TypeError):
-                if raise_err:
-                    raise ValueError(f'Unable to parse {s} using fmt {fmt}')
-                return
 
         with contextlib.suppress(ValueError):
             if float(s) and len(s) != 8:  # 20000101

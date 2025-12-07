@@ -90,7 +90,7 @@ class Time(_pendulum.Time):
         if fmt:
             try:
                 return cls(*time.strptime(s, fmt)[3:6])
-            except:
+            except (ValueError, TypeError):
                 if raise_err:
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return

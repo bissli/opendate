@@ -55,7 +55,7 @@ set_default_calendar('LSE')
 |--------|-------------|
 | `Date(y, m, d)` | Create from components |
 | `Date.today()` | Current date (uses local tz for current day) |
-| `Date.parse(s, fmt=None, calendar='NYSE')` | Parse string. Calendar used for business day codes (T-3b, P), defaults to NYSE |
+| `Date.parse(s, calendar='NYSE')` | Parse string. Calendar used for business day codes (T-3b, P), defaults to NYSE |
 | `Date.instance(obj)` | From datetime.date, Timestamp, datetime64 |
 | `Date.fromordinal(n)` | From ordinal |
 | `Date.fromtimestamp(ts, tz=None)` | From Unix timestamp (UTC if None) |
