@@ -212,7 +212,15 @@ opendate/
 │   └── src/
 │       ├── lib.rs          # Module exports
 │       ├── calendar.rs     # BusinessCalendar implementation
-│       ├── parser.rs       # Date/time parsing
+│       ├── parser/         # Dateutil-compatible parser (Rust port)
+│       │   ├── mod.rs      # Module exports
+│       │   ├── core.rs     # Main Parser implementation
+│       │   ├── iso.rs      # ISO-8601 parser (IsoParser)
+│       │   ├── parserinfo.rs # Parser configuration
+│       │   ├── tokenizer.rs  # String tokenization
+│       │   ├── ymd.rs      # Year/Month/Day resolution
+│       │   ├── result.rs   # ParseResult type
+│       │   └── errors.rs   # Error types
 │       └── python.rs       # PyO3 bindings
 ├── src/
 │   └── date/
@@ -243,6 +251,28 @@ The Python code follows a modular architecture inspired by Pendulum:
 - Shared behavior via mixins
 - Circular imports avoided using `import date` at module level
 
+## Rust Native Extension
+
+The `_opendate` module provides high-performance native implementations:
+
+### BusinessCalendar
+
+Efficient business day calculations using ordinal-based lookups:
+- `is_business_day(ordinal)` - Check if date is a business day
+- `add_business_days(ordinal, n)` - Add/subtract business days
+- `next_business_day(ordinal)` / `prev_business_day(ordinal)` - Find adjacent business days
+- `count_business_days(start, end)` - Count business days in range
+
+### Parser (dateutil port)
+
+A Rust port of `python-dateutil`'s parser for fast datetime parsing:
+- `parse(timestr, ...)` - Parse arbitrary datetime strings (dateutil-compatible)
+- `isoparse(dt_str)` - Parse ISO-8601 datetime strings
+- `parse_time(timestr)` - Parse standalone time strings
+
+The parser supports the same formats as dateutil including fuzzy parsing,
+dayfirst/yearfirst options, and AM/PM handling.
+
 ## Rust Files: What to Commit
 
 **Check in (source files):**
@@ -252,6 +282,15 @@ rust/
 └── src/
     ├── lib.rs              # ✓ Module exports
     ├── calendar.rs         # ✓ BusinessCalendar implementation
+    ├── parser/             # ✓ Dateutil-compatible parser
+    │   ├── mod.rs
+    │   ├── core.rs
+    │   ├── iso.rs
+    │   ├── parserinfo.rs
+    │   ├── tokenizer.rs
+    │   ├── ymd.rs
+    │   ├── result.rs
+    │   └── errors.rs
     └── python.rs           # ✓ PyO3 bindings
 ```
 
