@@ -249,6 +249,7 @@ opendate/
 The Python code follows a modular architecture inspired by Pendulum:
 - Core classes in separate files (`date_.py`, `datetime_.py`, etc.)
 - Shared behavior via mixins
+- Pendulum methods automatically wrapped via metaclass to preserve calendar context
 - Circular imports avoided using `import date` at module level
 
 ## Rust Native Extension
@@ -266,9 +267,9 @@ Efficient business day calculations using ordinal-based lookups:
 ### Parser (dateutil port)
 
 A Rust port of `python-dateutil`'s parser for fast datetime parsing:
-- `parse(timestr, ...)` - Parse arbitrary datetime strings (dateutil-compatible)
-- `isoparse(dt_str)` - Parse ISO-8601 datetime strings
-- `parse_time(timestr)` - Parse standalone time strings
+- `Parser` - Parse arbitrary datetime strings (dateutil-compatible)
+- `IsoParser` - Parse ISO-8601 datetime strings
+- `TimeParser` - Parse standalone time strings
 
 The parser supports the same formats as dateutil including fuzzy parsing,
 dayfirst/yearfirst options, and AM/PM handling.
