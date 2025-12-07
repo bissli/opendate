@@ -64,8 +64,7 @@ jobs:
       - name: Build and install native extension
         shell: bash
         run: |
-          maturin build --release --manifest-path rust/Cargo.toml
-          pip install rust/target/wheels/*.whl
+          maturin develop --release --manifest-path rust/Cargo.toml
 
       - name: Run tests
         run: pytest tests/ -v
