@@ -28,6 +28,31 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+_cached_parser: _RustParser | None = None
+_cached_iso_parser: _RustIsoParser | None = None
+
+
+def _get_parser() -> _RustParser | None:
+    """Get cached Parser instance.
+    """
+    global _cached_parser
+    if _RustParser is None:
+        return None
+    if _cached_parser is None:
+        _cached_parser = _RustParser(False, False)
+    return _cached_parser
+
+
+def _get_iso_parser() -> _RustIsoParser | None:
+    """Get cached IsoParser instance.
+    """
+    global _cached_iso_parser
+    if _RustIsoParser is None:
+        return None
+    if _cached_iso_parser is None:
+        _cached_iso_parser = _RustIsoParser()
+    return _cached_iso_parser
+
 
 def isdateish(x: Any) -> bool:
     return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
@@ -40,43 +65,63 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
     Returns None if parsing fails or no meaningful components are found.
     Uses current year as default when year is missing but month/day are present.
     """
-    if _RustParser is None:
+    iso_parser = _get_iso_parser()
+    if iso_parser is not None:
+        try:
+            result = iso_parser.isoparse(s)
+            if result is not None:
+                tzinfo = None
+                if result.tzoffset is not None:
+                    tzinfo = _datetime.timezone(_datetime.timedelta(seconds=result.tzoffset))
+                return _datetime.datetime(
+                    result.year, result.month, result.day,
+                    result.hour or 0, result.minute or 0, result.second or 0,
+                    result.microsecond or 0, tzinfo=tzinfo,
+                )
+        except Exception:
+            pass
+
+    parser = _get_parser()
+    if parser is None:
         return None
 
     try:
-        parser = _RustParser(dayfirst, yearfirst)
         result = parser.parse(s, dayfirst=dayfirst, yearfirst=yearfirst, fuzzy=fuzzy)
 
-        # Handle fuzzy_with_tokens tuple return
         if isinstance(result, tuple):
             result = result[0]
 
         if result is None:
             return None
 
-        # Check if we have any meaningful date/time components
         has_date = result.year is not None or result.month is not None or result.day is not None
         has_time = result.hour is not None or result.minute is not None or result.second is not None
 
         if not has_date and not has_time:
             return None
 
-        # Build datetime from components, using defaults for missing values
-        now = _datetime.datetime.now()
-        year = result.year if result.year is not None else now.year
-        month = result.month if result.month is not None else (now.month if has_time and not has_date else 1)
-        day = result.day if result.day is not None else (now.day if has_time and not has_date else 1)
-        hour = result.hour if result.hour is not None else 0
-        minute = result.minute if result.minute is not None else 0
-        second = result.second if result.second is not None else 0
-        microsecond = result.microsecond if result.microsecond is not None else 0
+        year = result.year
+        month = result.month
+        day = result.day
 
-        # Handle timezone
+        if year is None or (has_time and not has_date and (month is None or day is None)):
+            now = _datetime.datetime.now()
+            year = year if year is not None else now.year
+            month = month if month is not None else (now.month if has_time and not has_date else 1)
+            day = day if day is not None else (now.day if has_time and not has_date else 1)
+        else:
+            month = month if month is not None else 1
+            day = day if day is not None else 1
+
         tzinfo = None
         if result.tzoffset is not None:
             tzinfo = _datetime.timezone(_datetime.timedelta(seconds=result.tzoffset))
 
-        return _datetime.datetime(year, month, day, hour, minute, second, microsecond, tzinfo=tzinfo)
+        return _datetime.datetime(
+            year, month, day,
+            result.hour or 0, result.minute or 0, result.second or 0,
+            result.microsecond or 0, tzinfo=tzinfo,
+        )
     except Exception as e:
         logger.debug(f'Rust parser failed: {e}')
         return None

@@ -1,6 +1,6 @@
 # OpenDate
 
-Date/time library built on [Pendulum](https://github.com/sdispater/pendulum) with business day support and financial calculations.
+Date/time library built on [Pendulum](https://github.com/sdispater/pendulum) with business day support and financial calculations. Parsing is 1.2-6x faster than pendulum thanks to a Rust-based dateutil port.
 
 ```bash
 pip install opendate
@@ -33,13 +33,13 @@ set_default_calendar('LSE')
 | Function | Description |
 |----------|-------------|
 | `date(y, m, d)` | Create Date |
-| `datetime(y, m, d, h, m, s, tz)` | Create DateTime |
-| `time(h, m, s, tz)` | Create Time |
+| `datetime(y, m, d, h, m, s, tz=UTC)` | Create DateTime (defaults to UTC) |
+| `time(h, m, s, tz=UTC)` | Create Time (defaults to UTC) |
 | `interval(start, end)` | Create Interval |
-| `parse(s)` | Parse to DateTime (defaults to UTC) |
-| `instance(obj)` | Convert datetime/date/time (defaults to UTC) |
-| `now(tz=None)` | Current DateTime (defaults to local tz) |
-| `today(tz=None)` | Today at 00:00:00 (defaults to local tz) |
+| `parse(s, calendar=None)` | Parse to DateTime (calendar optional, uses module default) |
+| `instance(obj)` | Convert datetime/date/time (preserves obj's tz if present, else UTC) |
+| `now(tz=None)` | Current DateTime (local tz if None) |
+| `today(tz=None)` | Today at 00:00:00 (local tz if None) |
 | `get_calendar(name)` | Get calendar instance |
 | `set_default_calendar(name)` | Set module default calendar |
 | `get_default_calendar()` | Get current default calendar name |
@@ -54,11 +54,11 @@ set_default_calendar('LSE')
 | Method | Description |
 |--------|-------------|
 | `Date(y, m, d)` | Create from components |
-| `Date.today()` | Current date |
-| `Date.parse(s, fmt=None, calendar='NYSE')` | Parse string |
+| `Date.today()` | Current date (uses local tz for current day) |
+| `Date.parse(s, fmt=None, calendar='NYSE')` | Parse string. Calendar used for business day codes (T-3b, P), defaults to NYSE |
 | `Date.instance(obj)` | From datetime.date, Timestamp, datetime64 |
 | `Date.fromordinal(n)` | From ordinal |
-| `Date.fromtimestamp(ts, tz=None)` | From Unix timestamp |
+| `Date.fromtimestamp(ts, tz=None)` | From Unix timestamp (UTC if None) |
 
 ### Properties
 
@@ -123,10 +123,10 @@ Inherited from pendulum: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `
 | `DateTime(y, m, d, h, m, s, us, tzinfo)` | Create from components |
 | `DateTime.now(tz=None)` | Current time (local tz if None) |
 | `DateTime.today(tz=None)` | Today at 00:00:00 (local tz if None, **differs from pendulum**) |
-| `DateTime.parse(s, calendar='NYSE')` | Parse string (UTC) or timestamp (local tz) |
-| `DateTime.instance(obj, tz=None)` | From datetime, Timestamp, datetime64 (UTC if None) |
-| `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time |
-| `DateTime.fromtimestamp(ts, tz=None)` | From Unix timestamp (local tz if None) |
+| `DateTime.parse(s, calendar='NYSE')` | Parse string or timestamp. Strings: preserve explicit tz, else naive. Timestamps: local tz. Calendar used for business day codes, defaults to NYSE |
+| `DateTime.instance(obj, tz=None)` | From datetime, Timestamp, datetime64. Preserves obj's tz if present, else uses `tz` param, else UTC |
+| `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time (uses time's tz if tzinfo=None) |
+| `DateTime.fromtimestamp(ts, tz=None)` | From Unix timestamp (UTC if None) |
 | `DateTime.utcfromtimestamp(ts)` | From timestamp as UTC |
 | `DateTime.utcnow()` | Current UTC time |
 | `DateTime.strptime(s, fmt)` | Parse with format |
@@ -181,8 +181,8 @@ Same as Date: `business()`, `.b`, `calendar(name)`, `is_business_day()`, `busine
 | Method | Description |
 |--------|-------------|
 | `Time(h, m, s, us, tzinfo)` | Create from components |
-| `Time.parse(s, fmt=None)` | Parse string (**defaults to UTC**) |
-| `Time.instance(obj, tz=None)` | From datetime.time, datetime |
+| `Time.parse(s, fmt=None)` | Parse string (always UTC) |
+| `Time.instance(obj, tz=None)` | From datetime.time, datetime. Preserves obj's tz if present, else uses `tz` param, else UTC |
 
 ### Properties
 
@@ -389,7 +389,7 @@ overlap_days(int1, int2, days=True) # Day count of overlap (int)
 | Feature | Pendulum | OpenDate |
 |---------|----------|----------|
 | `DateTime.today()` | Current time | Start of day (00:00:00) |
-| `DateTime.instance()` default tz | None | UTC |
+| `DateTime.instance()` default tz | None | Preserves obj's tz if present, else UTC |
 | `Time.parse()` default tz | None | UTC |
 | `Interval.months` | int | float (fractional) |
 | Business day support | No | Yes |

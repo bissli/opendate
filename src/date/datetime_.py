@@ -252,8 +252,9 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         if isinstance(s, (int, float)):
             if len(str(int(s))) == 13:
                 s /= 1000  # Convert from milliseconds to seconds
-            iso = _datetime.datetime.fromtimestamp(s).isoformat()
-            return cls.parse(iso).replace(tzinfo=LCL)
+            dt = _datetime.datetime.fromtimestamp(s)
+            return cls(dt.year, dt.month, dt.day, dt.hour, dt.minute,
+                       dt.second, dt.microsecond, tzinfo=LCL)
 
         parsed = _rust_parse_datetime(s)
         if parsed is not None:
