@@ -8,7 +8,7 @@ import pandas as pd
 import pendulum
 import pytest
 
-from date import NYSE, WEEKDAY_SHORTNAME, Date, WeekDay, expect_date
+from date import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date, get_calendar
 
 
 def test_end_of_week():
@@ -240,9 +240,9 @@ def test_subtract():
     assert d == Date(2021, 11, 17)
 
 
-def test_set_entity():
-
-    d = Date(2000, 1, 1).entity(NYSE).b.add(days=10)
+def test_set_calendar():
+    """Test setting calendar on Date."""
+    d = Date(2000, 1, 1).calendar('NYSE').b.add(days=10)
     assert d == Date(2000, 1, 14)
 
 
@@ -633,13 +633,13 @@ def test_date_to_string():
 
 
 def test_date_replace():
-    """Test the replace method preserves Date type and entity."""
-    d = Date(2022, 1, 15).entity(NYSE)
+    """Test the replace method preserves Date type and calendar."""
+    d = Date(2022, 1, 15).calendar('NYSE')
 
     result = d.replace(year=2023)
     assert result == Date(2023, 1, 15)
     assert isinstance(result, Date)
-    assert result._entity == NYSE
+    assert result._calendar == get_calendar('NYSE')
 
     result = d.replace(month=6)
     assert result == Date(2022, 6, 15)

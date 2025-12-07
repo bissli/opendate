@@ -11,7 +11,7 @@ New code should prefer using the built-in methods on Date, DateTime, and
 Interval objects where applicable.
 """
 
-from date import NYSE, Date, DateTime, Entity, Interval
+from date import Calendar, Date, DateTime, Interval, get_calendar
 
 __all__ = [
     'is_within_business_hours',
@@ -21,19 +21,23 @@ __all__ = [
 ]
 
 
-def is_within_business_hours(entity: Entity = NYSE) -> bool:
+def is_within_business_hours(calendar: str | Calendar = 'NYSE') -> bool:
     """Return whether the current native datetime is between open and close of business hours.
     """
+    if isinstance(calendar, str):
+        calendar = get_calendar(calendar)
     this = DateTime.now()
-    this_entity = DateTime.now(tz=entity.tz).entity(entity)
-    bounds = this_entity.business_hours()
-    return this_entity.business_open() and (bounds[0] <= this.astimezone(entity.tz) <= bounds[1])
+    this_cal = DateTime.now(tz=calendar.tz).calendar(calendar)
+    bounds = this_cal.business_hours()
+    return this_cal.business_open() and (bounds[0] <= this.astimezone(calendar.tz) <= bounds[1])
 
 
-def is_business_day(entity: Entity = NYSE) -> bool:
+def is_business_day(calendar: str | Calendar = 'NYSE') -> bool:
     """Return whether the current native datetime is a business day.
     """
-    return DateTime.now(tz=entity.tz).entity(entity).is_business_day()
+    if isinstance(calendar, str):
+        calendar = get_calendar(calendar)
+    return DateTime.now(tz=calendar.tz).calendar(calendar).is_business_day()
 
 
 def overlap_days(

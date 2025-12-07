@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from date import EST, NYSE, UTC, Date, DateTime, Interval
+from date import EST, UTC, Date, DateTime, Interval, get_calendar
 
 
 def test_interval_none_validation():
@@ -277,16 +277,17 @@ def test_interval_methods_work_with_custom_types():
     assert callable(interval.end.is_business_day)
 
 
-def test_interval_entity():
-    """Test entity method sets entity on interval dates."""
+def test_interval_calendar():
+    """Test calendar method sets calendar on interval dates."""
     d1 = Date(2020, 1, 1)
     d2 = Date(2020, 1, 10)
     interval = Interval(d1, d2)
 
-    interval.entity(NYSE)
-    assert interval._entity == NYSE
-    assert interval._start._entity == NYSE
-    assert interval._end._entity == NYSE
+    interval.calendar('NYSE')
+    nyse = get_calendar('NYSE')
+    assert interval._calendar == nyse
+    assert interval._start._calendar == nyse
+    assert interval._end._calendar == nyse
 
     business_days = interval.b.days
     assert business_days == 6

@@ -3,42 +3,18 @@ from __future__ import annotations
 __version__ = '0.1.26'
 
 import datetime as _datetime
-
-import numpy as np
-import pandas as pd
-import pendulum as _pendulum
 import zoneinfo as _zoneinfo
 
-from typing_extensions import Optional
-from typing_extensions import Union
-from typing_extensions import overload
 
-from date.date import Date
-from date.date import DateTime
-from date.date import Entity
-from date.date import Interval
-from date.date import LCL
-from date.date import EST
-from date.date import GMT
-from date.date import UTC
-from date.date import NYSE
-from date.date import Time
-from date.date import WeekDay
-from date.date import WEEKDAY_SHORTNAME
-from date.date import expect_date
-from date.date import expect_datetime
-from date.date import expect_time
-from date.date import expect_date_or_datetime
-from date.date import expect_native_timezone
-from date.date import expect_utc_timezone
-from date.date import prefer_native_timezone
-from date.date import prefer_utc_timezone
-from date.date import Timezone
-from date.extras import create_ics 
-from date.extras import is_business_day
-from date.extras import is_within_business_hours
+from date.date import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Calendar
+from date.date import CustomCalendar, Date, DateTime, ExchangeCalendar
+from date.date import Interval, Time, Timezone, WeekDay, available_calendars
+from date.date import expect_date, expect_date_or_datetime, expect_datetime
+from date.date import expect_native_timezone, expect_time, expect_utc_timezone
+from date.date import get_calendar, prefer_native_timezone
+from date.date import prefer_utc_timezone, register_calendar
+from date.extras import create_ics, is_business_day, is_within_business_hours
 from date.extras import overlap_days
-
 
 timezone = Timezone
 
@@ -93,10 +69,10 @@ def interval(self, begdate: Date | DateTime, enddate: Date | DateTime):
     return Interval(begdate, enddate)
 
 
-def parse(s: str | None, fmt: str = None, entity: Entity = NYSE, raise_err: bool = False) -> DateTime | None:
+def parse(s: str | None, fmt: str = None, calendar: str | Calendar = 'NYSE', raise_err: bool = False) -> DateTime | None:
     """Parse using DateTime.parse
     """
-    return DateTime.parse(s, entity=entity, raise_err=True)
+    return DateTime.parse(s, calendar=calendar, raise_err=raise_err)
 
 
 def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateTime | Date | Time:
@@ -128,7 +104,12 @@ __all__ = [
     'date',
     'DateTime',
     'datetime',
-    'Entity',
+    'Calendar',
+    'ExchangeCalendar',
+    'CustomCalendar',
+    'get_calendar',
+    'available_calendars',
+    'register_calendar',
     'expect_date',
     'expect_datetime',
     'expect_time',
@@ -142,7 +123,6 @@ __all__ = [
     'is_within_business_hours',
     'LCL',
     'now',
-    'NYSE',
     'overlap_days',
     'parse',
     'prefer_native_timezone',

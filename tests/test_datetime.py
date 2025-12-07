@@ -10,7 +10,8 @@ import pendulum
 import pytest
 from pendulum.tz import Timezone
 
-from date import EST, NYSE, UTC, Date, DateTime, Time, expect_datetime, now
+from date import EST, UTC, Date, DateTime, Time, expect_datetime, get_calendar
+from date import now
 
 
 def test_add():
@@ -137,7 +138,7 @@ def test_type():
     d = DateTime.now()
     assert isinstance(d, DateTime)
 
-    d = DateTime.now(tz=NYSE.tz).entity(NYSE)
+    d = DateTime.now(tz=get_calendar('NYSE').tz).calendar('NYSE')
     assert isinstance(d, DateTime)
 
 
@@ -159,12 +160,13 @@ def test_expects():
 
 def test_time():
     """Test that time() method correctly extracts time from DateTime while preserving timezone."""
-    dt_est = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=NYSE.tz)
+    nyse_tz = get_calendar('NYSE').tz
+    dt_est = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=nyse_tz)
     t_est = dt_est.time()
     assert t_est.hour == 12
     assert t_est.minute == 30
     assert t_est.second == 15
-    assert t_est.tzinfo == NYSE.tz
+    assert t_est.tzinfo == nyse_tz
 
     dt_utc = DateTime(2022, 1, 1, 12, 30, 15, tzinfo=UTC)
     t_utc = dt_utc.time()
@@ -179,7 +181,7 @@ def test_rfc3339():
     dt = DateTime(2014, 10, 31, 10, 55, 0, tzinfo=UTC)
     assert dt.rfc3339() == '2014-10-31T10:55:00+00:00'
 
-    dt = DateTime(2023, 7, 15, 14, 30, 45, tzinfo=NYSE.tz)
+    dt = DateTime(2023, 7, 15, 14, 30, 45, tzinfo=get_calendar('NYSE').tz)
     assert dt.rfc3339() == dt.isoformat()
 
 
@@ -407,13 +409,13 @@ def test_datetime_in_timezone():
 
 
 def test_datetime_replace():
-    """Test replace method preserves DateTime type and entity."""
-    dt = DateTime(2022, 1, 15, 12, 30, 45, tzinfo=UTC).entity(NYSE)
+    """Test replace method preserves DateTime type and calendar."""
+    dt = DateTime(2022, 1, 15, 12, 30, 45, tzinfo=UTC).calendar('NYSE')
 
     result = dt.replace(year=2023)
     assert result == DateTime(2023, 1, 15, 12, 30, 45, tzinfo=UTC)
     assert isinstance(result, DateTime)
-    assert result._entity == NYSE
+    assert result._calendar.name == 'NYSE'
 
     result = dt.replace(month=6)
     assert result == DateTime(2022, 6, 15, 12, 30, 45, tzinfo=UTC)

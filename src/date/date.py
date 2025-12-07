@@ -13,7 +13,7 @@ import warnings
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
-from functools import lru_cache, partial, wraps
+from functools import partial, wraps
 
 import numpy as np
 import pandas as pd
@@ -66,8 +66,12 @@ __all__ = [
     'expect_datetime',
     'expect_time',
     'expect_date_or_datetime',
-    'Entity',
-    'NYSE',
+    'Calendar',
+    'ExchangeCalendar',
+    'CustomCalendar',
+    'get_calendar',
+    'available_calendars',
+    'register_calendar',
     'WEEKDAY_SHORTNAME',
     'WeekDay',
     ]
@@ -256,25 +260,25 @@ def type_class(typ, obj):
     raise ValueError(f'Unknown type {typ}')
 
 
-def store_entity(func=None, *, typ=None):
+def store_calendar(func=None, *, typ=None):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        _entity = self._entity
+        _calendar = self._calendar
         d = type_class(typ, self).instance(func(self, *args, **kwargs))
-        d._entity = _entity
+        d._calendar = _calendar
         return d
     if func is None:
-        return partial(store_entity, typ=typ)
+        return partial(store_calendar, typ=typ)
     return wrapper
 
 
 def store_both(func=None, *, typ=None):
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        _entity = self._entity
+        _calendar = self._calendar
         _business = self._business
         d = type_class(typ, self).instance(func(self, *args, **kwargs))
-        d._entity = _entity
+        d._calendar = _calendar
         d._business = _business
         return d
     if func is None:
@@ -356,80 +360,76 @@ expect_native_timezone = partial(prefer_native_timezone, force=True)
 expect_utc_timezone = partial(prefer_utc_timezone, force=True)
 
 
-class Entity(ABC):
-    """Abstract base class for calendar entities with business day definitions.
+class Calendar(ABC):
+    """Abstract base class for calendar definitions.
 
-    This class defines the interface for calendar entities that provide
-    business day information, such as market open/close times and holidays.
-    Not available in pendulum.
-
-    Concrete implementations (like NYSE) provide specific calendar rules
-    for different business contexts.
+    Provides business day information including trading days,
+    market hours, and holidays. Use string-based calendars for
+    exchanges (via get_calendar()) or CustomCalendar for user-defined.
     """
 
-    tz = UTC
+    name: str = 'calendar'
+    tz: _zoneinfo.ZoneInfo = UTC
 
-    @staticmethod
     @abstractmethod
-    def business_days(begdate: _datetime.date, enddate: _datetime.date):
-        """Returns all business days over a range"""
+    def business_days(self, begdate: _datetime.date, enddate: _datetime.date) -> set:
+        """Returns all business days over a range.
+        """
 
-    @staticmethod
     @abstractmethod
-    def business_hours(begdate: _datetime.date, enddate: _datetime.date):
-        """Returns all business open and close times over a range"""
+    def business_hours(self, begdate: _datetime.date, enddate: _datetime.date) -> dict:
+        """Returns market open/close times for each business day.
+        """
 
-    @staticmethod
     @abstractmethod
-    def business_holidays(begdate: _datetime.date, enddate: _datetime.date):
-        """Returns only holidays over a range"""
+    def business_holidays(self, begdate: _datetime.date, enddate: _datetime.date) -> set:
+        """Returns holidays over a range.
+        """
+
+    @abstractmethod
+    def _get_calendar(self, date: _datetime.date):
+        """Get Rust BusinessCalendar for O(1) operations.
+        """
 
 
-class NYSE(Entity):
-    """New York Stock Exchange calendar entity.
+class ExchangeCalendar(Calendar):
+    """Calendar backed by pandas_market_calendars.
 
-    Provides business day definitions, market hours, and holidays
-    according to the NYSE trading calendar. Uses pandas_market_calendars
-    for the underlying implementation.
-
-    This entity is used as the default for business day calculations
-    throughout the library.
-
-    Note: First call to business day methods loads NYSE calendar data
-          (~200ms for default 50-year range). Subsequent calls are cached
-          and very fast (~0.01ms). Additional ranges can be loaded on-demand
-          by calling business_days(begdate, enddate) explicitly.
+    Provides access to 150+ exchange calendars including NYSE, LSE,
+    NASDAQ, TSX, etc. Use get_calendar('NYSE') or available_calendars()
+    to discover options.
     """
 
     BEGDATE = _datetime.date(2000, 1, 1)
     ENDDATE = _datetime.date(2050, 1, 1)
-    calendar = mcal.get_calendar('NYSE')
 
-    tz = EST
+    def __init__(self, name: str):
+        self._name = name.upper()
+        self._mcal = mcal.get_calendar(self._name)
+        tz_str = str(self._mcal.tz)
+        self._tz = Timezone(tz_str)
+        self._business_days_cache: dict[tuple, set] = {}
+        self._business_hours_cache: dict[tuple, dict] = {}
+        self._business_holidays_cache: dict[tuple, set] = {}
+        self._fast_calendar_cache: dict[tuple, object] = {}
 
-    @staticmethod
-    def business_days(begdate=None, enddate=None) -> set:
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def tz(self) -> _zoneinfo.ZoneInfo:
+        return self._tz
+
+    def business_days(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> set:
         """Get business days for a date range (loads and caches by decade).
-
-        Parameters
-            begdate: Start date (defaults to 2000-01-01)
-            enddate: End date (defaults to 2050-01-01)
-
-        Returns
-            Set of Date objects representing business days
-
-        Note: Calendar data is loaded and cached in decade chunks for efficiency.
-              Requesting specific date ranges will load additional decades as needed.
-              Queries for dates beyond year 2100 return an empty set to avoid
-              pandas timestamp overflow and NYSE calendar data limitations.
         """
         if begdate is None:
-            begdate = NYSE.BEGDATE
+            begdate = self.BEGDATE
         if enddate is None:
-            enddate = NYSE.ENDDATE
+            enddate = self.ENDDATE
 
         max_year = 2100
-
         if begdate.year > max_year:
             return set()
 
@@ -440,74 +440,68 @@ class NYSE(Entity):
         else:
             decade_end = _datetime.date(next_decade_year, 1, 1)
 
-        return NYSE._get_business_days_cached(decade_start, decade_end)
+        return self._get_business_days_cached(decade_start, decade_end)
 
-    @staticmethod
-    @lru_cache(maxsize=32)
-    def _get_business_days_cached(begdate: _datetime.date, enddate: _datetime.date) -> set:
+    def _get_business_days_cached(self, begdate: _datetime.date, enddate: _datetime.date) -> set:
         """Internal method to load and cache business days by decade.
-
-        Cache size of 32 allows ~320 years of cached data.
         """
-        return {Date.instance(d.date())
-                for d in NYSE.calendar.valid_days(begdate, enddate)}
+        key = (begdate, enddate)
+        if key not in self._business_days_cache:
+            self._business_days_cache[key] = {
+                Date.instance(d.date())
+                for d in self._mcal.valid_days(begdate, enddate)
+                }
+        return self._business_days_cache[key]
 
-    @staticmethod
-    @lru_cache
-    def business_hours(begdate=None, enddate=None) -> dict:
+    def business_hours(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> dict:
         """Get market hours for a date range.
-
-        Parameters
-            begdate: Start date (defaults to 2000-01-01)
-            enddate: End date (defaults to 2050-01-01)
-
-        Returns
-            Dict mapping dates to (open_time, close_time) tuples
         """
         if begdate is None:
-            begdate = NYSE.BEGDATE
+            begdate = self.BEGDATE
         if enddate is None:
-            enddate = NYSE.ENDDATE
+            enddate = self.ENDDATE
 
-        df = NYSE.calendar.schedule(begdate, enddate, tz=EST)
-        open_close = [(DateTime.instance(o.to_pydatetime()),
-                       DateTime.instance(c.to_pydatetime()))
-                      for o, c in zip(df.market_open, df.market_close)]
-        return dict(zip(df.index.date, open_close))
+        key = (begdate, enddate)
+        if key not in self._business_hours_cache:
+            df = self._mcal.schedule(begdate, enddate, tz=self._tz)
+            open_close = [
+                (DateTime.instance(o.to_pydatetime()),
+                 DateTime.instance(c.to_pydatetime()))
+                for o, c in zip(df.market_open, df.market_close)
+                ]
+            self._business_hours_cache[key] = dict(zip(df.index.date, open_close))
+        return self._business_hours_cache[key]
 
-    @staticmethod
-    @lru_cache
-    def business_holidays(begdate=None, enddate=None) -> set:
+    def business_holidays(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> set:
         """Get business holidays for a date range.
-
-        Parameters
-            begdate: Start date (defaults to 2000-01-01)
-            enddate: End date (defaults to 2050-01-01)
-
-        Returns
-            Set of Date objects representing holidays
         """
         if begdate is None:
-            begdate = NYSE.BEGDATE
+            begdate = self.BEGDATE
         if enddate is None:
-            enddate = NYSE.ENDDATE
+            enddate = self.ENDDATE
 
-        return {Date.instance(d.date())
-                for d in map(pd.to_datetime, NYSE.calendar.holidays().holidays)
-                if begdate <= d.date() <= enddate}
+        key = (begdate, enddate)
+        if key not in self._business_holidays_cache:
+            self._business_holidays_cache[key] = {
+                Date.instance(d.date())
+                for d in map(pd.to_datetime, self._mcal.holidays().holidays)
+                if begdate <= d.date() <= enddate
+                }
+        return self._business_holidays_cache[key]
 
-    @staticmethod
-    @lru_cache(maxsize=32)
-    def _get_fast_calendar(decade_start: _datetime.date, decade_end: _datetime.date):
-        """Get a BusinessCalendar for O(1) business day operations."""
+    def _get_fast_calendar(self, decade_start: _datetime.date, decade_end: _datetime.date):
+        """Get a BusinessCalendar for O(1) business day operations.
+        """
         if _BusinessCalendar is None:
             return None
-        business_days = NYSE._get_business_days_cached(decade_start, decade_end)
-        ordinals = sorted(d.toordinal() for d in business_days)
-        return _BusinessCalendar(ordinals)
+        key = (decade_start, decade_end)
+        if key not in self._fast_calendar_cache:
+            business_days = self._get_business_days_cached(decade_start, decade_end)
+            ordinals = sorted(d.toordinal() for d in business_days)
+            self._fast_calendar_cache[key] = _BusinessCalendar(ordinals)
+        return self._fast_calendar_cache[key]
 
-    @staticmethod
-    def _get_calendar(date):
+    def _get_calendar(self, date: _datetime.date):
         """Get the business calendar covering the decade containing the given date.
         """
         if date.year > 2100 or date.year < 1900:
@@ -518,7 +512,181 @@ class NYSE(Entity):
             decade_end = _datetime.date(2100, 12, 31)
         else:
             decade_end = _datetime.date(next_decade_year, 1, 1)
-        return NYSE._get_fast_calendar(decade_start, decade_end)
+        return self._get_fast_calendar(decade_start, decade_end)
+
+
+class CustomCalendar(Calendar):
+    """User-defined calendar with custom holidays and hours.
+
+    Example:
+        holidays = {Date(2024, 12, 26), Date(2024, 12, 27)}
+        cal = CustomCalendar(
+            name='MyCompany',
+            holidays=holidays,
+            tz=Timezone('US/Eastern'),
+        )
+        d = Date(2024, 12, 25).calendar(cal).b.add(days=1)
+    """
+
+    def __init__(
+        self,
+        name: str = 'custom',
+        holidays: set[_datetime.date] | Callable[[_datetime.date, _datetime.date], set] = None,
+        tz: _zoneinfo.ZoneInfo = UTC,
+        weekmask: str = 'Mon Tue Wed Thu Fri',
+        open_time: _datetime.time = _datetime.time(9, 30),
+        close_time: _datetime.time = _datetime.time(16, 0),
+    ):
+        self._name = name
+        self._holidays = holidays or set()
+        self._tz = tz
+        self._weekmask = weekmask
+        self._open_time = open_time
+        self._close_time = close_time
+        self._weekday_set = self._parse_weekmask(weekmask)
+        self._fast_calendar_cache: dict[tuple, object] = {}
+
+    def _parse_weekmask(self, weekmask: str) -> set[int]:
+        """Parse weekmask string into set of weekday numbers (0=Mon, 6=Sun).
+        """
+        day_map = {
+            'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3,
+            'fri': 4, 'sat': 5, 'sun': 6,
+            }
+        return {day_map[d.lower()] for d in weekmask.split() if d.lower() in day_map}
+
+    @property
+    def name(self) -> str:
+        return self._name
+
+    @property
+    def tz(self) -> _zoneinfo.ZoneInfo:
+        return self._tz
+
+    def _get_holidays(self, begdate: _datetime.date, enddate: _datetime.date) -> set:
+        """Get holidays for the date range.
+        """
+        if callable(self._holidays):
+            return self._holidays(begdate, enddate)
+        return {h for h in self._holidays if begdate <= h <= enddate}
+
+    def business_days(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> set:
+        """Get business days for a date range.
+        """
+        if begdate is None:
+            begdate = _datetime.date(2000, 1, 1)
+        if enddate is None:
+            enddate = _datetime.date(2050, 1, 1)
+
+        holidays = self._get_holidays(begdate, enddate)
+        result = set()
+        current = begdate
+        while current <= enddate:
+            if current.weekday() in self._weekday_set and current not in holidays:
+                result.add(Date.instance(current))
+            current += _datetime.timedelta(days=1)
+        return result
+
+    def business_hours(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> dict:
+        """Get market hours for a date range.
+        """
+        business_days = self.business_days(begdate, enddate)
+        result = {}
+        for d in business_days:
+            open_dt = DateTime(
+                d.year, d.month, d.day,
+                self._open_time.hour, self._open_time.minute, self._open_time.second,
+                tz=self._tz,
+                )
+            close_dt = DateTime(
+                d.year, d.month, d.day,
+                self._close_time.hour, self._close_time.minute, self._close_time.second,
+                tz=self._tz,
+                )
+            result[d] = (open_dt, close_dt)
+        return result
+
+    def business_holidays(self, begdate: _datetime.date = None, enddate: _datetime.date = None) -> set:
+        """Get business holidays for a date range.
+        """
+        if begdate is None:
+            begdate = _datetime.date(2000, 1, 1)
+        if enddate is None:
+            enddate = _datetime.date(2050, 1, 1)
+        return {Date.instance(h) if not isinstance(h, Date) else h
+                for h in self._get_holidays(begdate, enddate)}
+
+    def _get_calendar(self, date: _datetime.date):
+        """Get the business calendar for O(1) operations.
+        """
+        if _BusinessCalendar is None:
+            return None
+        if date.year > 2100 or date.year < 1900:
+            return None
+        decade_start = _datetime.date(date.year // 10 * 10, 1, 1)
+        next_decade_year = (date.year // 10 + 1) * 10
+        if next_decade_year > 2100:
+            decade_end = _datetime.date(2100, 12, 31)
+        else:
+            decade_end = _datetime.date(next_decade_year, 1, 1)
+
+        key = (decade_start, decade_end)
+        if key not in self._fast_calendar_cache:
+            business_days = self.business_days(decade_start, decade_end)
+            ordinals = sorted(d.toordinal() for d in business_days)
+            self._fast_calendar_cache[key] = _BusinessCalendar(ordinals)
+        return self._fast_calendar_cache[key]
+
+
+_calendar_cache: dict[str, Calendar] = {}
+
+
+def get_calendar(name: str) -> Calendar:
+    """Get or create a calendar instance by name.
+
+    Parameters
+        name: Exchange name (e.g., 'NYSE', 'LSE') or registered custom name
+
+    Returns
+        Calendar instance
+
+    Raises
+        ValueError: If calendar name is not recognized
+    """
+    name_upper = name.upper()
+
+    if name_upper in _calendar_cache:
+        return _calendar_cache[name_upper]
+
+    valid_names = set(mcal.get_calendar_names())
+    if name_upper in valid_names or name in valid_names:
+        cal = ExchangeCalendar(name)
+        _calendar_cache[name_upper] = cal
+        return cal
+
+    raise ValueError(
+        f'Unknown calendar: {name}. '
+        f'Use available_calendars() to see valid options.'
+        )
+
+
+def available_calendars() -> list[str]:
+    """List all available exchange calendar names.
+
+    Returns
+        Sorted list of calendar names (e.g., ['NYSE', 'LSE', 'NASDAQ', ...])
+    """
+    return sorted(mcal.get_calendar_names())
+
+
+def register_calendar(name: str, calendar: Calendar) -> None:
+    """Register a custom calendar for use by name.
+
+    Parameters
+        name: Name to register the calendar under
+        calendar: Calendar instance
+    """
+    _calendar_cache[name.upper()] = calendar
 
 
 class DateBusinessMixin:
@@ -526,22 +694,22 @@ class DateBusinessMixin:
 
     This mixin adds business day awareness to Date and DateTime classes,
     allowing date operations to account for weekends and holidays according
-    to a specified calendar entity.
+    to a specified calendar.
 
     Features not available in pendulum:
     - Business day mode toggle
-    - Entity-specific calendar rules
+    - Calendar-specific rules (exchanges, custom)
     - Business-aware date arithmetic
     """
 
-    _entity: type[NYSE] = NYSE
+    _calendar: Calendar | None = None
     _business: bool = False
 
     def business(self) -> Self:
         """Switch to business day mode for date calculations.
 
         In business day mode, date arithmetic only counts business days
-        as defined by the associated entity (default NYSE).
+        as defined by the associated calendar (default NYSE).
 
         Returns
             Self instance for method chaining
@@ -558,19 +726,35 @@ class DateBusinessMixin:
         """
         return self.business()
 
-    def entity(self, entity: type[NYSE] = NYSE) -> Self:
-        """Set the calendar entity for business day calculations.
+    def calendar(self, cal: str | Calendar = 'NYSE') -> Self:
+        """Set the calendar for business day calculations.
 
         Parameters
-            entity: Calendar entity class (defaults to NYSE)
+            cal: Calendar name (str) or Calendar instance
 
         Returns
             Self instance for method chaining
+
+        Examples
+            d.calendar('NYSE').b.add(days=1)
+            d.calendar('LSE').b.subtract(days=5)
+            d.calendar(my_custom_calendar).is_business_day()
         """
-        self._entity = entity
+        if isinstance(cal, str):
+            self._calendar = get_calendar(cal)
+        else:
+            self._calendar = cal
         return self
 
-    @store_entity
+    @property
+    def _active_calendar(self) -> Calendar:
+        """Get the active calendar (default to NYSE if not set).
+        """
+        if self._calendar is None:
+            return get_calendar('NYSE')
+        return self._calendar
+
+    @store_calendar
     def add(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
         """Add time periods to the current date or datetime.
 
@@ -594,7 +778,7 @@ class DateBusinessMixin:
                 return self._business_or_next()
             if days < 0:
                 return self.business().subtract(days=abs(days))
-            cal = self._entity._get_calendar(self)
+            cal = self._active_calendar._get_calendar(self)
             if cal is not None:
                 start_ord = self.toordinal()
                 first_bd = cal.next_business_day(start_ord + 1)
@@ -609,7 +793,7 @@ class DateBusinessMixin:
             return self
         return super().add(years, months, weeks, days, **kwargs)
 
-    @store_entity
+    @store_calendar
     def subtract(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
         """Subtract wrapper
         If not business use Pendulum
@@ -622,7 +806,7 @@ class DateBusinessMixin:
                 return self._business_or_previous()
             if days < 0:
                 return self.business().add(days=abs(days))
-            cal = self._entity._get_calendar(self)
+            cal = self._active_calendar._get_calendar(self)
             if cal is not None:
                 start_ord = self.toordinal()
                 first_bd = cal.prev_business_day(start_ord - 1)
@@ -638,7 +822,7 @@ class DateBusinessMixin:
         kwargs = {k: -1*v for k,v in kwargs.items()}
         return super().add(-years, -months, -weeks, -days, **kwargs)
 
-    @store_entity
+    @store_calendar
     def first_of(self, unit: str, day_of_week: WeekDay | None = None) -> Self:
         """Returns an instance set to the first occurrence
         of a given day of the week in the current unit.
@@ -650,7 +834,7 @@ class DateBusinessMixin:
             self = self._business_or_next()
         return self
 
-    @store_entity
+    @store_calendar
     def last_of(self, unit: str, day_of_week: WeekDay | None = None) -> Self:
         """Returns an instance set to the last occurrence
         of a given day of the week in the current unit.
@@ -662,7 +846,7 @@ class DateBusinessMixin:
             self = self._business_or_previous()
         return self
 
-    @store_entity
+    @store_calendar
     def start_of(self, unit: str) -> Self:
         """Returns a copy of the instance with the time reset
         """
@@ -673,7 +857,7 @@ class DateBusinessMixin:
             self = self._business_or_next()
         return self
 
-    @store_entity
+    @store_calendar
     def end_of(self, unit: str) -> Self:
         """Returns a copy of the instance with the time reset
         """
@@ -684,7 +868,7 @@ class DateBusinessMixin:
             self = self._business_or_previous()
         return self
 
-    @store_entity
+    @store_calendar
     def previous(self, day_of_week: WeekDay | None = None) -> Self:
         """Modify to the previous occurrence of a given day of the week.
         """
@@ -695,7 +879,7 @@ class DateBusinessMixin:
             self = self._business_or_next()
         return self
 
-    @store_entity
+    @store_calendar
     def next(self, day_of_week: WeekDay | None = None) -> Self:
         """Modify to the next occurrence of a given day of the week.
         """
@@ -714,9 +898,9 @@ class DateBusinessMixin:
 
     @expect_date
     def is_business_day(self) -> bool:
-        """Check if the date is a business day according to the entity calendar.
+        """Check if the date is a business day according to the calendar.
         """
-        business_days = self._entity.business_days(self, self)
+        business_days = self._active_calendar.business_days(self, self)
         return self in business_days
 
     @expect_date
@@ -725,7 +909,7 @@ class DateBusinessMixin:
 
         Returns (None, None) if not a business day.
         """
-        return self._entity.business_hours(self, self)\
+        return self._active_calendar.business_hours(self, self)\
             .get(self, (None, None))
 
     @store_both
@@ -754,14 +938,14 @@ class DateBusinessMixin:
                 days -= 1
         return self
 
-    @store_entity
+    @store_calendar
     def _business_or_next(self):
         self._business = False
         self = super().subtract(days=1)
         self = self._business_next(days=1)
         return self
 
-    @store_entity
+    @store_calendar
     def _business_or_previous(self):
         self._business = False
         self = super().add(days=1)
@@ -874,25 +1058,25 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         """
         return self.strftime(fmt.replace('%-', '%#') if os.name == 'nt' else fmt)
 
-    @store_entity(typ='Date')
+    @store_calendar(typ='Date')
     def replace(self, *args, **kwargs):
         """Replace method that preserves entity and business status.
         """
         return _pendulum.Date.replace(self, *args, **kwargs)
 
-    @store_entity(typ='Date')
+    @store_calendar(typ='Date')
     def closest(self, *args, **kwargs):
         """Closest method that preserves entity and business status.
         """
         return _pendulum.Date.closest(self, *args, **kwargs)
 
-    @store_entity(typ='Date')
+    @store_calendar(typ='Date')
     def farthest(self, *args, **kwargs):
         """Farthest method that preserves entity and business status.
         """
         return _pendulum.Date.farthest(self, *args, **kwargs)
 
-    @store_entity(typ='Date')
+    @store_calendar(typ='Date')
     def average(self, dt=None):
         """Modify the current instance to the average
         of a given instance (default now) and the current instance.
@@ -934,7 +1118,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         dt = _datetime.datetime.fromtimestamp(timestamp, tz=tz)
         return cls(dt.year, dt.month, dt.day)
 
-    @store_entity(typ='Date')
+    @store_calendar(typ='Date')
     def nth_of(self, unit: str, nth: int, day_of_week: WeekDay) -> Self:
         """Returns a new instance set to the given occurrence
         of a given day of the week in the current unit.
@@ -957,7 +1141,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         cls,
         s: str | None,
         fmt: str = None,
-        entity: Entity = NYSE,
+        calendar: str | Calendar = 'NYSE',
         raise_err: bool = False,
     ) -> Self | None:
         """Convert a string to a date handling many different formats.
@@ -972,7 +1156,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         Parameters
             s: String to parse or None
             fmt: Optional strftime format string for custom parsing
-            entity: Calendar entity for business day calculations (default NYSE)
+            calendar: Calendar name or instance for business day calculations (default 'NYSE')
             raise_err: If True, raises ValueError on parse failure instead of returning None
 
         Returns
@@ -1013,7 +1197,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             if s == 'Y':
                 return cls.today().subtract(days=1)
             if s == 'P':
-                return cls.today().entity(entity).business().subtract(days=1)
+                return cls.today().calendar(calendar).business().subtract(days=1)
             if s == 'M':
                 return cls.today().start_of('month').subtract(days=1)
 
@@ -1059,7 +1243,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             b = m.groupdict().get('b')
             if b:
                 assert b == 'b'
-                d = d.entity(entity).business().add(days=n)
+                d = d.calendar(calendar).business().add(days=n)
             else:
                 d = d.add(days=n)
             return d
@@ -1294,25 +1478,25 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
         """
         return self.timestamp()
 
-    @store_entity(typ='DateTime')
+    @store_calendar(typ='DateTime')
     def astimezone(self, *args, **kwargs):
         """Convert to a timezone-aware datetime in a different timezone.
         """
         return _pendulum.DateTime.astimezone(self, *args, **kwargs)
 
-    @store_entity(typ='DateTime')
+    @store_calendar(typ='DateTime')
     def in_timezone(self, *args, **kwargs):
         """Convert to a timezone-aware datetime in a different timezone.
         """
         return _pendulum.DateTime.in_timezone(self, *args, **kwargs)
 
-    @store_entity(typ='DateTime')
+    @store_calendar(typ='DateTime')
     def in_tz(self, *args, **kwargs):
         """Convert to a timezone-aware datetime in a different timezone.
         """
         return _pendulum.DateTime.in_tz(self, *args, **kwargs)
 
-    @store_entity(typ='DateTime')
+    @store_calendar(typ='DateTime')
     def replace(self, *args, **kwargs):
         """Replace method that preserves entity and business status.
         """
@@ -1441,7 +1625,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
     @classmethod
     def parse(
         cls, s: str | int | None,
-        entity: Entity = NYSE,
+        calendar: str | Calendar = 'NYSE',
         raise_err: bool = False
         ) -> Self | None:
         """Convert a string or timestamp to a DateTime with extended format support.
@@ -1455,7 +1639,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
 
         Parameters
             s: String or timestamp to parse
-            entity: Calendar entity for business day calculations (default NYSE)
+            calendar: Calendar name or instance for business day calculations (default 'NYSE')
             raise_err: If True, raises ValueError on parse failure instead of returning None
 
         Returns
@@ -1511,7 +1695,7 @@ class DateTime(DateBusinessMixin, _pendulum.DateTime):
                 if d is not None and t is not None:
                     return DateTime.combine(d, t, LCL)
 
-        d = Date.parse(s, entity=entity)
+        d = Date.parse(s, calendar=calendar)
         if d is not None:
             return cls(d.year, d.month, d.day, 0, 0, 0)
 
@@ -1606,13 +1790,13 @@ class Interval(_pendulum.Interval):
 
     Unlike pendulum.Interval:
     - Has business day mode that only counts business days
-    - Preserves entity association (e.g., NYSE)
+    - Preserves calendar association (e.g., NYSE, LSE)
     - Additional financial methods like yearfrac()
     - Support for range operations that respect business days
     """
 
     _business: bool = False
-    _entity: type[NYSE] = NYSE
+    _calendar: Calendar | None = None
 
     @expect_date_or_datetime
     @normalize_date_datetime_pairs
@@ -1692,12 +1876,19 @@ class Interval(_pendulum.Interval):
     def b(self) -> Self:
         return self.business()
 
-    def entity(self, e: type[NYSE] = NYSE) -> Self:
-        self._entity = e
+    def calendar(self, cal: str | Calendar = 'NYSE') -> Self:
+        """Set the calendar for business day calculations.
+
+        Parameters
+            cal: Calendar name (str) or Calendar instance
+        """
+        if isinstance(cal, str):
+            cal = get_calendar(cal)
+        self._calendar = cal
         if self._start:
-            self._end._entity = e
+            self._start._calendar = cal
         if self._end:
-            self._end._entity = e
+            self._end._calendar = cal
         return self
 
     def is_business_day_range(self) -> list[bool]:
@@ -1928,7 +2119,7 @@ class Interval(_pendulum.Interval):
         current = handlers['get_start'](self._start)
 
         if self._business:
-            current._entity = self._entity
+            current._calendar = self._calendar
 
         while current <= self._end:
             if self._business:
@@ -1957,7 +2148,7 @@ class Interval(_pendulum.Interval):
         current = handlers['get_start'](self._start)
 
         if self._business:
-            current._entity = self._entity
+            current._calendar = self._calendar
 
         while current <= self._end:
             end_date = handlers['get_end'](current)

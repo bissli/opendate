@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from date import EST, NYSE, Date, DateTime
+from date import EST, Date, DateTime, get_calendar
 from date.extras import create_ics, is_business_day, is_within_business_hours
 from date.extras import overlap_days
 
@@ -10,7 +10,7 @@ from date.extras import overlap_days
 def test_is_within_business_hours():
     """Test is_within_business_hours with various scenarios.
     """
-    tz = NYSE.tz
+    tz = get_calendar('NYSE').tz
 
     with patch('date.DateTime.now') as mock:
         mock.return_value = DateTime(2000, 5, 1, 12, 30, 0, 0, tzinfo=tz)
@@ -57,7 +57,7 @@ def test_overlap_days_count():
 def test_is_business_day():
     """Test is_business_day with various scenarios.
     """
-    tz = NYSE.tz
+    tz = get_calendar('NYSE').tz
 
     with patch('date.DateTime.now') as mock:
         mock.return_value = DateTime(2018, 11, 19, 12, 30, 0, 0, tzinfo=tz)
