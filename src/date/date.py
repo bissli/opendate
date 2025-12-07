@@ -14,6 +14,7 @@ import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator, Sequence
 from functools import partial, wraps
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -47,6 +48,8 @@ warnings.simplefilter(action='ignore', category=DeprecationWarning)
 
 logger = logging.getLogger(__name__)
 
+# Cache platform check for to_string() performance
+_IS_WINDOWS = os.name == 'nt'
 
 __all__ = [
     'Date',
@@ -123,7 +126,7 @@ MONTH_SHORTNAME = {
 DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
 
 
-def isdateish(x) -> bool:
+def isdateish(x: Any) -> bool:
     return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
 
 
@@ -176,7 +179,7 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
         return None
 
 
-def parse_arg(typ, arg):
+def parse_arg(typ: type | str, arg: Any) -> Any:
     """Parse argument to specified type or 'smart' to preserve Date/DateTime.
     """
     if not isdateish(arg):
@@ -202,7 +205,7 @@ def parse_arg(typ, arg):
     return arg
 
 
-def parse_args(typ, *args):
+def parse_args(typ: type | str, *args: Any) -> list[Any]:
     """Parse args to specified type or 'smart' mode.
     """
     this = []
@@ -360,6 +363,20 @@ expect_native_timezone = partial(prefer_native_timezone, force=True)
 expect_utc_timezone = partial(prefer_utc_timezone, force=True)
 
 
+_MIN_YEAR = 1900
+_MAX_YEAR = 2100
+
+
+def _get_decade_bounds(year: int) -> tuple[_datetime.date, _datetime.date] | None:
+    """Get decade start/end dates for caching. Returns None if outside valid range."""
+    if year > _MAX_YEAR or year < _MIN_YEAR:
+        return None
+    decade_start = _datetime.date(year // 10 * 10, 1, 1)
+    next_decade_year = (year // 10 + 1) * 10
+    decade_end = _datetime.date(_MAX_YEAR, 12, 31) if next_decade_year > _MAX_YEAR else _datetime.date(next_decade_year, 1, 1)
+    return decade_start, decade_end
+
+
 class Calendar(ABC):
     """Abstract base class for calendar definitions.
 
@@ -492,8 +509,6 @@ class ExchangeCalendar(Calendar):
     def _get_fast_calendar(self, decade_start: _datetime.date, decade_end: _datetime.date):
         """Get a BusinessCalendar for O(1) business day operations.
         """
-        if _BusinessCalendar is None:
-            return None
         key = (decade_start, decade_end)
         if key not in self._fast_calendar_cache:
             business_days = self._get_business_days_cached(decade_start, decade_end)
@@ -504,15 +519,10 @@ class ExchangeCalendar(Calendar):
     def _get_calendar(self, date: _datetime.date):
         """Get the business calendar covering the decade containing the given date.
         """
-        if date.year > 2100 or date.year < 1900:
+        bounds = _get_decade_bounds(date.year)
+        if bounds is None:
             return None
-        decade_start = _datetime.date(date.year // 10 * 10, 1, 1)
-        next_decade_year = (date.year // 10 + 1) * 10
-        if next_decade_year > 2100:
-            decade_end = _datetime.date(2100, 12, 31)
-        else:
-            decade_end = _datetime.date(next_decade_year, 1, 1)
-        return self._get_fast_calendar(decade_start, decade_end)
+        return self._get_fast_calendar(*bounds)
 
 
 class CustomCalendar(Calendar):
@@ -619,17 +629,10 @@ class CustomCalendar(Calendar):
     def _get_calendar(self, date: _datetime.date):
         """Get the business calendar for O(1) operations.
         """
-        if _BusinessCalendar is None:
+        bounds = _get_decade_bounds(date.year)
+        if bounds is None:
             return None
-        if date.year > 2100 or date.year < 1900:
-            return None
-        decade_start = _datetime.date(date.year // 10 * 10, 1, 1)
-        next_decade_year = (date.year // 10 + 1) * 10
-        if next_decade_year > 2100:
-            decade_end = _datetime.date(2100, 12, 31)
-        else:
-            decade_end = _datetime.date(next_decade_year, 1, 1)
-
+        decade_start, decade_end = bounds
         key = (decade_start, decade_end)
         if key not in self._fast_calendar_cache:
             business_days = self.business_days(decade_start, decade_end)
@@ -778,19 +781,8 @@ class DateBusinessMixin:
                 return self._business_or_next()
             if days < 0:
                 return self.business().subtract(days=abs(days))
-            cal = self._active_calendar._get_calendar(self)
-            if cal is not None:
-                start_ord = self.toordinal()
-                first_bd = cal.next_business_day(start_ord + 1)
-                if first_bd is not None:
-                    result_ord = cal.add_business_days(first_bd, days - 1)
-                    if result_ord is not None:
-                        days_diff = result_ord - start_ord
-                        return super().add(days=days_diff)
-            while days > 0:
-                self = self._business_next(days=1)
-                days -= 1
-            return self
+            result = self._add_business_days(days)
+            return result if result is not None else self
         return super().add(years, months, weeks, days, **kwargs)
 
     @store_calendar
@@ -806,19 +798,8 @@ class DateBusinessMixin:
                 return self._business_or_previous()
             if days < 0:
                 return self.business().add(days=abs(days))
-            cal = self._active_calendar._get_calendar(self)
-            if cal is not None:
-                start_ord = self.toordinal()
-                first_bd = cal.prev_business_day(start_ord - 1)
-                if first_bd is not None:
-                    result_ord = cal.add_business_days(first_bd, -(days - 1))
-                    if result_ord is not None:
-                        days_diff = result_ord - start_ord
-                        return super().add(days=days_diff)
-            while days > 0:
-                self = self._business_previous(days=1)
-                days -= 1
-            return self
+            result = self._add_business_days(-days)
+            return result if result is not None else self
         kwargs = {k: -1*v for k,v in kwargs.items()}
         return super().add(-years, -months, -weeks, -days, **kwargs)
 
@@ -891,17 +872,16 @@ class DateBusinessMixin:
         return self
 
     @expect_date
-    def business_open(self) -> bool:
-        """Check if the date is a business day (market is open).
-        """
-        return self.is_business_day()
-
-    @expect_date
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the calendar.
         """
-        business_days = self._active_calendar.business_days(self, self)
-        return self in business_days
+        cal = self._active_calendar._get_calendar(self)
+        if cal is None:
+            return False
+        return cal.is_business_day(self.toordinal())
+
+    # Alias for backwards compatibility
+    business_open = is_business_day
 
     @expect_date
     def business_hours(self) -> tuple[DateTime, DateTime]:
@@ -912,45 +892,42 @@ class DateBusinessMixin:
         return self._active_calendar.business_hours(self, self)\
             .get(self, (None, None))
 
-    @store_both
-    def _business_next(self, days=0):
-        """Helper for cycling through N business day"""
-        days = abs(days)
-        while days > 0:
-            try:
-                self = super().add(days=1)
-            except OverflowError:
-                break
-            if self.is_business_day():
-                days -= 1
-        return self
-
-    @store_both
-    def _business_previous(self, days=0):
-        """Helper for cycling through N business day"""
-        days = abs(days)
-        while days > 0:
-            try:
-                self = super().add(days=-1)
-            except OverflowError:
-                break
-            if self.is_business_day():
-                days -= 1
-        return self
+    def _add_business_days(self, days: int) -> Self | None:
+        """Add business days using Rust calendar, returns None if outside range."""
+        cal = self._active_calendar._get_calendar(self)
+        if cal is None:
+            return None
+        start_ord = self.toordinal()
+        forward = days > 0
+        offset = 1 if forward else -1
+        first_bd = (cal.next_business_day if forward else cal.prev_business_day)(start_ord + offset)
+        if first_bd is None:
+            return None
+        result_ord = cal.add_business_days(first_bd, (abs(days) - 1) * offset)
+        if result_ord is None:
+            return None
+        return super().add(days=result_ord - start_ord)
 
     @store_calendar
-    def _business_or_next(self):
+    def _snap_to_business_day(self, forward: bool = True) -> Self:
+        """Snap to nearest business day if not already on one."""
         self._business = False
-        self = super().subtract(days=1)
-        self = self._business_next(days=1)
-        return self
+        if self.is_business_day():
+            return self
+        cal = self._active_calendar._get_calendar(self)
+        if cal is None:
+            return self
+        ordinal = self.toordinal()
+        target = cal.next_business_day(ordinal) if forward else cal.prev_business_day(ordinal)
+        if target is None:
+            return self
+        return super().add(days=target - ordinal)
 
-    @store_calendar
-    def _business_or_previous(self):
-        self._business = False
-        self = super().add(days=1)
-        self = self._business_previous(days=1)
-        return self
+    def _business_or_next(self) -> Self:
+        return self._snap_to_business_day(forward=True)
+
+    def _business_or_previous(self) -> Self:
+        return self._snap_to_business_day(forward=False)
 
 
 class DateExtrasMixin:
@@ -1056,7 +1033,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
 
         Automatically converts '%-' format codes to '%#' on Windows.
         """
-        return self.strftime(fmt.replace('%-', '%#') if os.name == 'nt' else fmt)
+        return self.strftime(fmt.replace('%-', '%#') if _IS_WINDOWS else fmt)
 
     @store_calendar(typ='Date')
     def replace(self, *args, **kwargs):
@@ -1222,7 +1199,7 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
         if fmt:
             try:
                 return cls(*time.strptime(s, fmt)[:3])
-            except:
+            except (ValueError, TypeError):
                 if raise_err:
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
@@ -1242,7 +1219,8 @@ class Date(DateExtrasMixin, DateBusinessMixin, _pendulum.Date):
             n = int(n)
             b = m.groupdict().get('b')
             if b:
-                assert b == 'b'
+                if b != 'b':
+                    raise ValueError(f"Expected 'b' for business day modifier, got '{b}'")
                 d = d.calendar(calendar).business().add(days=n)
             else:
                 d = d.add(days=n)
@@ -2098,7 +2076,7 @@ class Interval(_pendulum.Interval):
         if basis == 4:
             return basis4(self._start, self._end) * self._sign
 
-        raise ValueError('Basis range [0, 4]. Unknown basis {basis}.')
+        raise ValueError(f'Basis range [0, 4]. Unknown basis {basis}.')
 
     @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:

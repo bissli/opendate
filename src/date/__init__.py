@@ -5,7 +5,6 @@ __version__ = '0.1.26'
 import datetime as _datetime
 import zoneinfo as _zoneinfo
 
-
 from date.date import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Calendar
 from date.date import CustomCalendar, Date, DateTime, ExchangeCalendar
 from date.date import Interval, Time, Timezone, WeekDay, available_calendars
@@ -33,8 +32,8 @@ def datetime(
     minute: int = 0,
     second: int = 0,
     microsecond: int = 0,
-    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,  # note that this is different from our DateTime
-    fold: int = 0,  # different from pendulum
+    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
+    fold: int = 0,
 ) -> DateTime:
     """Create new DateTime
     """
@@ -56,20 +55,20 @@ def time(
     minute: int = 0,
     second: int = 0,
     microsecond: int = 0,
-    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,  # review this choice
+    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
 ) -> Time:
     """Create new Time
     """
     return Time(hour, minute, second, microsecond, tzinfo)
 
 
-def interval(self, begdate: Date | DateTime, enddate: Date | DateTime):
+def interval(begdate: Date | DateTime, enddate: Date | DateTime) -> Interval:
     """Create new Interval
     """
     return Interval(begdate, enddate)
 
 
-def parse(s: str | None, fmt: str = None, calendar: str | Calendar = 'NYSE', raise_err: bool = False) -> DateTime | None:
+def parse(s: str | None, calendar: str | Calendar = 'NYSE', raise_err: bool = False) -> DateTime | None:
     """Parse using DateTime.parse
     """
     return DateTime.parse(s, calendar=calendar, raise_err=raise_err)
@@ -93,7 +92,7 @@ def now(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
     return DateTime.now(tz)
 
 
-def today(tz: str | _zoneinfo.ZoneInfo = None) -> DateTime:
+def today(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
     """Returns DateTime.today
     """
     return DateTime.today(tz)

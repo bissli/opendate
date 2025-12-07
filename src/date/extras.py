@@ -27,7 +27,7 @@ def is_within_business_hours(calendar: str | Calendar = 'NYSE') -> bool:
     if isinstance(calendar, str):
         calendar = get_calendar(calendar)
     this = DateTime.now()
-    this_cal = DateTime.now(tz=calendar.tz).calendar(calendar)
+    this_cal = this.in_tz(calendar.tz).calendar(calendar)
     bounds = this_cal.business_hours()
     return this_cal.business_open() and (bounds[0] <= this.astimezone(calendar.tz) <= bounds[1])
 
@@ -57,8 +57,8 @@ def overlap_days(
     if not isinstance(interval_two, Interval):
         interval_two = Interval(*interval_two)
 
-    latest_start = max(interval_one._start, interval_two._start)
-    earliest_end = min(interval_one._end, interval_two._end)
+    latest_start = max(interval_one.start, interval_two.start)
+    earliest_end = min(interval_one.end, interval_two.end)
     overlap = (earliest_end - latest_start).days + 1
     if days:
         return overlap
