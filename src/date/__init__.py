@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-__version__ = '0.1.30'
+__version__ = '0.1.31'
 
 import datetime as _datetime
 import zoneinfo as _zoneinfo
