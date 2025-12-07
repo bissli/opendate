@@ -114,6 +114,7 @@ impl IsoParser {
     }
 
     /// Parse timezone string.
+    #[allow(dead_code)]
     pub fn parse_tzstr(&self, tzstr: &str, zero_as_utc: bool) -> Result<Option<i32>, ParserError> {
         let bytes = tzstr.as_bytes();
         self.parse_tzstr_internal(bytes, zero_as_utc)
@@ -212,7 +213,8 @@ impl IsoParser {
             if dt_str.len() > pos {
                 let next_byte = dt_str.get(pos);
                 // Check if this is the time separator (T or space) - no day follows
-                if next_byte == Some(&b'T') || next_byte == Some(&b' ') || next_byte == Some(&b't') {
+                if next_byte == Some(&b'T') || next_byte == Some(&b' ') || next_byte == Some(&b't')
+                {
                     // No day, just time separator - leave dayno as 1 (Monday)
                 } else {
                     let day_has_sep = next_byte == Some(&b'-');
@@ -293,7 +295,6 @@ impl IsoParser {
                     if tz_offset == Some(0) {
                         result.tzname = Some("UTC".to_string());
                     }
-                    pos = len_str;
                     break;
                 }
             }
@@ -358,13 +359,14 @@ impl IsoParser {
         }
 
         // Validate 24:00:00 midnight
-        if result.hour == Some(24) {
-            if result.minute != Some(0) || result.second != Some(0) || result.microsecond != Some(0)
-            {
-                return Err(ParserError::ParseError(
-                    "Hour may only be 24 at 24:00:00.000".to_string(),
-                ));
-            }
+        if result.hour == Some(24)
+            && (result.minute != Some(0)
+                || result.second != Some(0)
+                || result.microsecond != Some(0))
+        {
+            return Err(ParserError::ParseError(
+                "Hour may only be 24 at 24:00:00.000".to_string(),
+            ));
         }
 
         Ok(result)
@@ -479,14 +481,11 @@ fn ordinal_to_month_day(year: i32, ordinal: i32) -> Result<(u32, u32), ParserErr
 
 /// Calculate the date from ISO year-week-day.
 fn calculate_weekdate(year: i32, week: i32, day: i32) -> Result<(i32, u32, u32), ParserError> {
-    if week < 1 || week > 53 {
+    if !(1..=53).contains(&week) {
         return Err(ParserError::ParseError(format!("Invalid week: {}", week)));
     }
-    if day < 1 || day > 7 {
-        return Err(ParserError::ParseError(format!(
-            "Invalid weekday: {}",
-            day
-        )));
+    if !(1..=7).contains(&day) {
+        return Err(ParserError::ParseError(format!("Invalid weekday: {}", day)));
     }
 
     // Find January 4th of the given year (always in week 1)

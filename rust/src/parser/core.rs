@@ -7,7 +7,7 @@ use super::errors::ParserError;
 use super::parserinfo::ParserInfo;
 use super::result::ParseResult;
 use super::tokenizer::Tokenizer;
-use super::ymd::YMD;
+use super::ymd::Ymd;
 
 /// Main datetime parser.
 #[derive(Debug, Clone)]
@@ -30,6 +30,7 @@ impl Parser {
     }
 
     /// Create a new parser with custom ParserInfo.
+    #[allow(dead_code)]
     pub fn with_info(info: ParserInfo) -> Self {
         Parser { info }
     }
@@ -137,16 +138,18 @@ impl Parser {
         };
 
         // Build result
-        let mut result = ParseResult::default();
-        if ampm.is_some() {
-            result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
-        } else {
-            result.hour = Some(hour);
-        }
-        result.minute = Some(minute);
-        result.second = Some(second);
-        result.microsecond = Some(microsecond);
-        result.ampm = ampm;
+        let result = ParseResult {
+            hour: Some(if let Some(ampm_val) = ampm {
+                self.adjust_ampm(hour, ampm_val)
+            } else {
+                hour
+            }),
+            minute: Some(minute),
+            second: Some(second),
+            microsecond: Some(microsecond),
+            ampm,
+            ..Default::default()
+        };
 
         Ok(Some(result))
     }
@@ -202,16 +205,18 @@ impl Parser {
                     }
 
                     // Build result
-                    let mut result = ParseResult::default();
-                    if ampm.is_some() {
-                        result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
-                    } else {
-                        result.hour = Some(hour);
-                    }
-                    result.minute = Some(minute);
-                    result.second = Some(second);
-                    result.microsecond = Some(microsecond);
-                    result.ampm = ampm;
+                    let result = ParseResult {
+                        hour: Some(if let Some(ampm_val) = ampm {
+                            self.adjust_ampm(hour, ampm_val)
+                        } else {
+                            hour
+                        }),
+                        minute: Some(minute),
+                        second: Some(second),
+                        microsecond: Some(microsecond),
+                        ampm,
+                        ..Default::default()
+                    };
 
                     return Ok(Some(result));
                 }
@@ -263,16 +268,18 @@ impl Parser {
         }
 
         // Build result
-        let mut result = ParseResult::default();
-        if ampm.is_some() {
-            result.hour = Some(self.adjust_ampm(hour, ampm.unwrap()));
-        } else {
-            result.hour = Some(hour);
-        }
-        result.minute = Some(minute);
-        result.second = Some(second);
-        result.microsecond = Some(microsecond);
-        result.ampm = ampm;
+        let result = ParseResult {
+            hour: Some(if let Some(ampm_val) = ampm {
+                self.adjust_ampm(hour, ampm_val)
+            } else {
+                hour
+            }),
+            minute: Some(minute),
+            second: Some(second),
+            microsecond: Some(microsecond),
+            ampm,
+            ..Default::default()
+        };
 
         Ok(Some(result))
     }
@@ -330,7 +337,7 @@ impl Parser {
         let mut res = ParseResult::default();
         let tokens: Vec<String> = Tokenizer::split(timestr);
         let mut skipped_idxs: Vec<usize> = Vec::new();
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         let mut flip_next_sign = false; // For GMT+3 style parsing
 
         let len_l = tokens.len();
@@ -466,10 +473,8 @@ impl Parser {
                     i += 1 + skip;
                 }
             }
-            // Check jumps
-            else if self.info.jump(token) {
-                skipped_idxs.push(i);
-            } else if fuzzy {
+            // Check jumps or fuzzy mode
+            else if self.info.jump(token) || fuzzy {
                 skipped_idxs.push(i);
             } else {
                 return Err(ParserError::ParseError(format!(
@@ -565,7 +570,7 @@ impl Parser {
         &self,
         tokens: &[String],
         idx: usize,
-        ymd: &mut YMD,
+        ymd: &mut Ymd,
         res: &mut ParseResult,
         fuzzy: bool,
     ) -> Result<usize, ParserError> {
@@ -696,7 +701,7 @@ impl Parser {
                 let could_be_date_component = (1..=31).contains(&int_val)  // day
                     || (1..=12).contains(&int_val)  // month
                     || (0..=99).contains(&int_val)  // 2-digit year
-                    || (1000..=9999).contains(&int_val);  // 4-digit year
+                    || (1000..=9999).contains(&int_val); // 4-digit year
 
                 if could_be_date_component {
                     ymd.append(value as i32, None)?;
@@ -919,7 +924,9 @@ impl Parser {
             let upper = last_part.to_uppercase();
             if upper.starts_with("GMT") || upper.starts_with("UTC") {
                 let rest = &last_part[3..];
-                if let Some((sign, offset_str)) = rest.strip_prefix('+').map(|s| (-1i32, s))
+                if let Some((sign, offset_str)) = rest
+                    .strip_prefix('+')
+                    .map(|s| (-1i32, s))
                     .or_else(|| rest.strip_prefix('-').map(|s| (1i32, s)))
                 {
                     // GMT+N means "my time + N = GMT", so offset is -N
@@ -1022,9 +1029,7 @@ mod tests {
     #[test]
     fn test_parse_time_with_ampm() {
         let parser = Parser::default();
-        let (res, _) = parser
-            .parse("10:30 PM", None, None, false, false)
-            .unwrap();
+        let (res, _) = parser.parse("10:30 PM", None, None, false, false).unwrap();
         assert_eq!(res.hour, Some(22));
         assert_eq!(res.minute, Some(30));
     }
@@ -1110,9 +1115,7 @@ mod tests {
     #[test]
     fn test_parse_hms_format() {
         let parser = Parser::default();
-        let (res, _) = parser
-            .parse("2h30m45s", None, None, false, false)
-            .unwrap();
+        let (res, _) = parser.parse("2h30m45s", None, None, false, false).unwrap();
         assert_eq!(res.hour, Some(2));
         assert_eq!(res.minute, Some(30));
         assert_eq!(res.second, Some(45));

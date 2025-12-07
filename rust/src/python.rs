@@ -1,3 +1,5 @@
+#![allow(clippy::useless_conversion)]
+
 use once_cell::sync::Lazy;
 use pyo3::prelude::*;
 
@@ -143,10 +145,15 @@ impl PyParser {
         fuzzy: bool,
         fuzzy_with_tokens: bool,
     ) -> PyResult<PyParseResultOrTuple> {
-        let (result, tokens) = self.inner.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
+        let (result, tokens) =
+            self.inner
+                .parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
 
         if fuzzy_with_tokens {
-            Ok(PyParseResultOrTuple::WithTokens(result.into(), tokens.unwrap_or_default()))
+            Ok(PyParseResultOrTuple::WithTokens(
+                result.into(),
+                tokens.unwrap_or_default(),
+            ))
         } else {
             Ok(PyParseResultOrTuple::Result(result.into()))
         }
@@ -179,10 +186,14 @@ fn parse(
     fuzzy_with_tokens: bool,
 ) -> PyResult<PyParseResultOrTuple> {
     // Use static default parser to avoid HashMap recreation on every call
-    let (result, tokens) = DEFAULT_PARSER.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
+    let (result, tokens) =
+        DEFAULT_PARSER.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
 
     if fuzzy_with_tokens {
-        Ok(PyParseResultOrTuple::WithTokens(result.into(), tokens.unwrap_or_default()))
+        Ok(PyParseResultOrTuple::WithTokens(
+            result.into(),
+            tokens.unwrap_or_default(),
+        ))
     } else {
         Ok(PyParseResultOrTuple::Result(result.into()))
     }

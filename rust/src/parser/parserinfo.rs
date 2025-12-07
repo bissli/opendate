@@ -196,6 +196,7 @@ impl ParserInfo {
     }
 
     /// Add a custom timezone offset.
+    #[allow(dead_code)]
     pub fn add_tzoffset(&mut self, name: &str, offset_seconds: i32) {
         self.tzoffset.insert(name.to_string(), offset_seconds);
     }
@@ -226,12 +227,18 @@ impl ParserInfo {
     /// Validate and normalize a parse result.
     ///
     /// Returns true if valid, false otherwise.
+    #[allow(dead_code)]
     pub fn validate_year(&self, year: i32, century_specified: bool) -> i32 {
         self.convertyear(year, century_specified)
     }
 
     /// Normalize UTC timezone info.
-    pub fn normalize_tzinfo(&self, tzoffset: Option<i32>, tzname: Option<&str>) -> (Option<i32>, Option<String>) {
+    #[allow(dead_code)]
+    pub fn normalize_tzinfo(
+        &self,
+        tzoffset: Option<i32>,
+        tzname: Option<&str>,
+    ) -> (Option<i32>, Option<String>) {
         match (tzoffset, tzname) {
             // Zero offset without name, or Z/z name
             (Some(0), None) | (None, Some("Z" | "z")) | (Some(0), Some("Z" | "z")) => {

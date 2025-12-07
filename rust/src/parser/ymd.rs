@@ -4,9 +4,12 @@
 
 use super::errors::ParserError;
 
+/// Type alias for resolved Y/M/D result (year, month, day).
+type YmdResult = Result<(Option<i32>, Option<i32>, Option<i32>), ParserError>;
+
 /// Holds parsed Y/M/D values and tracks which position is which.
 #[derive(Debug, Clone, Default)]
-pub struct YMD {
+pub struct Ymd {
     /// The numeric values (up to 3)
     values: Vec<i32>,
     /// Whether the century was explicitly specified (4-digit year)
@@ -19,8 +22,8 @@ pub struct YMD {
     ystridx: Option<usize>,
 }
 
-impl YMD {
-    /// Create a new empty YMD.
+impl Ymd {
+    /// Create a new empty Ymd.
     pub fn new() -> Self {
         Self::default()
     }
@@ -136,6 +139,7 @@ impl YMD {
     }
 
     /// Get value at index.
+    #[allow(dead_code)]
     pub fn get(&self, idx: usize) -> Option<i32> {
         self.values.get(idx).copied()
     }
@@ -143,11 +147,7 @@ impl YMD {
     /// Resolve the Y/M/D values based on yearfirst and dayfirst settings.
     ///
     /// Returns (year, month, day) where any may be None if not determined.
-    pub fn resolve(
-        &self,
-        yearfirst: bool,
-        dayfirst: bool,
-    ) -> Result<(Option<i32>, Option<i32>, Option<i32>), ParserError> {
+    pub fn resolve(&self, yearfirst: bool, dayfirst: bool) -> YmdResult {
         let len_ymd = self.len();
 
         if len_ymd == 0 {
@@ -156,26 +156,25 @@ impl YMD {
 
         if len_ymd > 3 {
             return Err(ParserError::ParseError(
-                "More than three YMD values".to_string(),
+                "More than three Ymd values".to_string(),
             ));
         }
 
         // If we have enough stride indices, use them
-        let strids_count =
-            self.ystridx.is_some() as usize + self.mstridx.is_some() as usize + self.dstridx.is_some() as usize;
+        let strids_count = self.ystridx.is_some() as usize
+            + self.mstridx.is_some() as usize
+            + self.dstridx.is_some() as usize;
 
         if (len_ymd == strids_count && strids_count > 0) || (len_ymd == 3 && strids_count == 2) {
             return self.resolve_from_stridxs();
         }
 
-        let mstridx = self.mstridx;
-
         match len_ymd {
             1 => {
                 // One value
-                if mstridx.is_some() {
+                if let Some(idx) = self.mstridx {
                     // Single month value
-                    let month = self.values[mstridx.unwrap()];
+                    let month = self.values[idx];
                     Ok((None, Some(month), None))
                 } else {
                     // Ambiguous single value - could be year or day
@@ -187,10 +186,11 @@ impl YMD {
                     }
                 }
             }
-            2 if mstridx.is_some() => {
+            2 if self.mstridx.is_some() => {
                 // Two values with month string
-                let month = self.values[mstridx.unwrap()];
-                let other_idx = if mstridx.unwrap() == 0 { 1 } else { 0 };
+                let m_idx = self.mstridx.unwrap();
+                let month = self.values[m_idx];
+                let other_idx = if m_idx == 0 { 1 } else { 0 };
                 let other = self.values[other_idx];
 
                 if other > 31 {
@@ -221,7 +221,7 @@ impl YMD {
                 // Three values
                 let (v0, v1, v2) = (self.values[0], self.values[1], self.values[2]);
 
-                if let Some(midx) = mstridx {
+                if let Some(midx) = self.mstridx {
                     // Month is known
                     match midx {
                         0 => {
@@ -281,7 +281,7 @@ impl YMD {
     }
 
     /// Resolve using known stride indices.
-    fn resolve_from_stridxs(&self) -> Result<(Option<i32>, Option<i32>, Option<i32>), ParserError> {
+    fn resolve_from_stridxs(&self) -> YmdResult {
         let mut strids: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
 
         if let Some(idx) = self.ystridx {
@@ -340,14 +340,14 @@ mod tests {
 
     #[test]
     fn test_ymd_empty() {
-        let ymd = YMD::new();
+        let ymd = Ymd::new();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
         assert_eq!((y, m, d), (None, None, None));
     }
 
     #[test]
     fn test_ymd_single_day() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(15, None).unwrap();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
         assert_eq!((y, m, d), (None, None, Some(15)));
@@ -355,7 +355,7 @@ mod tests {
 
     #[test]
     fn test_ymd_single_year() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(2024, None).unwrap();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
         assert_eq!((y, m, d), (Some(2024), None, None));
@@ -363,7 +363,7 @@ mod tests {
 
     #[test]
     fn test_ymd_month_day() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(1, Some('M')).unwrap();
         ymd.append(15, None).unwrap();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_ymd_us_format() {
         // MM/DD/YYYY (US format, default)
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(1, None).unwrap();
         ymd.append(15, None).unwrap();
         ymd.append(2024, None).unwrap();
@@ -384,7 +384,7 @@ mod tests {
     #[test]
     fn test_ymd_european_format() {
         // DD/MM/YYYY (European format, dayfirst=true)
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(15, None).unwrap();
         ymd.append(1, None).unwrap();
         ymd.append(2024, None).unwrap();
@@ -395,7 +395,7 @@ mod tests {
     #[test]
     fn test_ymd_iso_format() {
         // YYYY/MM/DD (ISO format, yearfirst=true)
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(2024, None).unwrap();
         ymd.append(1, None).unwrap();
         ymd.append(15, None).unwrap();
@@ -406,7 +406,7 @@ mod tests {
     #[test]
     fn test_ymd_named_month() {
         // Jan 15, 2024
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(1, Some('M')).unwrap(); // January
         ymd.append(15, None).unwrap();
         ymd.append(2024, None).unwrap();
@@ -417,7 +417,7 @@ mod tests {
     #[test]
     fn test_ymd_day_month_year() {
         // 15 Jan 2024
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(15, None).unwrap();
         ymd.append(1, Some('M')).unwrap(); // January
         ymd.append(2024, None).unwrap();
@@ -428,7 +428,7 @@ mod tests {
     #[test]
     fn test_ymd_two_digit_year() {
         // 01/15/24 with month/day inference
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(1, None).unwrap();
         ymd.append(15, None).unwrap();
         ymd.append(24, None).unwrap();
@@ -440,14 +440,14 @@ mod tests {
 
     #[test]
     fn test_ymd_century_specified() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append_str("2024", None).unwrap();
         assert!(ymd.century_specified);
     }
 
     #[test]
     fn test_ymd_too_many_values() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         ymd.append(1, None).unwrap();
         ymd.append(2, None).unwrap();
         ymd.append(3, None).unwrap();
@@ -458,7 +458,7 @@ mod tests {
 
     #[test]
     fn test_could_be_day() {
-        let mut ymd = YMD::new();
+        let mut ymd = Ymd::new();
         assert!(ymd.could_be_day(1));
         assert!(ymd.could_be_day(31));
         assert!(!ymd.could_be_day(32));

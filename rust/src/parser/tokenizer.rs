@@ -2,52 +2,6 @@
 //!
 //! Port of dateutil.parser._timelex to Rust.
 
-/// Token type returned by the tokenizer.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    /// A word (letters only)
-    Word(String),
-    /// A number (digits only, may include decimal point)
-    Number(String),
-    /// Whitespace (normalized to single space)
-    Space,
-    /// Single separator character
-    Separator(char),
-}
-
-impl Token {
-    /// Get the string value of the token.
-    pub fn as_str(&self) -> &str {
-        match self {
-            Token::Word(s) | Token::Number(s) => s,
-            Token::Space => " ",
-            Token::Separator(c) => {
-                // This is a bit of a hack but works for single chars
-                // In practice, callers should handle separators specially
-                match c {
-                    '.' => ".",
-                    ',' => ",",
-                    '-' => "-",
-                    '/' => "/",
-                    ':' => ":",
-                    '+' => "+",
-                    _ => "",
-                }
-            }
-        }
-    }
-
-    /// Check if this token is a word.
-    pub fn is_word(&self) -> bool {
-        matches!(self, Token::Word(_))
-    }
-
-    /// Check if this token is a number.
-    pub fn is_number(&self) -> bool {
-        matches!(self, Token::Number(_))
-    }
-}
-
 /// State machine states for tokenization.
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
@@ -62,7 +16,6 @@ enum State {
 ///
 /// Breaks strings into lexical units: words, numbers, whitespace, and separators.
 pub struct Tokenizer<'a> {
-    input: &'a str,
     chars: std::iter::Peekable<std::str::CharIndices<'a>>,
     charstack: Vec<(usize, char)>,
     tokenstack: Vec<String>,
@@ -73,7 +26,6 @@ impl<'a> Tokenizer<'a> {
     /// Create a new tokenizer for the given input string.
     pub fn new(input: &'a str) -> Self {
         Tokenizer {
-            input,
             chars: input.char_indices().peekable(),
             charstack: Vec::new(),
             tokenstack: Vec::new(),
@@ -203,7 +155,7 @@ impl<'a> Tokenizer<'a> {
 
             // Split on dots and commas
             let parts: Vec<&str> = original
-                .split(|c| c == '.' || c == ',')
+                .split(['.', ','])
                 .filter(|s| !s.is_empty())
                 .collect();
 
@@ -253,33 +205,33 @@ impl<'a> Iterator for Tokenizer<'a> {
     }
 }
 
-/// Check if a string is a word (all alphabetic).
-pub fn is_word(s: &str) -> bool {
-    !s.is_empty() && s.chars().all(|c| c.is_alphabetic())
-}
-
-/// Check if a string is a number (all digits, possibly with decimal point).
-pub fn is_number(s: &str) -> bool {
-    if s.is_empty() {
-        return false;
-    }
-    let mut has_digit = false;
-    let mut has_dot = false;
-    for c in s.chars() {
-        if c.is_ascii_digit() {
-            has_digit = true;
-        } else if c == '.' && !has_dot {
-            has_dot = true;
-        } else {
-            return false;
-        }
-    }
-    has_digit
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Check if a string is a word (all alphabetic).
+    fn is_word(s: &str) -> bool {
+        !s.is_empty() && s.chars().all(|c| c.is_alphabetic())
+    }
+
+    /// Check if a string is a number (all digits, possibly with decimal point).
+    fn is_number(s: &str) -> bool {
+        if s.is_empty() {
+            return false;
+        }
+        let mut has_digit = false;
+        let mut has_dot = false;
+        for c in s.chars() {
+            if c.is_ascii_digit() {
+                has_digit = true;
+            } else if c == '.' && !has_dot {
+                has_dot = true;
+            } else {
+                return false;
+            }
+        }
+        has_digit
+    }
 
     #[test]
     fn test_simple_date() {
@@ -319,7 +271,9 @@ mod tests {
         let tokens: Vec<_> = Tokenizer::split("2024-01-15T10:30:00-05:00");
         assert_eq!(
             tokens,
-            vec!["2024", "-", "01", "-", "15", "T", "10", ":", "30", ":", "00", "-", "05", ":", "00"]
+            vec![
+                "2024", "-", "01", "-", "15", "T", "10", ":", "30", ":", "00", "-", "05", ":", "00"
+            ]
         );
     }
 
