@@ -194,9 +194,10 @@ def test_add():
         i -= 1
     assert thedate == Date(2021, 11, 24)
 
-    # Out-of-range date raises ValueError
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        Date.instance(datetime.date(9999, 12, 31)).b.add(days=1)
+    # Out-of-range date returns self unchanged (no exception)
+    d = Date.instance(datetime.date(9999, 12, 31))
+    result = d.b.add(days=1)
+    assert result == d
 
     # In one week (from following doctests)
     d = Date.instance(datetime.date(2018, 11, 29)).b.add(days=5)
@@ -553,31 +554,28 @@ def test_business_methods():
     assert close_time is None
 
 
-def test_out_of_range_date_raises_error():
-    """Dates outside 1900-2100 should raise ValueError for business operations."""
-    # Year > 2100
+def test_out_of_range_date_noop():
+    """Dates outside 1900-2100: is_business_day returns False, operations return self."""
+    # Year > 2100: is_business_day returns False
     d = Date(9999, 12, 31)
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        d.is_business_day()
+    assert d.is_business_day() is False
 
     d = Date(2101, 1, 1)
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        d.is_business_day()
+    assert d.is_business_day() is False
 
-    # Year < 1900
+    # Year < 1900: is_business_day returns False
     d = Date(1899, 12, 31)
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        d.is_business_day()
+    assert d.is_business_day() is False
 
-    # business().add() should also raise
+    # business().add() on far future date returns self unchanged
     d = Date(9999, 12, 30)
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        d.business().add(days=1)
+    result = d.business().add(days=1)
+    assert result == d
 
-    # business().subtract() should also raise
+    # business().subtract() on far past date returns self unchanged
     d = Date(1899, 1, 2)
-    with pytest.raises(ValueError, match='outside.*valid.*range'):
-        d.business().subtract(days=1)
+    result = d.business().subtract(days=1)
+    assert result == d
 
 
 def test_date_average():

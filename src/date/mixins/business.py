@@ -87,13 +87,9 @@ class DateBusinessMixin:
             return get_calendar(get_default_calendar())
         return self._calendar
 
-    def _check_calendar_range(self) -> None:
-        """Raise ValueError if date is outside valid calendar range."""
-        if self.year < _MIN_YEAR or self.year > _MAX_YEAR:
-            raise ValueError(
-                f'Date {self} is outside the valid calendar range '
-                f'({_MIN_YEAR}-{_MAX_YEAR})'
-            )
+    def _is_out_of_range(self) -> bool:
+        """Check if date is outside valid calendar range (1900-2100)."""
+        return self.year < _MIN_YEAR or self.year > _MAX_YEAR
 
     @store_calendar
     def add(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
@@ -217,10 +213,10 @@ class DateBusinessMixin:
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the calendar.
 
-        Raises
-            ValueError: If date is outside valid calendar range (1900-2100)
+        Returns False for dates outside valid calendar range (1900-2100).
         """
-        self._check_calendar_range()
+        if self._is_out_of_range():
+            return False
         cal = self._active_calendar._get_calendar(self)
         if cal is None:
             return False
@@ -241,10 +237,10 @@ class DateBusinessMixin:
     def _add_business_days(self, days: int) -> Self | None:
         """Add business days using Rust calendar.
 
-        Raises
-            ValueError: If date is outside valid calendar range (1900-2100)
+        Returns self unchanged for dates outside valid range (1900-2100).
         """
-        self._check_calendar_range()
+        if self._is_out_of_range():
+            return self
         cal = self._active_calendar._get_calendar(self)
         if cal is None:
             return None
@@ -263,15 +259,15 @@ class DateBusinessMixin:
     def _snap_to_business_day(self, forward: bool = True) -> Self:
         """Snap to nearest business day if not already on one.
 
-        Raises
-            ValueError: If date is outside valid calendar range (1900-2100)
+        Returns self unchanged for dates outside valid range (1900-2100).
         """
         self._business = False
-        self._check_calendar_range()
-        if self.is_business_day():
+        if self._is_out_of_range():
             return self
         cal = self._active_calendar._get_calendar(self)
         if cal is None:
+            return self
+        if self.is_business_day():
             return self
         ordinal = self.toordinal()
         target = cal.next_business_day(ordinal) if forward else cal.prev_business_day(ordinal)
