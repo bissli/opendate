@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 import pendulum as _pendulum
 
 if TYPE_CHECKING:
-    from date.calendars import Calendar
+    from opendate.calendars import Calendar
 
 DATE_METHODS_RETURNING_DATE = {
     'add',

@@ -5,7 +5,7 @@ These tests cover more complex parsing scenarios and edge cases.
 
 import pytest
 
-from date._opendate import Parser, parse
+from opendate._opendate import Parser, parse
 
 
 class TestParserMoreFormats:

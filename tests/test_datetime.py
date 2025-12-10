@@ -10,8 +10,8 @@ import pendulum
 import pytest
 from pendulum.tz import Timezone
 
-from date import EST, UTC, Date, DateTime, Time, expect_datetime, get_calendar
-from date import now
+from opendate import EST, UTC, Date, DateTime, Time, expect_datetime, get_calendar
+from opendate import now
 
 
 def test_add():

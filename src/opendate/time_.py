@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from date.constants import UTC
-from date.decorators import prefer_utc_timezone
-from date.helpers import _rust_parse_time
+from opendate.constants import UTC
+from opendate.decorators import prefer_utc_timezone
+from opendate.helpers import _rust_parse_time
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -130,8 +130,8 @@ class Time(_pendulum.Time):
     def in_timezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo) -> Self:
         """Convert time to a different timezone.
         """
-        from date.date_ import Date
-        from date.datetime_ import DateTime
+        from opendate.date_ import Date
+        from opendate.datetime_ import DateTime
 
         _dt = DateTime.combine(Date.today(), self, tzinfo=self.tzinfo or UTC)
         return _dt.in_timezone(tz).time()

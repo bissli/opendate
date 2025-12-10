@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from date.constants import _IS_WINDOWS, DATEMATCH, LCL, UTC
-from date.helpers import _rust_parse_datetime
-from date.metaclass import DATE_METHODS_RETURNING_DATE, DateContextMeta
-from date.mixins import DateBusinessMixin, DateExtrasMixin
+from opendate.constants import _IS_WINDOWS, DATEMATCH, LCL, UTC
+from opendate.helpers import _rust_parse_datetime
+from opendate.metaclass import DATE_METHODS_RETURNING_DATE, DateContextMeta
+from opendate.mixins import DateBusinessMixin, DateExtrasMixin
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -20,7 +20,7 @@ else:
     from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from date.calendars import Calendar
+    from opendate.calendars import Calendar
 
 
 class Date(

@@ -1,7 +1,7 @@
 import pendulum
 import pytest
 
-from date import UTC, Date, DateTime, Time
+from opendate import UTC, Date, DateTime, Time
 
 
 def test_time_constructor():
@@ -74,7 +74,7 @@ def test_time_instance_basic():
 def test_time_in_timezone():
     """Test timezone conversion for Time objects.
     """
-    from date import Timezone
+    from opendate import Timezone
 
     result = Time(12, 0).in_timezone(Timezone('America/Sao_Paulo'))
     assert result.hour == 9
@@ -94,7 +94,7 @@ def test_combine():
     T = Time(12, 30)
 
     # Use EST instead of LCL to ensure timezone differs from UTC in CI
-    from date import EST
+    from opendate import EST
 
     _ = DateTime(2022, 1, 1, 12, 30, tzinfo=EST)
     assert _.tzinfo == EST

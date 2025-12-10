@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 
 import pendulum as _pendulum
 
-import date as _date
-from date.decorators import expect_date_or_datetime
-from date.decorators import normalize_date_datetime_pairs, reset_business
+import opendate as _date
+from opendate.decorators import expect_date_or_datetime
+from opendate.decorators import normalize_date_datetime_pairs, reset_business
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -18,9 +18,9 @@ else:
     from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from date.calendars import Calendar
-    from date.date_ import Date
-    from date.datetime_ import DateTime
+    from opendate.calendars import Calendar
+    from opendate.date_ import Date
+    from opendate.datetime_ import DateTime
 
 
 class Interval(_pendulum.Interval):
@@ -124,7 +124,7 @@ class Interval(_pendulum.Interval):
         Parameters
             cal: Calendar name (str), Calendar instance, or None for default
         """
-        from date.calendars import get_calendar, get_default_calendar
+        from opendate.calendars import get_calendar, get_default_calendar
 
         if cal is None:
             cal = get_default_calendar()

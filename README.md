@@ -9,9 +9,11 @@ pip install opendate
 ## Quick Reference
 
 ```python
-from date import Date, DateTime, Time, Interval
-from date import EST, UTC, LCL, WeekDay
-from date import get_calendar, set_default_calendar
+# Preferred import (using canonical module name)
+import opendate
+from opendate import Date, DateTime, Time, Interval
+from opendate import EST, UTC, LCL, WeekDay
+from opendate import get_calendar, set_default_calendar
 
 # Basics
 today = Date.today()
@@ -284,7 +286,7 @@ DateTime.parse('meeting on Jan 15 at 3pm')  # Fuzzy
 ### Default Calendar
 
 ```python
-from date import set_default_calendar, get_default_calendar
+from opendate import set_default_calendar, get_default_calendar
 
 get_default_calendar()      # 'NYSE' initially
 set_default_calendar('LSE') # Change globally
@@ -302,7 +304,7 @@ date.calendar('LSE').is_business_day()
 All calendars from [exchange-calendars](https://github.com/gerrymanoim/exchange_calendars): NYSE, LSE, XLON, XPAR, XFRA, XJPX, XHKG, etc.
 
 ```python
-from date import available_calendars
+from opendate import available_calendars
 print(available_calendars())
 ```
 
@@ -340,7 +342,7 @@ Interval(start, end).b.days
 ### Custom
 
 ```python
-from date import Timezone
+from opendate import Timezone
 tokyo = Timezone('Asia/Tokyo')
 dt = DateTime(2024, 1, 15, 9, 30, tzinfo=tokyo)
 ```
@@ -373,7 +375,7 @@ dt.in_timezone(UTC)   # or in_tz() or astimezone()
 Legacy standalone functions:
 
 ```python
-from date import is_business_day, is_within_business_hours, overlap_days
+from opendate import is_business_day, is_within_business_hours, overlap_days
 
 is_business_day()              # Is today a business day?
 is_within_business_hours()     # Is current time in market hours?

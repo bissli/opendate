@@ -6,7 +6,7 @@ any pendulum method that returns a new Date or DateTime object.
 import pendulum
 import pytest
 
-from date import Date, DateTime
+from opendate import Date, DateTime
 
 # Date methods that return a new Date and should preserve calendar
 DATE_INSTANCE_METHODS = [

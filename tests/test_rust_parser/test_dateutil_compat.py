@@ -10,7 +10,7 @@ from datetime import datetime
 
 import pytest
 
-from date._opendate import Parser, parse
+from opendate._opendate import Parser, parse
 
 # Parser test cases using no keyword arguments.
 # Format: (parsable_text, expected_datetime, assertion_message)

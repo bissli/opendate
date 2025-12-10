@@ -5,22 +5,22 @@ __version__ = '0.1.33'
 import datetime as _datetime
 import zoneinfo as _zoneinfo
 
-from date.calendars import Calendar, CustomCalendar, ExchangeCalendar
-from date.calendars import available_calendars, get_calendar
-from date.calendars import get_default_calendar, register_calendar
-from date.calendars import set_default_calendar
-from date.constants import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Timezone
-from date.constants import WeekDay
-from date.date_ import Date
-from date.datetime_ import DateTime
-from date.decorators import expect_date, expect_date_or_datetime
-from date.decorators import expect_datetime, expect_native_timezone
-from date.decorators import expect_time, expect_utc_timezone
-from date.decorators import prefer_native_timezone, prefer_utc_timezone
-from date.extras import create_ics, is_business_day, is_within_business_hours
-from date.extras import overlap_days
-from date.interval import Interval
-from date.time_ import Time
+from opendate.calendars import Calendar, CustomCalendar, ExchangeCalendar
+from opendate.calendars import available_calendars, get_calendar
+from opendate.calendars import get_default_calendar, register_calendar
+from opendate.calendars import set_default_calendar
+from opendate.constants import EST, GMT, LCL, UTC, WEEKDAY_SHORTNAME, Timezone
+from opendate.constants import WeekDay
+from opendate.date_ import Date
+from opendate.datetime_ import DateTime
+from opendate.decorators import expect_date, expect_date_or_datetime
+from opendate.decorators import expect_datetime, expect_native_timezone
+from opendate.decorators import expect_time, expect_utc_timezone
+from opendate.decorators import prefer_native_timezone, prefer_utc_timezone
+from opendate.extras import create_ics, is_business_day
+from opendate.extras import is_within_business_hours, overlap_days
+from opendate.interval import Interval
+from opendate.time_ import Time
 
 timezone = Timezone
 
@@ -148,3 +148,9 @@ __all__ = [
     'WEEKDAY_SHORTNAME',
     'create_ics',
     ]
+
+
+# Register 'date' as an alias for backwards compatibility
+# This allows both `import opendate` and `import date` to work
+import sys as _sys
+_sys.modules['date'] = _sys.modules[__name__]

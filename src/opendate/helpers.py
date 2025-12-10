@@ -7,13 +7,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from date.constants import MAX_YEAR, MIN_YEAR
+from opendate.constants import MAX_YEAR, MIN_YEAR
 
 try:
-    from date._opendate import BusinessCalendar as _BusinessCalendar
-    from date._opendate import IsoParser as _RustIsoParser
-    from date._opendate import Parser as _RustParser
-    from date._opendate import TimeParser as _RustTimeParser
+    from opendate._opendate import BusinessCalendar as _BusinessCalendar
+    from opendate._opendate import IsoParser as _RustIsoParser
+    from opendate._opendate import Parser as _RustParser
+    from opendate._opendate import TimeParser as _RustTimeParser
 except ImportError:
     try:
         from _opendate import BusinessCalendar as _BusinessCalendar

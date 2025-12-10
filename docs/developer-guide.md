@@ -53,7 +53,7 @@ poetry install --extras test
 maturin develop --release
 
 # Verify installation
-python -c "from date import Date; print(Date.today())"
+python -c "from opendate import Date; print(Date.today())"
 ```
 
 ## Development Workflow

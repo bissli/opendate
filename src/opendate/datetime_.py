@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from date.constants import LCL, UTC, Timezone
-from date.helpers import _rust_parse_datetime
-from date.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
-from date.mixins import DateBusinessMixin
+from opendate.constants import LCL, UTC, Timezone
+from opendate.helpers import _rust_parse_datetime
+from opendate.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
+from opendate.mixins import DateBusinessMixin
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -20,9 +20,9 @@ else:
     from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from date.calendars import Calendar
-    from date.date_ import Date
-    from date.time_ import Time
+    from opendate.calendars import Calendar
+    from opendate.date_ import Date
+    from opendate.time_ import Time
 
 
 class DateTime(
@@ -146,7 +146,7 @@ class DateTime(
         return DateTime.now(tz).start_of('day')
 
     def date(self) -> Date:
-        from date.date_ import Date
+        from opendate.date_ import Date
         return Date(self.year, self.month, self.day)
 
     @classmethod
@@ -169,7 +169,7 @@ class DateTime(
     def time(self) -> Time:
         """Extract time component from datetime (preserving timezone).
         """
-        from date.time_ import Time
+        from opendate.time_ import Time
         return Time.instance(self)
 
     @classmethod
@@ -219,8 +219,8 @@ class DateTime(
             DateTime.parse('Y') → yesterday at 00:00:00
             DateTime.parse('P') → previous business day at 00:00:00
         """
-        from date.date_ import Date
-        from date.time_ import Time
+        from opendate.date_ import Date
+        from opendate.time_ import Time
 
         if not s:
             if raise_err:
@@ -291,8 +291,8 @@ class DateTime(
         Returns
             DateTime instance or None if obj is None/NA and raise_err is False
         """
-        from date.date_ import Date
-        from date.time_ import Time
+        from opendate.date_ import Date
+        from opendate.time_ import Time
 
         if pd.isna(obj):
             if raise_err:
@@ -332,7 +332,7 @@ class DateTime(
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
         if isinstance(obj, _datetime.time):
-            from date.date_ import Date
+            from opendate.date_ import Date
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
         return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,

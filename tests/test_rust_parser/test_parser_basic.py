@@ -6,7 +6,7 @@ for standard date/time formats.
 
 import pytest
 
-from date._opendate import IsoParser, Parser, isoparse, parse
+from opendate._opendate import IsoParser, Parser, isoparse, parse
 
 
 class TestParserBasicFormats:

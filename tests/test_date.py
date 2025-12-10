@@ -8,7 +8,7 @@ import pandas as pd
 import pendulum
 import pytest
 
-from date import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date, get_calendar
+from opendate import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date, get_calendar
 
 
 def test_end_of_week():

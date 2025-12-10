@@ -2,9 +2,9 @@ from unittest.mock import patch
 
 import pytest
 
-from date import EST, Date, DateTime, get_calendar
-from date.extras import create_ics, is_business_day, is_within_business_hours
-from date.extras import overlap_days
+from opendate import EST, Date, DateTime, get_calendar
+from opendate.extras import create_ics, is_business_day, is_within_business_hours
+from opendate.extras import overlap_days
 
 
 def test_is_within_business_hours():
@@ -12,15 +12,15 @@ def test_is_within_business_hours():
     """
     tz = get_calendar('NYSE').tz
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2000, 5, 1, 12, 30, 0, 0, tzinfo=tz)
         assert is_within_business_hours() is True
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2000, 7, 2, 12, 15, 0, 0, tzinfo=tz)
         assert is_within_business_hours() is False
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2000, 11, 1, 1, 15, 0, 0, tzinfo=tz)
         assert is_within_business_hours() is False
 
@@ -59,19 +59,19 @@ def test_is_business_day():
     """
     tz = get_calendar('NYSE').tz
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2018, 11, 19, 12, 30, 0, 0, tzinfo=tz)
         assert is_business_day() is True
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2018, 11, 24, 12, 30, 0, 0, tzinfo=tz)
         assert is_business_day() is False
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2018, 11, 25, 12, 30, 0, 0, tzinfo=tz)
         assert is_business_day() is False
 
-    with patch('date.DateTime.now') as mock:
+    with patch('opendate.DateTime.now') as mock:
         mock.return_value = DateTime(2021, 7, 5, 12, 30, 0, 0, tzinfo=tz)
         assert is_business_day() is False
 

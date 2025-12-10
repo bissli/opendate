@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from date import EST, UTC, Date, DateTime, Interval, get_calendar
+from opendate import EST, UTC, Date, DateTime, Interval, get_calendar
 
 
 def test_interval_none_validation():

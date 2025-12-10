@@ -7,9 +7,9 @@ from abc import ABC, abstractmethod
 import pandas as pd
 import pandas_market_calendars as mcal
 
-import date as _date
-from date.constants import MAX_YEAR, UTC, Timezone
-from date.helpers import _BusinessCalendar, _get_decade_bounds
+import opendate as _date
+from opendate.constants import MAX_YEAR, UTC, Timezone
+from opendate.helpers import _BusinessCalendar, _get_decade_bounds
 
 
 class Calendar(ABC):

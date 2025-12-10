@@ -7,7 +7,7 @@ from datetime import datetime
 
 import pytest
 
-from date._opendate import isoparse, parse
+from opendate._opendate import isoparse, parse
 
 
 def _parse_to_datetime(result, default=None):

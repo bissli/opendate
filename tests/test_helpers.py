@@ -3,10 +3,10 @@ import zoneinfo
 
 import pytest
 
-from date import EST, UTC, DateTime, Time, Timezone, expect_date
-from date import expect_native_timezone, expect_time
-from date import expect_utc_timezone, prefer_native_timezone
-from date import prefer_utc_timezone
+from opendate import EST, UTC, DateTime, Time, Timezone, expect_date
+from opendate import expect_native_timezone, expect_time
+from opendate import expect_utc_timezone, prefer_native_timezone
+from opendate import prefer_utc_timezone
 
 
 def test_timezone_function():
@@ -64,7 +64,7 @@ def test_prefer_utc_timezone_decorator():
 
 def test_prefer_native_timezone_decorator():
     """Test prefer_native_timezone adds local timezone when missing."""
-    from date import LCL
+    from opendate import LCL
 
     @prefer_native_timezone
     def get_datetime():
@@ -83,7 +83,7 @@ def test_prefer_native_timezone_decorator():
 
 def test_expect_utc_timezone_decorator():
     """Test expect_utc_timezone forces UTC timezone."""
-    from date import LCL
+    from opendate import LCL
 
     @expect_utc_timezone
     def get_datetime():
@@ -95,7 +95,7 @@ def test_expect_utc_timezone_decorator():
 
 def test_expect_native_timezone_decorator():
     """Test expect_native_timezone forces local timezone."""
-    from date import LCL
+    from opendate import LCL
 
     @expect_native_timezone
     def get_datetime():

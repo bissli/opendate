@@ -3,8 +3,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from date.constants import WEEKDAY_SHORTNAME, WeekDay
-from date.decorators import store_calendar
+from opendate.constants import WEEKDAY_SHORTNAME, WeekDay
+from opendate.decorators import store_calendar
 
 if sys.version_info >= (3, 11):
     from typing import Self

@@ -3,9 +3,9 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING
 
-from date.calendars import get_calendar, get_default_calendar
-from date.constants import MAX_YEAR, MIN_YEAR, WeekDay
-from date.decorators import expect_date, store_calendar
+from opendate.calendars import get_calendar, get_default_calendar
+from opendate.constants import MAX_YEAR, MIN_YEAR, WeekDay
+from opendate.decorators import expect_date, store_calendar
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -13,8 +13,8 @@ else:
     from typing_extensions import Self
 
 if TYPE_CHECKING:
-    from date.calendars import Calendar
-    from date.datetime_ import DateTime
+    from opendate.calendars import Calendar
+    from opendate.datetime_ import DateTime
 
 
 class DateBusinessMixin:
@@ -267,7 +267,7 @@ class DateBusinessMixin:
         """
         self._business = False
         if self._is_out_of_range():
-            from date.date_ import Date
+            from opendate.date_ import Date
             if self.year > MAX_YEAR and not forward:
                 boundary = Date(MAX_YEAR, 12, 31)
                 boundary._calendar = self._calendar

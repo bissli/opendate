@@ -1,4 +1,4 @@
-from date import Date, DateTime, WeekDay
+from opendate import Date, DateTime, WeekDay
 
 
 def test_date_business_date_or_next():

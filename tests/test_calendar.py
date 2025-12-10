@@ -1,7 +1,7 @@
 import pytest
 
-from date import CustomCalendar, Date, ExchangeCalendar
-from date import available_calendars, get_calendar, register_calendar
+from opendate import CustomCalendar, Date, ExchangeCalendar
+from opendate import available_calendars, get_calendar, register_calendar
 
 
 def test_available_calendars():
