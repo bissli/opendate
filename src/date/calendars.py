@@ -8,7 +8,7 @@ import pandas as pd
 import pandas_market_calendars as mcal
 
 import date as _date
-from date.constants import UTC, Timezone
+from date.constants import MAX_YEAR, UTC, Timezone
 from date.helpers import _BusinessCalendar, _get_decade_bounds
 
 
@@ -81,14 +81,13 @@ class ExchangeCalendar(Calendar):
         if enddate is None:
             enddate = self.ENDDATE
 
-        max_year = 2100
-        if begdate.year > max_year:
+        if begdate.year > MAX_YEAR:
             return set()
 
         decade_start = _datetime.date(begdate.year // 10 * 10, 1, 1)
         next_decade_year = (enddate.year // 10 + 1) * 10
-        if next_decade_year > max_year:
-            decade_end = _datetime.date(max_year, 12, 31)
+        if next_decade_year > MAX_YEAR:
+            decade_end = _datetime.date(MAX_YEAR, 12, 31)
         else:
             decade_end = _datetime.date(next_decade_year, 1, 1)
 

@@ -8,8 +8,8 @@ import pendulum as _pendulum
 
 _IS_WINDOWS = os.name == 'nt'
 
-_MIN_YEAR = 1900
-_MAX_YEAR = 2100
+MIN_YEAR = 1900
+MAX_YEAR = 2100
 
 
 def Timezone(name: str = 'US/Eastern') -> _zoneinfo.ZoneInfo:

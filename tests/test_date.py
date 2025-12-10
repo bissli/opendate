@@ -578,6 +578,34 @@ def test_out_of_range_date_noop():
     assert result == d
 
 
+def test_out_of_range_date_snaps_to_boundary():
+    """Dates outside 1900-2100 snap to boundary business days when appropriate."""
+    d = Date(9999, 12, 31)
+
+    # subtract(days=0) snaps to last business day of 2100
+    result0 = d.b.subtract(days=0)
+    assert result0.year == 2100
+    assert result0.is_business_day()
+
+    # subtract(days=1) snaps to boundary, then subtracts 1 business day
+    result1 = d.b.subtract(days=1)
+    assert result1.year == 2100
+    assert result1.is_business_day()
+    assert result1 < result0
+
+    # add(days=0) returns self unchanged (can't go forward from far future)
+    assert d.b.add(days=0) == d
+
+    # add(days=1) returns self unchanged
+    assert d.b.add(days=1) == d
+
+    # Far past date: add(days=0) snaps to first business day of 1900
+    d_past = Date(1800, 1, 1)
+    result_past = d_past.b.add(days=0)
+    assert result_past.year == 1900
+    assert result_past.is_business_day()
+
+
 def test_date_average():
     """Test the average instance method returns the average of two dates."""
     # Test with equal dates

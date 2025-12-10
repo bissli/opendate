@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from date.constants import _MAX_YEAR, _MIN_YEAR
+from date.constants import MAX_YEAR, MIN_YEAR
 
 try:
     from date._opendate import BusinessCalendar as _BusinessCalendar
@@ -161,9 +161,9 @@ def _rust_parse_time(s: str) -> tuple[int, int, int, int] | None:
 
 def _get_decade_bounds(year: int) -> tuple[_datetime.date, _datetime.date] | None:
     """Get decade start/end dates for caching. Returns None if outside valid range."""
-    if year > _MAX_YEAR or year < _MIN_YEAR:
+    if year > MAX_YEAR or year < MIN_YEAR:
         return None
     decade_start = _datetime.date(year // 10 * 10, 1, 1)
     next_decade_year = (year // 10 + 1) * 10
-    decade_end = _datetime.date(_MAX_YEAR, 12, 31) if next_decade_year > _MAX_YEAR else _datetime.date(next_decade_year, 1, 1)
+    decade_end = _datetime.date(MAX_YEAR, 12, 31) if next_decade_year > MAX_YEAR else _datetime.date(next_decade_year, 1, 1)
     return decade_start, decade_end
