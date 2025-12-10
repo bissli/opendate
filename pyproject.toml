@@ -42,6 +42,6 @@ Repository = "https://github.com/bissli/opendate"
 [tool.maturin]
 module-name = "opendate._opendate"
 features = ["pyo3/extension-module"]
-python-packages = ["opendate"]
+python-packages = ["opendate", "date"]
 python-source = "src"
 manifest-path = "rust/Cargo.toml"

@@ -148,9 +148,3 @@ __all__ = [
     'WEEKDAY_SHORTNAME',
     'create_ics',
     ]
-
-
-# Register 'date' as an alias for backwards compatibility
-# This allows both `import opendate` and `import date` to work
-import sys as _sys
-_sys.modules['date'] = _sys.modules[__name__]
