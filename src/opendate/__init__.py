@@ -113,6 +113,7 @@ __all__ = [
     'DateTime',
     'datetime',
     'Calendar',
+    'Timezone',
     'ExchangeCalendar',
     'CustomCalendar',
     'get_calendar',
