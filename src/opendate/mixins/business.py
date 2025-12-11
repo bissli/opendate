@@ -112,10 +112,9 @@ class DateBusinessMixin:
                 return self._business_or_next()
             if days < 0:
                 return self.business().subtract(days=abs(days))
-            if self._is_out_of_range() and self.year > MAX_YEAR:
+            if self._is_out_of_range():
                 return self
-            target = self._business_or_next() if self._is_out_of_range() else self
-            result = target._add_business_days(days)
+            result = self._add_business_days(days)
             return result if result is not None else self
         return super().add(years, months, weeks, days, **kwargs)
 
@@ -132,8 +131,9 @@ class DateBusinessMixin:
                 return self._business_or_previous()
             if days < 0:
                 return self.business().add(days=abs(days))
-            target = self._business_or_previous() if self._is_out_of_range() else self
-            result = target._add_business_days(-days)
+            if self._is_out_of_range():
+                return self
+            result = self._add_business_days(-days)
             return result if result is not None else self
         kwargs = {k: -1*v for k, v in kwargs.items()}
         return super().add(-years, -months, -weeks, -days, **kwargs)
@@ -260,22 +260,12 @@ class DateBusinessMixin:
     def _snap_to_business_day(self, forward: bool = True) -> Self:
         """Snap to nearest business day if not already on one.
 
-        For dates outside valid range (1900-2100):
-        - If forward=False and year > 2100: snap to last business day of 2100
-        - If forward=True and year < 1900: snap to first business day of 1900
-        - Otherwise return self unchanged
+        Dates outside valid range (1900-2100) are sentinel values and return
+        unchanged. Use in-range boundary dates (e.g., Date(2100, 12, 31)) if
+        you need the last/first valid business day.
         """
         self._business = False
         if self._is_out_of_range():
-            from opendate.date_ import Date
-            if self.year > MAX_YEAR and not forward:
-                boundary = Date(MAX_YEAR, 12, 31)
-                boundary._calendar = self._calendar
-                return boundary._snap_to_business_day(forward=False)
-            elif self.year < MIN_YEAR and forward:
-                boundary = Date(MIN_YEAR, 1, 1)
-                boundary._calendar = self._calendar
-                return boundary._snap_to_business_day(forward=True)
             return self
         cal = self._active_calendar._get_calendar(self)
         if cal is None:

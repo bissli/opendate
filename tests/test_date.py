@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pendulum
 import pytest
-
-from opendate import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date, get_calendar
+from opendate import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date
+from opendate import get_calendar
 
 
 def test_end_of_week():
@@ -578,32 +578,36 @@ def test_out_of_range_date_noop():
     assert result == d
 
 
-def test_out_of_range_date_snaps_to_boundary():
-    """Dates outside 1900-2100 snap to boundary business days when appropriate."""
+def test_out_of_range_sentinel_dates_return_self():
+    """Sentinel dates outside 1900-2100 return self for all business operations."""
+    # Far future sentinel
     d = Date(9999, 12, 31)
-
-    # subtract(days=0) snaps to last business day of 2100
-    result0 = d.b.subtract(days=0)
-    assert result0.year == 2100
-    assert result0.is_business_day()
-
-    # subtract(days=1) snaps to boundary, then subtracts 1 business day
-    result1 = d.b.subtract(days=1)
-    assert result1.year == 2100
-    assert result1.is_business_day()
-    assert result1 < result0
-
-    # add(days=0) returns self unchanged (can't go forward from far future)
     assert d.b.add(days=0) == d
-
-    # add(days=1) returns self unchanged
     assert d.b.add(days=1) == d
+    assert d.b.subtract(days=0) == d
+    assert d.b.subtract(days=1) == d
 
-    # Far past date: add(days=0) snaps to first business day of 1900
+    # Far past sentinel
     d_past = Date(1800, 1, 1)
-    result_past = d_past.b.add(days=0)
-    assert result_past.year == 1900
-    assert result_past.is_business_day()
+    assert d_past.b.add(days=0) == d_past
+    assert d_past.b.add(days=1) == d_past
+    assert d_past.b.subtract(days=0) == d_past
+    assert d_past.b.subtract(days=1) == d_past
+
+
+def test_boundary_dates_work_normally():
+    """Boundary dates (1900, 2100) are in-range and work normally."""
+    # Last day of valid range
+    d = Date(2100, 12, 31)
+    result = d.b.subtract(days=0)
+    assert result.year == 2100
+    assert result.is_business_day()
+
+    # First day of valid range
+    d_start = Date(1900, 1, 1)
+    result_start = d_start.b.add(days=0)
+    assert result_start.year == 1900
+    assert result_start.is_business_day()
 
 
 def test_date_average():
