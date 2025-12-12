@@ -7,7 +7,7 @@ package-mode = false
 
 [project]
 name = "opendate"
-version = "0.1.36"
+version = "0.1.37"
 description = "Python business datetimes"
 readme = "README.md"
 license = { file = "LICENSE" }
