@@ -25,7 +25,7 @@ impl IsoParser {
 
     /// Create a new IsoParser with a specific separator.
     pub fn with_separator(sep: char) -> Result<Self, ParserError> {
-        if !sep.is_ascii() || sep.is_ascii_digit() {
+        if !is_ascii(sep) || is_ascii_digit_char(sep) {
             return Err(ParserError::ParseError(
                 "Separator must be a single, non-numeric ASCII character".to_string(),
             ));
@@ -40,7 +40,8 @@ impl IsoParser {
     /// Returns a ParseResult with the parsed components.
     pub fn isoparse(&self, dt_str: &str) -> Result<ParseResult, ParserError> {
         let bytes = dt_str.as_bytes();
-        if bytes.is_empty() {
+        let len = bytes.len();
+        if len == 0 {
             return Err(ParserError::EmptyString);
         }
 
@@ -48,14 +49,16 @@ impl IsoParser {
         let (mut result, pos) = self.parse_isodate_internal(bytes)?;
 
         // Check for time portion
-        if pos < bytes.len() {
+        if pos < len {
             let sep_byte = bytes[pos];
             // Check separator
             if self.sep.is_none() || Some(sep_byte) == self.sep {
                 // Not a digit means it's a separator
-                if !sep_byte.is_ascii_digit() {
-                    let time_bytes = &bytes[pos + 1..];
-                    let (time_result, time_pos) = self.parse_isotime_internal(time_bytes)?;
+                if !is_ascii_digit(sep_byte) {
+                    let time_start = pos + 1;
+                    let time_len = len - time_start;
+                    let (time_result, time_pos) =
+                        self.parse_isotime_internal_slice(bytes, time_start, time_len)?;
                     result.hour = time_result.hour;
                     result.minute = time_result.minute;
                     result.second = time_result.second;
@@ -64,12 +67,21 @@ impl IsoParser {
                     result.tzname = time_result.tzname;
 
                     // Check for unconsumed input after time portion
-                    if time_pos < time_bytes.len() {
-                        let remaining = &time_bytes[time_pos..];
-                        if !remaining.iter().all(|&b| b == b' ' || b == b'\t') {
+                    let consumed = time_start + time_pos;
+                    if consumed < len {
+                        let mut all_whitespace = true;
+                        let mut i = consumed;
+                        while i < len {
+                            if bytes[i] != b' ' && bytes[i] != b'\t' {
+                                all_whitespace = false;
+                                break;
+                            }
+                            i += 1;
+                        }
+                        if !all_whitespace {
                             return Err(ParserError::ParseError(format!(
                                 "String contains unknown ISO components: {:?}",
-                                std::str::from_utf8(remaining).unwrap_or("?")
+                                slice_to_str(bytes, consumed, len)
                             )));
                         }
                     }
@@ -94,15 +106,16 @@ impl IsoParser {
     /// Parse the date portion of an ISO string.
     pub fn parse_isodate(&self, datestr: &str) -> Result<ParseResult, ParserError> {
         let bytes = datestr.as_bytes();
-        if bytes.is_empty() {
+        let len = bytes.len();
+        if len == 0 {
             return Err(ParserError::EmptyString);
         }
 
         let (result, pos) = self.parse_isodate_internal(bytes)?;
-        if pos < bytes.len() {
+        if pos < len {
             return Err(ParserError::ParseError(format!(
                 "String contains unknown ISO components: {:?}",
-                &datestr[pos..]
+                slice_to_str(bytes, pos, len)
             )));
         }
         Ok(result)
@@ -111,20 +124,29 @@ impl IsoParser {
     /// Parse the time portion of an ISO string.
     pub fn parse_isotime(&self, timestr: &str) -> Result<ParseResult, ParserError> {
         let bytes = timestr.as_bytes();
-        if bytes.is_empty() {
+        let len = bytes.len();
+        if len == 0 {
             return Err(ParserError::EmptyString);
         }
 
-        let (mut result, pos) = self.parse_isotime_internal(bytes)?;
+        let (mut result, pos) = self.parse_isotime_internal_slice(bytes, 0, len)?;
 
         // Check for unconsumed input (reject trailing characters)
-        if pos < bytes.len() {
+        if pos < len {
             // Allow trailing whitespace only
-            let remaining = &bytes[pos..];
-            if !remaining.iter().all(|&b| b == b' ' || b == b'\t') {
+            let mut all_whitespace = true;
+            let mut i = pos;
+            while i < len {
+                if bytes[i] != b' ' && bytes[i] != b'\t' {
+                    all_whitespace = false;
+                    break;
+                }
+                i += 1;
+            }
+            if !all_whitespace {
                 return Err(ParserError::ParseError(format!(
                     "String contains unknown ISO components: {:?}",
-                    &timestr[pos..]
+                    slice_to_str(bytes, pos, len)
                 )));
             }
         }
@@ -141,15 +163,18 @@ impl IsoParser {
     #[allow(dead_code)]
     pub fn parse_tzstr(&self, tzstr: &str, zero_as_utc: bool) -> Result<Option<i32>, ParserError> {
         let bytes = tzstr.as_bytes();
-        self.parse_tzstr_internal(bytes, zero_as_utc)
+        let len = bytes.len();
+        self.parse_tzstr_internal_slice(bytes, 0, len, zero_as_utc)
     }
 
     // Internal parsing methods
 
     fn parse_isodate_internal(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
         // Try common format first, then uncommon
-        self.parse_isodate_common(dt_str)
-            .or_else(|_| self.parse_isodate_uncommon(dt_str))
+        match self.parse_isodate_common(dt_str) {
+            Ok(r) => Ok(r),
+            Err(_) => self.parse_isodate_uncommon(dt_str),
+        }
     }
 
     fn parse_isodate_common(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
@@ -161,9 +186,9 @@ impl IsoParser {
         }
 
         // Year (always 4 digits)
-        result.year = Some(parse_int(&dt_str[0..4])? as i32);
+        result.year = Some(parse_int_slice(dt_str, 0, 4)? as i32);
         result.century_specified = true;
-        let mut pos = 4;
+        let mut pos = 4usize;
 
         if pos >= len_str {
             // Just YYYY
@@ -181,7 +206,7 @@ impl IsoParser {
         if len_str - pos < 2 {
             return Err(ParserError::ParseError("Invalid common month".to_string()));
         }
-        result.month = Some(parse_int(&dt_str[pos..pos + 2])?);
+        result.month = Some(parse_int_slice(dt_str, pos, pos + 2)?);
         pos += 2;
 
         if pos >= len_str {
@@ -208,40 +233,44 @@ impl IsoParser {
         if len_str - pos < 2 {
             return Err(ParserError::ParseError("Invalid common day".to_string()));
         }
-        result.day = Some(parse_int(&dt_str[pos..pos + 2])?);
+        result.day = Some(parse_int_slice(dt_str, pos, pos + 2)?);
         pos += 2;
 
         Ok((result, pos))
     }
 
     fn parse_isodate_uncommon(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
-        if dt_str.len() < 4 {
+        let len_str = dt_str.len();
+        if len_str < 4 {
             return Err(ParserError::ParseError("ISO string too short".to_string()));
         }
 
-        let year = parse_int(&dt_str[0..4])? as i32;
-        let has_sep = dt_str.get(4) == Some(&b'-');
+        let year = parse_int_slice(dt_str, 0, 4)? as i32;
+        let has_sep = if len_str > 4 {
+            dt_str[4] == b'-'
+        } else {
+            false
+        };
         let mut pos = 4 + if has_sep { 1 } else { 0 };
 
-        if dt_str.get(pos) == Some(&b'W') {
+        if pos < len_str && dt_str[pos] == b'W' {
             // Week date: YYYY-Www or YYYYWww or YYYY-Www-D or YYYYWwwD
             pos += 1;
-            if dt_str.len() < pos + 2 {
+            if len_str < pos + 2 {
                 return Err(ParserError::ParseError("Invalid week number".to_string()));
             }
 
-            let weekno = parse_int(&dt_str[pos..pos + 2])? as i32;
+            let weekno = parse_int_slice(dt_str, pos, pos + 2)? as i32;
             pos += 2;
 
             let mut dayno = 1i32;
-            if dt_str.len() > pos {
-                let next_byte = dt_str.get(pos);
+            if len_str > pos {
+                let next_byte = dt_str[pos];
                 // Check if this is the time separator (T or space) - no day follows
-                if next_byte == Some(&b'T') || next_byte == Some(&b' ') || next_byte == Some(&b't')
-                {
+                if next_byte == b'T' || next_byte == b' ' || next_byte == b't' {
                     // No day, just time separator - leave dayno as 1 (Monday)
                 } else {
-                    let day_has_sep = next_byte == Some(&b'-');
+                    let day_has_sep = next_byte == b'-';
                     if day_has_sep != has_sep {
                         return Err(ParserError::ParseError(
                             "Inconsistent use of dash separator".to_string(),
@@ -250,7 +279,7 @@ impl IsoParser {
                     if day_has_sep {
                         pos += 1;
                     }
-                    if pos < dt_str.len() && dt_str[pos].is_ascii_digit() {
+                    if pos < len_str && is_ascii_digit(dt_str[pos]) {
                         dayno = (dt_str[pos] - b'0') as i32;
                         pos += 1;
                     }
@@ -267,11 +296,11 @@ impl IsoParser {
         }
 
         // Ordinal date: YYYY-DDD or YYYYDDD
-        if dt_str.len() - pos < 3 {
+        if len_str - pos < 3 {
             return Err(ParserError::ParseError("Invalid ordinal day".to_string()));
         }
 
-        let ordinal_day = parse_int(&dt_str[pos..pos + 3])? as i32;
+        let ordinal_day = parse_int_slice(dt_str, pos, pos + 3)? as i32;
         pos += 3;
 
         let days_in_year = if is_leap_year(year) { 366 } else { 365 };
@@ -291,53 +320,58 @@ impl IsoParser {
         Ok((result, pos))
     }
 
-    fn parse_isotime_internal(&self, timestr: &[u8]) -> Result<(ParseResult, usize), ParserError> {
-        let len_str = timestr.len();
+    fn parse_isotime_internal_slice(
+        &self,
+        timestr: &[u8],
+        start: usize,
+        len: usize,
+    ) -> Result<(ParseResult, usize), ParserError> {
+        let end = start + len;
         let mut result = ParseResult::new();
         result.hour = Some(0);
         result.minute = Some(0);
         result.second = Some(0);
         result.microsecond = Some(0);
 
-        let mut pos = 0;
+        let mut pos = start;
         let mut comp: i32 = -1; // Will be incremented to 0 at start of first iteration
 
-        if len_str < 2 {
+        if len < 2 {
             return Err(ParserError::ParseError("ISO time too short".to_string()));
         }
 
         let mut has_sep = false;
 
-        while pos < len_str && comp < 4 {
+        while pos < end && comp < 4 {
             comp += 1;
 
             // Check for timezone boundary
-            if let Some(&b) = timestr.get(pos) {
+            if pos < end {
+                let b = timestr[pos];
                 if b == b'-' || b == b'+' || b == b'Z' || b == b'z' {
-                    let tz_offset = self.parse_tzstr_internal(&timestr[pos..], true)?;
+                    let tz_len = end - pos;
+                    let tz_offset = self.parse_tzstr_internal_slice(timestr, pos, tz_len, true)?;
                     result.tzoffset = tz_offset;
                     if tz_offset == Some(0) {
                         result.tzname = Some("UTC".to_string());
                     }
                     // Consume the timezone string
-                    pos = len_str;
+                    pos = end;
                     break;
                 }
             }
 
             // Handle separator after hour (before minute)
             if comp == 1 {
-                if let Some(&b) = timestr.get(pos) {
-                    if b == b':' {
-                        has_sep = true;
-                        pos += 1;
-                    }
+                if pos < end && timestr[pos] == b':' {
+                    has_sep = true;
+                    pos += 1;
                 }
             }
             // Handle separator after minute (before second)
             else if comp == 2 && has_sep {
-                if let Some(&b) = timestr.get(pos) {
-                    if b == b':' {
+                if pos < end {
+                    if timestr[pos] == b':' {
                         pos += 1;
                     } else {
                         // No colon means no seconds component - break out
@@ -348,15 +382,15 @@ impl IsoParser {
 
             if comp < 3 {
                 // Hour, minute, second
-                if pos + 2 > len_str {
+                if pos + 2 > end {
                     // Not enough characters - this might be end of string or timezone
                     break;
                 }
                 // Check if next chars are digits
-                if !timestr[pos].is_ascii_digit() {
+                if !is_ascii_digit(timestr[pos]) {
                     break;
                 }
-                let value = parse_int(&timestr[pos..pos + 2])?;
+                let value = parse_int_slice(timestr, pos, pos + 2)?;
                 match comp {
                     0 => result.hour = Some(value),
                     1 => result.minute = Some(value),
@@ -366,17 +400,29 @@ impl IsoParser {
                 pos += 2;
             } else if comp == 3 {
                 // Fraction of a second
-                if let Some(&b) = timestr.get(pos) {
+                if pos < end {
+                    let b = timestr[pos];
                     if b == b'.' || b == b',' {
                         pos += 1;
                         let frac_start = pos;
-                        while pos < len_str && timestr[pos].is_ascii_digit() {
+                        while pos < end && is_ascii_digit(timestr[pos]) {
                             pos += 1;
                         }
                         if pos > frac_start {
-                            let frac_str = &timestr[frac_start..pos.min(frac_start + 6)];
-                            let frac_len = frac_str.len();
-                            let us = parse_int(frac_str)? * 10u32.pow(6 - frac_len as u32);
+                            let frac_end = if pos - frac_start > 6 {
+                                frac_start + 6
+                            } else {
+                                pos
+                            };
+                            let frac_len = frac_end - frac_start;
+                            let frac_val = parse_int_slice(timestr, frac_start, frac_end)?;
+                            let mut multiplier = 1u32;
+                            let mut k = 0usize;
+                            while k < (6 - frac_len) {
+                                multiplier *= 10;
+                                k += 1;
+                            }
+                            let us = frac_val * multiplier;
                             result.microsecond = Some(us);
                         }
                     }
@@ -395,24 +441,25 @@ impl IsoParser {
             ));
         }
 
-        Ok((result, pos))
+        Ok((result, pos - start))
     }
 
-    fn parse_tzstr_internal(
+    fn parse_tzstr_internal_slice(
         &self,
         tzstr: &[u8],
+        start: usize,
+        len: usize,
         zero_as_utc: bool,
     ) -> Result<Option<i32>, ParserError> {
-        if tzstr.is_empty() {
+        if len == 0 {
             return Ok(None);
         }
 
         // Z or z
-        if tzstr == b"Z" || tzstr == b"z" {
+        if len == 1 && (tzstr[start] == b'Z' || tzstr[start] == b'z') {
             return Ok(Some(0));
         }
 
-        let len = tzstr.len();
         if len != 3 && len != 5 && len != 6 {
             return Err(ParserError::InvalidTimezone(format!(
                 "Time zone offset must be 1, 3, 5 or 6 characters, got {}",
@@ -420,7 +467,7 @@ impl IsoParser {
             )));
         }
 
-        let mult: i32 = match tzstr[0] {
+        let mult: i32 = match tzstr[start] {
             b'-' => -1,
             b'+' => 1,
             _ => {
@@ -430,15 +477,15 @@ impl IsoParser {
             }
         };
 
-        let hours = parse_int(&tzstr[1..3])? as i32;
+        let hours = parse_int_slice(tzstr, start + 1, start + 3)? as i32;
         let minutes = if len == 3 {
             0
-        } else if tzstr[3] == b':' {
+        } else if tzstr[start + 3] == b':' {
             // ±HH:MM
-            parse_int(&tzstr[4..])? as i32
+            parse_int_slice(tzstr, start + 4, start + len)? as i32
         } else {
             // ±HHMM
-            parse_int(&tzstr[3..])? as i32
+            parse_int_slice(tzstr, start + 3, start + len)? as i32
         };
 
         if hours > 23 {
@@ -464,11 +511,45 @@ impl IsoParser {
 
 // Helper functions
 
-fn parse_int(bytes: &[u8]) -> Result<u32, ParserError> {
-    let s = std::str::from_utf8(bytes)
-        .map_err(|_| ParserError::ParseError("Invalid UTF-8".to_string()))?;
-    s.parse::<u32>()
-        .map_err(|_| ParserError::ParseError(format!("Invalid integer: {}", s)))
+fn is_ascii(c: char) -> bool {
+    (c as u32) < 128
+}
+
+fn is_ascii_digit_char(c: char) -> bool {
+    c >= '0' && c <= '9'
+}
+
+fn is_ascii_digit(b: u8) -> bool {
+    b >= b'0' && b <= b'9'
+}
+
+fn parse_int_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, ParserError> {
+    let mut result = 0u32;
+    let mut i = start;
+    while i < end {
+        let b = bytes[i];
+        if b >= b'0' && b <= b'9' {
+            result = result * 10 + (b - b'0') as u32;
+        } else {
+            return Err(ParserError::ParseError(format!(
+                "Invalid integer: {:?}",
+                slice_to_str(bytes, start, end)
+            )));
+        }
+        i += 1;
+    }
+    Ok(result)
+}
+
+fn slice_to_str(bytes: &[u8], start: usize, end: usize) -> String {
+    let len = end - start;
+    let mut result = String::with_capacity(len);
+    let mut i = start;
+    while i < end {
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+    result
 }
 
 fn is_leap_year(year: i32) -> bool {
@@ -492,12 +573,14 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 
 fn ordinal_to_month_day(year: i32, ordinal: i32) -> Result<(u32, u32), ParserError> {
     let mut remaining = ordinal;
-    for month in 1..=12 {
+    let mut month = 1u32;
+    while month <= 12 {
         let days = days_in_month(year, month) as i32;
         if remaining <= days {
             return Ok((month, remaining as u32));
         }
         remaining -= days;
+        month += 1;
     }
     Err(ParserError::ParseError(format!(
         "Invalid ordinal day {}",
@@ -507,10 +590,10 @@ fn ordinal_to_month_day(year: i32, ordinal: i32) -> Result<(u32, u32), ParserErr
 
 /// Calculate the date from ISO year-week-day.
 fn calculate_weekdate(year: i32, week: i32, day: i32) -> Result<(i32, u32, u32), ParserError> {
-    if !(1..=53).contains(&week) {
+    if week < 1 || week > 53 {
         return Err(ParserError::ParseError(format!("Invalid week: {}", week)));
     }
-    if !(1..=7).contains(&day) {
+    if day < 1 || day > 7 {
         return Err(ParserError::ParseError(format!("Invalid weekday: {}", day)));
     }
 

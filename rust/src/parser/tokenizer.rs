@@ -15,18 +15,20 @@ enum State {
 /// Tokenizer for datetime strings.
 ///
 /// Breaks strings into lexical units: words, numbers, whitespace, and separators.
-pub struct Tokenizer<'a> {
-    chars: std::iter::Peekable<std::str::CharIndices<'a>>,
+pub struct Tokenizer {
+    bytes: Vec<u8>,
+    pos: usize,
     charstack: Vec<(usize, char)>,
     tokenstack: Vec<String>,
     eof: bool,
 }
 
-impl<'a> Tokenizer<'a> {
+impl Tokenizer {
     /// Create a new tokenizer for the given input string.
-    pub fn new(input: &'a str) -> Self {
+    pub fn new(input: &str) -> Self {
         Tokenizer {
-            chars: input.char_indices().peekable(),
+            bytes: input.as_bytes().to_vec(),
+            pos: 0,
             charstack: Vec::new(),
             tokenstack: Vec::new(),
             eof: false,
@@ -35,22 +37,40 @@ impl<'a> Tokenizer<'a> {
 
     /// Split a string into tokens.
     pub fn split(input: &str) -> Vec<String> {
-        let tokenizer = Tokenizer::new(input);
-        tokenizer.map(|t| t.to_string()).collect()
+        let mut tokenizer = Tokenizer::new(input);
+        let mut result = Vec::new();
+        loop {
+            match tokenizer.get_token() {
+                Some(t) => result.push(t),
+                None => break,
+            }
+        }
+        result
     }
 
     /// Get the next character, filtering null bytes.
     fn next_char(&mut self) -> Option<(usize, char)> {
-        if let Some(item) = self.charstack.pop() {
+        if !self.charstack.is_empty() {
+            let last_idx = self.charstack.len() - 1;
+            let item = self.charstack[last_idx];
+            self.charstack.pop();
             return Some(item);
         }
 
         loop {
-            match self.chars.next() {
-                Some((_, '\0')) => continue, // Filter null bytes
-                Some(item) => return Some(item),
-                None => return None,
+            if self.pos >= self.bytes.len() {
+                return None;
             }
+            let idx = self.pos;
+            let b = self.bytes[self.pos];
+            self.pos += 1;
+            // Filter null bytes
+            if b == 0 {
+                continue;
+            }
+            // Simple ASCII to char conversion for common cases
+            let c = b as char;
+            return Some((idx, c));
         }
     }
 
@@ -63,7 +83,15 @@ impl<'a> Tokenizer<'a> {
     pub fn get_token(&mut self) -> Option<String> {
         // Return buffered tokens first
         if !self.tokenstack.is_empty() {
-            return Some(self.tokenstack.remove(0));
+            let first = self.tokenstack[0].clone();
+            let n = self.tokenstack.len();
+            let mut i = 0usize;
+            while i < n - 1 {
+                self.tokenstack[i] = self.tokenstack[i + 1].clone();
+                i += 1;
+            }
+            self.tokenstack.pop();
+            return Some(first);
         }
 
         if self.eof {
@@ -86,11 +114,11 @@ impl<'a> Tokenizer<'a> {
             match state {
                 State::Initial => {
                     token.push(nextchar);
-                    if nextchar.is_alphabetic() {
+                    if is_alphabetic(nextchar) {
                         state = State::Word;
-                    } else if nextchar.is_ascii_digit() {
+                    } else if is_ascii_digit(nextchar) {
                         state = State::Number;
-                    } else if nextchar.is_whitespace() {
+                    } else if is_whitespace(nextchar) {
                         token = " ".to_string();
                         break;
                     } else {
@@ -99,7 +127,7 @@ impl<'a> Tokenizer<'a> {
                 }
                 State::Word => {
                     seen_letters = true;
-                    if nextchar.is_alphabetic() {
+                    if is_alphabetic(nextchar) {
                         token.push(nextchar);
                     } else if nextchar == '.' {
                         token.push(nextchar);
@@ -110,7 +138,7 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 State::Number => {
-                    if nextchar.is_ascii_digit() {
+                    if is_ascii_digit(nextchar) {
                         token.push(nextchar);
                     } else if nextchar == '.' || (nextchar == ',' && token.len() >= 2) {
                         token.push(nextchar);
@@ -122,9 +150,9 @@ impl<'a> Tokenizer<'a> {
                 }
                 State::WordDot => {
                     seen_letters = true;
-                    if nextchar == '.' || nextchar.is_alphabetic() {
+                    if nextchar == '.' || is_alphabetic(nextchar) {
                         token.push(nextchar);
-                    } else if nextchar.is_ascii_digit() && token.ends_with('.') {
+                    } else if is_ascii_digit(nextchar) && ends_with_char(&token, '.') {
                         token.push(nextchar);
                         state = State::NumberDot;
                     } else {
@@ -133,9 +161,9 @@ impl<'a> Tokenizer<'a> {
                     }
                 }
                 State::NumberDot => {
-                    if nextchar == '.' || nextchar.is_ascii_digit() {
+                    if nextchar == '.' || is_ascii_digit(nextchar) {
                         token.push(nextchar);
-                    } else if nextchar.is_alphabetic() && token.ends_with('.') {
+                    } else if is_alphabetic(nextchar) && ends_with_char(&token, '.') {
                         token.push(nextchar);
                         state = State::WordDot;
                     } else {
@@ -147,36 +175,38 @@ impl<'a> Tokenizer<'a> {
         }
 
         // Handle compound tokens with dots
+        let dot_count = count_char(&token, '.');
         if (state == State::WordDot || state == State::NumberDot)
-            && (seen_letters || token.matches('.').count() > 1 || token.ends_with(['.', ',']))
+            && (seen_letters || dot_count > 1 || ends_with_char(&token, '.') || ends_with_char(&token, ','))
         {
             // Clone before splitting to avoid borrow issues
             let original = token.clone();
 
             // Split on dots and commas
-            let parts: Vec<&str> = original
-                .split(['.', ','])
-                .filter(|s| !s.is_empty())
-                .collect();
+            let parts = split_on_delims(&original);
 
             if !parts.is_empty() {
-                token = parts[0].to_string();
+                token = parts[0].clone();
 
                 // Find separators by walking the original string
                 let mut pos = parts[0].len();
-                for part in parts.iter().skip(1) {
-                    if pos < original.len() {
-                        let sep = original.chars().nth(pos).unwrap_or('.');
+                let orig_bytes = original.as_bytes();
+                let orig_len = orig_bytes.len();
+                let mut part_idx = 1usize;
+                while part_idx < parts.len() {
+                    if pos < orig_len {
+                        let sep = orig_bytes[pos] as char;
                         self.tokenstack.push(sep.to_string());
                         pos += 1;
                     }
-                    self.tokenstack.push((*part).to_string());
-                    pos += part.len();
+                    self.tokenstack.push(parts[part_idx].clone());
+                    pos += parts[part_idx].len();
+                    part_idx += 1;
                 }
 
                 // Handle trailing separator
-                if pos < original.len() {
-                    let trailing_sep = original.chars().nth(pos).unwrap_or('.');
+                if pos < orig_len {
+                    let trailing_sep = orig_bytes[pos] as char;
                     if trailing_sep == '.' || trailing_sep == ',' {
                         self.tokenstack.push(trailing_sep.to_string());
                     }
@@ -185,8 +215,8 @@ impl<'a> Tokenizer<'a> {
         }
 
         // Convert comma decimal to dot for numbers
-        if state == State::NumberDot && !token.contains('.') {
-            token = token.replace(',', ".");
+        if state == State::NumberDot && !contains_char(&token, '.') {
+            token = replace_char(&token, ',', '.');
         }
 
         if token.is_empty() {
@@ -197,12 +227,103 @@ impl<'a> Tokenizer<'a> {
     }
 }
 
-impl<'a> Iterator for Tokenizer<'a> {
+impl Iterator for Tokenizer {
     type Item = String;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.get_token()
     }
+}
+
+// Helper functions
+
+fn is_alphabetic(c: char) -> bool {
+    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+fn is_ascii_digit(c: char) -> bool {
+    c >= '0' && c <= '9'
+}
+
+fn is_whitespace(c: char) -> bool {
+    c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+fn ends_with_char(s: &str, c: char) -> bool {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return false;
+    }
+    bytes[n - 1] as char == c
+}
+
+fn count_char(s: &str, c: char) -> usize {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut count = 0usize;
+    let mut i = 0usize;
+    while i < n {
+        if bytes[i] as char == c {
+            count += 1;
+        }
+        i += 1;
+    }
+    count
+}
+
+fn contains_char(s: &str, c: char) -> bool {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut i = 0usize;
+    while i < n {
+        if bytes[i] as char == c {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn replace_char(s: &str, from: char, to: char) -> String {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut result = String::with_capacity(n);
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i] as char;
+        if c == from {
+            result.push(to);
+        } else {
+            result.push(c);
+        }
+        i += 1;
+    }
+    result
+}
+
+fn split_on_delims(s: &str) -> Vec<String> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut parts: Vec<String> = Vec::new();
+    let mut current = String::new();
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i] as char;
+        if c == '.' || c == ',' {
+            if !current.is_empty() {
+                parts.push(current);
+                current = String::new();
+            }
+        } else {
+            current.push(c);
+        }
+        i += 1;
+    }
+    if !current.is_empty() {
+        parts.push(current);
+    }
+    parts
 }
 
 #[cfg(test)]
@@ -211,7 +332,19 @@ mod tests {
 
     /// Check if a string is a word (all alphabetic).
     fn is_word(s: &str) -> bool {
-        !s.is_empty() && s.chars().all(|c| c.is_alphabetic())
+        if s.is_empty() {
+            return false;
+        }
+        let bytes = s.as_bytes();
+        let n = bytes.len();
+        let mut i = 0usize;
+        while i < n {
+            if !is_alphabetic(bytes[i] as char) {
+                return false;
+            }
+            i += 1;
+        }
+        true
     }
 
     /// Check if a string is a number (all digits, possibly with decimal point).
@@ -219,29 +352,34 @@ mod tests {
         if s.is_empty() {
             return false;
         }
+        let bytes = s.as_bytes();
+        let n = bytes.len();
         let mut has_digit = false;
         let mut has_dot = false;
-        for c in s.chars() {
-            if c.is_ascii_digit() {
+        let mut i = 0usize;
+        while i < n {
+            let c = bytes[i] as char;
+            if is_ascii_digit(c) {
                 has_digit = true;
             } else if c == '.' && !has_dot {
                 has_dot = true;
             } else {
                 return false;
             }
+            i += 1;
         }
         has_digit
     }
 
     #[test]
     fn test_simple_date() {
-        let tokens: Vec<_> = Tokenizer::split("2024-01-15");
+        let tokens = Tokenizer::split("2024-01-15");
         assert_eq!(tokens, vec!["2024", "-", "01", "-", "15"]);
     }
 
     #[test]
     fn test_datetime_with_t() {
-        let tokens: Vec<_> = Tokenizer::split("2024-01-15T10:30:00");
+        let tokens = Tokenizer::split("2024-01-15T10:30:00");
         assert_eq!(
             tokens,
             vec!["2024", "-", "01", "-", "15", "T", "10", ":", "30", ":", "00"]
@@ -250,25 +388,25 @@ mod tests {
 
     #[test]
     fn test_named_month() {
-        let tokens: Vec<_> = Tokenizer::split("Jan 15, 2024");
+        let tokens = Tokenizer::split("Jan 15, 2024");
         assert_eq!(tokens, vec!["Jan", " ", "15", ",", " ", "2024"]);
     }
 
     #[test]
     fn test_month_with_dot() {
-        let tokens: Vec<_> = Tokenizer::split("Sep.20.2009");
+        let tokens = Tokenizer::split("Sep.20.2009");
         assert_eq!(tokens, vec!["Sep", ".", "20", ".", "2009"]);
     }
 
     #[test]
     fn test_decimal_time() {
-        let tokens: Vec<_> = Tokenizer::split("4:30:21.447");
+        let tokens = Tokenizer::split("4:30:21.447");
         assert_eq!(tokens, vec!["4", ":", "30", ":", "21.447"]);
     }
 
     #[test]
     fn test_timezone() {
-        let tokens: Vec<_> = Tokenizer::split("2024-01-15T10:30:00-05:00");
+        let tokens = Tokenizer::split("2024-01-15T10:30:00-05:00");
         assert_eq!(
             tokens,
             vec![
@@ -280,7 +418,7 @@ mod tests {
     #[test]
     fn test_whitespace() {
         // dateutil keeps separate whitespace tokens (each space is a token)
-        let tokens: Vec<_> = Tokenizer::split("January   15,  2024");
+        let tokens = Tokenizer::split("January   15,  2024");
         assert_eq!(
             tokens,
             vec!["January", " ", " ", " ", "15", ",", " ", " ", "2024"]
@@ -289,13 +427,13 @@ mod tests {
 
     #[test]
     fn test_am_pm() {
-        let tokens: Vec<_> = Tokenizer::split("9:30 AM");
+        let tokens = Tokenizer::split("9:30 AM");
         assert_eq!(tokens, vec!["9", ":", "30", " ", "AM"]);
     }
 
     #[test]
     fn test_ordinal() {
-        let tokens: Vec<_> = Tokenizer::split("January 15th, 2024");
+        let tokens = Tokenizer::split("January 15th, 2024");
         assert_eq!(tokens, vec!["January", " ", "15", "th", ",", " ", "2024"]);
     }
 
@@ -321,7 +459,7 @@ mod tests {
     #[test]
     fn test_decimal_number() {
         // Pure decimal number stays as single token
-        let tokens: Vec<_> = Tokenizer::split("100.264400");
+        let tokens = Tokenizer::split("100.264400");
         assert_eq!(tokens, vec!["100.264400"]);
     }
 
@@ -329,11 +467,11 @@ mod tests {
     fn test_european_decimal() {
         // European style comma decimal (only when token has 2+ digits before comma)
         // Single digit before comma - comma is separator
-        let tokens: Vec<_> = Tokenizer::split("3,14159");
+        let tokens = Tokenizer::split("3,14159");
         assert_eq!(tokens, vec!["3", ",", "14159"]);
 
         // 2+ digits before comma - comma is decimal point
-        let tokens: Vec<_> = Tokenizer::split("30,14159");
+        let tokens = Tokenizer::split("30,14159");
         assert_eq!(tokens, vec!["30.14159"]);
     }
 }

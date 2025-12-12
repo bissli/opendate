@@ -21,6 +21,343 @@ impl Default for Parser {
     }
 }
 
+/// Check if character is ASCII digit.
+fn is_ascii_digit(c: u8) -> bool {
+    c >= b'0' && c <= b'9'
+}
+
+/// Check if all bytes in slice are ASCII digits.
+fn all_ascii_digits(bytes: &[u8], start: usize, end: usize) -> bool {
+    let mut i = start;
+    while i < end {
+        if !is_ascii_digit(bytes[i]) {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Check if string contains only ASCII digits.
+fn str_all_digits(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    all_ascii_digits(bytes, 0, n)
+}
+
+/// Check if all chars are ASCII uppercase letters.
+fn all_ascii_uppercase(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return false;
+    }
+    let mut has_letter = false;
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i];
+        if c >= b'A' && c <= b'Z' {
+            has_letter = true;
+        } else if c >= b'a' && c <= b'z' {
+            // Lowercase letter - not all uppercase
+            return false;
+        }
+        // Skip non-letter characters (digits, symbols, etc.)
+        i += 1;
+    }
+    // Must have at least one uppercase letter
+    has_letter
+}
+
+/// Parse a slice of bytes as u32.
+fn parse_u32_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, ParserError> {
+    let mut result = 0u32;
+    let mut i = start;
+    while i < end {
+        let c = bytes[i];
+        if c >= b'0' && c <= b'9' {
+            result = result * 10 + (c - b'0') as u32;
+        } else {
+            return Err(ParserError::ParseError("Invalid digit".to_string()));
+        }
+        i += 1;
+    }
+    Ok(result)
+}
+
+/// Parse string as u32.
+fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
+    let bytes = s.as_bytes();
+    parse_u32_slice(bytes, 0, bytes.len())
+}
+
+/// Parse string as i32.
+fn parse_str_i32(s: &str) -> Result<i32, ParserError> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return Err(ParserError::ParseError("Empty string".to_string()));
+    }
+
+    let mut i = 0usize;
+    let negative = bytes[0] == b'-';
+    let positive_sign = bytes[0] == b'+';
+    if negative || positive_sign {
+        i = 1;
+    }
+
+    let mut result = 0i32;
+    while i < n {
+        let c = bytes[i];
+        if c >= b'0' && c <= b'9' {
+            result = result * 10 + (c - b'0') as i32;
+        } else {
+            return Err(ParserError::ParseError(format!("Invalid digit in: {}", s)));
+        }
+        i += 1;
+    }
+
+    if negative {
+        result = -result;
+    }
+    Ok(result)
+}
+
+/// Parse string as f64.
+fn parse_str_f64(s: &str) -> Result<f64, ParserError> {
+    // Use standard library for floating point (complex to implement manually)
+    s.parse::<f64>()
+        .map_err(|_| ParserError::ParseError(format!("Invalid number: {}", s)))
+}
+
+/// Find character position in string.
+fn find_char(s: &str, c: char) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let target = c as u8;
+    let n = bytes.len();
+    let mut i = 0usize;
+    while i < n {
+        if bytes[i] == target {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Find any of multiple characters.
+fn find_any_char(s: &str, chars: &[char]) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let nc = chars.len();
+    let mut i = 0usize;
+    while i < n {
+        let mut j = 0usize;
+        while j < nc {
+            if bytes[i] == chars[j] as u8 {
+                return Some(i);
+            }
+            j += 1;
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Check if string contains character.
+fn contains_char(s: &str, c: char) -> bool {
+    find_char(s, c).is_some()
+}
+
+/// Check if string starts with character.
+fn starts_with_char(s: &str, c: char) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() > 0 && bytes[0] == c as u8
+}
+
+/// Check if string ends with substring.
+fn ends_with_str(s: &str, suffix: &str) -> bool {
+    let s_bytes = s.as_bytes();
+    let suffix_bytes = suffix.as_bytes();
+    let sn = s_bytes.len();
+    let sufn = suffix_bytes.len();
+    if sufn > sn {
+        return false;
+    }
+    let start = sn - sufn;
+    let mut i = 0usize;
+    while i < sufn {
+        if s_bytes[start + i] != suffix_bytes[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Check if string starts with prefix.
+fn starts_with_str(s: &str, prefix: &str) -> bool {
+    let s_bytes = s.as_bytes();
+    let prefix_bytes = prefix.as_bytes();
+    let sn = s_bytes.len();
+    let pn = prefix_bytes.len();
+    if pn > sn {
+        return false;
+    }
+    let mut i = 0usize;
+    while i < pn {
+        if s_bytes[i] != prefix_bytes[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
+
+/// Convert string to uppercase.
+fn to_uppercase(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut result = String::with_capacity(n);
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i];
+        if c >= b'a' && c <= b'z' {
+            result.push((c - 32) as char);
+        } else {
+            result.push(c as char);
+        }
+        i += 1;
+    }
+    result
+}
+
+/// Substring from start to end.
+fn substr_range(s: &str, start: usize, end: usize) -> &str {
+    let bytes = s.as_bytes();
+    let actual_end = if end > bytes.len() { bytes.len() } else { end };
+    let actual_start = if start > actual_end {
+        actual_end
+    } else {
+        start
+    };
+    unsafe { std::str::from_utf8_unchecked(&bytes[actual_start..actual_end]) }
+}
+
+/// Split string by character.
+fn split_char(s: &str, delim: char) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let d = delim as u8;
+    let mut result: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut i = 0usize;
+
+    while i < n {
+        if bytes[i] == d {
+            if i > start {
+                result.push(substr_range(s, start, i));
+            } else {
+                result.push("");
+            }
+            start = i + 1;
+        }
+        i += 1;
+    }
+
+    // Add remaining part
+    if start <= n {
+        result.push(substr_range(s, start, n));
+    }
+
+    result
+}
+
+/// Split string by whitespace.
+fn split_whitespace_vec(s: &str) -> Vec<&str> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut result: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut in_word = false;
+    let mut i = 0usize;
+
+    while i < n {
+        let c = bytes[i];
+        let is_ws = c == b' ' || c == b'\t' || c == b'\n' || c == b'\r';
+
+        if is_ws {
+            if in_word {
+                result.push(substr_range(s, start, i));
+                in_word = false;
+            }
+        } else {
+            if !in_word {
+                start = i;
+                in_word = true;
+            }
+        }
+        i += 1;
+    }
+
+    if in_word {
+        result.push(substr_range(s, start, n));
+    }
+
+    result
+}
+
+/// Trim whitespace from string.
+fn trim_str(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return s;
+    }
+
+    // Find start (skip leading whitespace)
+    let mut start = 0usize;
+    while start < n {
+        let c = bytes[start];
+        if c != b' ' && c != b'\t' && c != b'\n' && c != b'\r' {
+            break;
+        }
+        start += 1;
+    }
+
+    // Find end (skip trailing whitespace)
+    let mut end = n;
+    while end > start {
+        let c = bytes[end - 1];
+        if c != b' ' && c != b'\t' && c != b'\n' && c != b'\r' {
+            break;
+        }
+        end -= 1;
+    }
+
+    substr_range(s, start, end)
+}
+
+/// Pad string with zeros on right.
+fn pad_right_zeros(s: &str, target_len: usize) -> String {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut result = String::with_capacity(target_len);
+
+    let mut i = 0usize;
+    while i < n && i < target_len {
+        result.push(bytes[i] as char);
+        i += 1;
+    }
+
+    while i < target_len {
+        result.push('0');
+        i += 1;
+    }
+
+    result
+}
+
 impl Parser {
     /// Create a new parser with the given settings.
     pub fn new(dayfirst: bool, yearfirst: bool) -> Self {
@@ -46,8 +383,8 @@ impl Parser {
     ///
     /// Returns None for invalid inputs (e.g., hour > 23, minute > 59).
     pub fn parse_time_only(&self, timestr: &str) -> Result<ParseResult, ParserError> {
-        let s = timestr.trim();
-        if s.is_empty() {
+        let s = trim_str(timestr);
+        if s.len() == 0 {
             return Err(ParserError::ParseError("Empty time string".to_string()));
         }
 
@@ -72,11 +409,13 @@ impl Parser {
 
     /// Extract AM/PM suffix from time string.
     fn extract_ampm_suffix<'a>(&self, s: &'a str) -> (&'a str, Option<u32>) {
-        let s_upper = s.to_uppercase();
-        if s_upper.ends_with(" AM") {
-            (&s[..s.len() - 3], Some(0))
-        } else if s_upper.ends_with(" PM") {
-            (&s[..s.len() - 3], Some(1))
+        let s_upper = to_uppercase(s);
+        if ends_with_str(&s_upper, " AM") {
+            let end = s.len() - 3;
+            (substr_range(s, 0, end), Some(0))
+        } else if ends_with_str(&s_upper, " PM") {
+            let end = s.len() - 3;
+            (substr_range(s, 0, end), Some(1))
         } else {
             (s, None)
         }
@@ -89,14 +428,15 @@ impl Parser {
         ampm: Option<u32>,
     ) -> Result<Option<ParseResult>, ParserError> {
         // Find fraction separator position (. or ,)
-        let (digits_part, frac_part) = if let Some(pos) = s.find(['.', ',']) {
-            (&s[..pos], Some(&s[pos + 1..]))
+        let delims: [char; 2] = ['.', ','];
+        let (digits_part, frac_part) = if let Some(pos) = find_any_char(s, &delims) {
+            (substr_range(s, 0, pos), Some(substr_range(s, pos + 1, s.len())))
         } else {
             (s, None)
         };
 
         // Must be exactly 4 or 6 digits
-        if !digits_part.chars().all(|c| c.is_ascii_digit()) {
+        if !str_all_digits(digits_part) {
             return Ok(None);
         }
 
@@ -106,15 +446,12 @@ impl Parser {
         }
 
         // Parse components
-        let hour: u32 = digits_part[0..2]
-            .parse()
+        let hour: u32 = parse_str_u32(substr_range(digits_part, 0, 2))
             .map_err(|_| ParserError::ParseError("Invalid hour".to_string()))?;
-        let minute: u32 = digits_part[2..4]
-            .parse()
+        let minute: u32 = parse_str_u32(substr_range(digits_part, 2, 4))
             .map_err(|_| ParserError::ParseError("Invalid minute".to_string()))?;
         let second: u32 = if len == 6 {
-            digits_part[4..6]
-                .parse()
+            parse_str_u32(substr_range(digits_part, 4, 6))
                 .map_err(|_| ParserError::ParseError("Invalid second".to_string()))?
         } else {
             0
@@ -131,8 +468,10 @@ impl Parser {
 
         // Parse microseconds
         let microsecond = if let Some(frac) = frac_part {
-            let padded = format!("{:0<6}", &frac[..frac.len().min(6)]);
-            padded.parse::<u32>().unwrap_or(0)
+            let frac_len = frac.len();
+            let take_len = if frac_len < 6 { frac_len } else { 6 };
+            let padded = pad_right_zeros(substr_range(frac, 0, take_len), 6);
+            parse_str_u32(&padded).unwrap_or(0)
         } else {
             0
         };
@@ -164,7 +503,8 @@ impl Parser {
         // Use tokenizer to split
         let tokens: Vec<String> = Tokenizer::split(s);
 
-        if tokens.is_empty() {
+        let tokens_len = tokens.len();
+        if tokens_len == 0 {
             return Ok(None);
         }
 
@@ -174,22 +514,26 @@ impl Parser {
         let mut microsecond: u32 = 0;
 
         // Check if first token is a decimal like "9.30" (tokenizer keeps H.MM as one token)
-        if tokens[0].contains('.') && !tokens[0].starts_with('.') {
-            let parts: Vec<&str> = tokens[0].split('.').collect();
-            if parts.len() >= 2 {
+        if contains_char(&tokens[0], '.') && !starts_with_char(&tokens[0], '.') {
+            let parts: Vec<&str> = split_char(&tokens[0], '.');
+            let parts_len = parts.len();
+            if parts_len >= 2 {
                 let hour_str = parts[0];
                 let min_str = parts[1];
 
-                if hour_str.len() <= 2
-                    && min_str.len() == 2
-                    && hour_str.chars().all(|c| c.is_ascii_digit())
-                    && min_str.chars().all(|c| c.is_ascii_digit())
+                let hour_len = hour_str.len();
+                let min_len = min_str.len();
+
+                if hour_len <= 2
+                    && min_len == 2
+                    && str_all_digits(hour_str)
+                    && str_all_digits(min_str)
                 {
-                    hour = hour_str.parse().unwrap_or(0);
-                    minute = min_str.parse().unwrap_or(0);
+                    hour = parse_str_u32(hour_str).unwrap_or(0);
+                    minute = parse_str_u32(min_str).unwrap_or(0);
 
                     // Check for seconds in parts[2] if present
-                    if parts.len() >= 3 {
+                    if parts_len >= 3 {
                         let (sec, micro) = self.parsems(parts[2]);
                         second = sec;
                         microsecond = micro;
@@ -224,13 +568,14 @@ impl Parser {
         }
 
         // Standard token-based parsing (H:MM, etc.)
-        if tokens.len() < 3 {
+        if tokens_len < 3 {
             return Ok(None);
         }
 
         // First token should be hour (1-2 digits)
         let hour_str = &tokens[0];
-        if !hour_str.chars().all(|c| c.is_ascii_digit()) || hour_str.len() > 2 {
+        let hour_str_len = hour_str.len();
+        if !str_all_digits(hour_str) || hour_str_len > 2 {
             return Ok(None);
         }
 
@@ -242,15 +587,16 @@ impl Parser {
 
         // Third token should be minute (2 digits)
         let min_str = &tokens[2];
-        if !min_str.chars().all(|c| c.is_ascii_digit()) || min_str.len() != 2 {
+        let min_str_len = min_str.len();
+        if !str_all_digits(min_str) || min_str_len != 2 {
             return Ok(None);
         }
 
-        hour = hour_str.parse().unwrap_or(0);
-        minute = min_str.parse().unwrap_or(0);
+        hour = parse_str_u32(hour_str).unwrap_or(0);
+        minute = parse_str_u32(min_str).unwrap_or(0);
 
         // Check for seconds: :SS or .SS
-        if tokens.len() >= 5 && (tokens[3] == ":" || tokens[3] == ".") {
+        if tokens_len >= 5 && (tokens[3] == ":" || tokens[3] == ".") {
             // Parse seconds (may include fraction like "45.123")
             let sec_str = &tokens[4];
             let (sec, micro) = self.parsems(sec_str);
@@ -302,8 +648,14 @@ impl Parser {
     ) -> Result<(ParseResult, Option<Vec<String>>), ParserError> {
         let fuzzy = fuzzy || fuzzy_with_tokens;
 
-        let dayfirst = dayfirst.unwrap_or(self.info.dayfirst);
-        let yearfirst = yearfirst.unwrap_or(self.info.yearfirst);
+        let dayfirst = match dayfirst {
+            Some(v) => v,
+            None => self.info.dayfirst,
+        };
+        let yearfirst = match yearfirst {
+            Some(v) => v,
+            None => self.info.yearfirst,
+        };
 
         let (res, skipped_tokens) = self.parse_inner(timestr, dayfirst, yearfirst, fuzzy)?;
 
@@ -341,13 +693,13 @@ impl Parser {
         let mut flip_next_sign = false; // For GMT+3 style parsing
 
         let len_l = tokens.len();
-        let mut i = 0;
+        let mut i = 0usize;
 
         while i < len_l {
             let token = &tokens[i];
 
             // Try to parse as a number
-            if let Ok(_value) = token.parse::<f64>() {
+            if parse_str_f64(token).is_ok() {
                 i = self.parse_numeric_token(&tokens, i, &mut ymd, &mut res, fuzzy)?;
             }
             // Check weekday
@@ -380,8 +732,8 @@ impl Parser {
                         && self.info.pertain(&tokens[i + 2])
                     {
                         // Jan of 01
-                        if tokens[i + 4].chars().all(|c| c.is_ascii_digit()) {
-                            let value: i32 = tokens[i + 4].parse().unwrap_or(0);
+                        if str_all_digits(&tokens[i + 4]) {
+                            let value: i32 = parse_str_i32(&tokens[i + 4]).unwrap_or(0);
                             let year = self.info.convertyear(value, false);
                             ymd.append(year, Some('Y'))?;
                             i += 4;
@@ -432,21 +784,21 @@ impl Parser {
 
                     let (hour_offset, min_offset, skip): (i32, i32, usize) = if len_li == 4 {
                         // -0300
-                        let h: i32 = tokens[i + 1][..2].parse().unwrap_or(0);
-                        let m: i32 = tokens[i + 1][2..].parse().unwrap_or(0);
+                        let h: i32 = parse_str_i32(substr_range(&tokens[i + 1], 0, 2)).unwrap_or(0);
+                        let m: i32 = parse_str_i32(substr_range(&tokens[i + 1], 2, 4)).unwrap_or(0);
                         (h, m, 0)
                     } else if i + 2 < len_l && tokens[i + 2] == ":" {
                         // -03:00
-                        let h: i32 = tokens[i + 1].parse().unwrap_or(0);
+                        let h: i32 = parse_str_i32(&tokens[i + 1]).unwrap_or(0);
                         let m: i32 = if i + 3 < len_l {
-                            tokens[i + 3].parse().unwrap_or(0)
+                            parse_str_i32(&tokens[i + 3]).unwrap_or(0)
                         } else {
                             0
                         };
                         (h, m, 2)
                     } else if len_li <= 2 {
                         // -[0]3
-                        let h: i32 = tokens[i + 1].parse().unwrap_or(0);
+                        let h: i32 = parse_str_i32(&tokens[i + 1]).unwrap_or(0);
                         (h, 0, 0)
                     } else {
                         return Err(ParserError::ParseError(format!(
@@ -491,8 +843,14 @@ impl Parser {
 
         res.century_specified = ymd.century_specified;
         res.year = year;
-        res.month = month.map(|m| m as u32);
-        res.day = day.map(|d| d as u32);
+        res.month = match month {
+            Some(m) => Some(m as u32),
+            None => None,
+        };
+        res.day = match day {
+            Some(d) => Some(d as u32),
+            None => None,
+        };
 
         // Validate and convert year
         if let Some(y) = res.year {
@@ -500,17 +858,19 @@ impl Parser {
         }
 
         // Normalize timezone info
-        if (res.tzoffset == Some(0) && res.tzname.is_none())
-            || res.tzname.as_deref() == Some("Z")
-            || res.tzname.as_deref() == Some("z")
-        {
+        let tz_is_z = match &res.tzname {
+            Some(name) => name == "Z" || name == "z",
+            None => false,
+        };
+        let tz_is_utc_variant = match &res.tzname {
+            Some(name) => self.info.utczone(name),
+            None => false,
+        };
+
+        if (res.tzoffset == Some(0) && res.tzname.is_none()) || tz_is_z {
             res.tzname = Some("UTC".to_string());
             res.tzoffset = Some(0);
-        } else if res.tzoffset.is_some()
-            && res.tzoffset != Some(0)
-            && res.tzname.is_some()
-            && self.info.utczone(res.tzname.as_deref().unwrap_or(""))
-        {
+        } else if res.tzoffset.is_some() && res.tzoffset != Some(0) && tz_is_utc_variant {
             res.tzoffset = Some(0);
         }
 
@@ -533,14 +893,15 @@ impl Parser {
     /// - 12/14 digit compact formats without T (general parser handles these)
     fn looks_like_iso(s: &str) -> bool {
         let bytes = s.as_bytes();
+        let n = bytes.len();
 
         // Need at least 5 chars for meaningful ISO (YYYY- minimum)
-        if bytes.len() < 5 {
+        if n < 5 {
             return false;
         }
 
         // Must start with 4 digits (year)
-        if !bytes[0..4].iter().all(|b| b.is_ascii_digit()) {
+        if !all_ascii_digits(bytes, 0, 4) {
             return false;
         }
 
@@ -550,13 +911,13 @@ impl Parser {
         }
 
         // YYYYMMDD format (exactly 8 digits, or 8 digits + T separator)
-        if bytes.len() >= 8 && bytes[0..8].iter().all(|b| b.is_ascii_digit()) {
+        if n >= 8 && all_ascii_digits(bytes, 0, 8) {
             // Exactly 8 digits (YYYYMMDD) - use ISO
-            if bytes.len() == 8 {
+            if n == 8 {
                 return true;
             }
             // 8 digits + T separator (YYYYMMDDT...) - use ISO
-            if bytes.get(8) == Some(&b'T') {
+            if n > 8 && bytes[8] == b'T' {
                 return true;
             }
             // Other cases (e.g., 12/14 digit compact) - let general parser handle
@@ -575,7 +936,7 @@ impl Parser {
         fuzzy: bool,
     ) -> Result<usize, ParserError> {
         let value_repr = &tokens[idx];
-        let value: f64 = value_repr.parse().map_err(|_| {
+        let value: f64 = parse_str_f64(value_repr).map_err(|_| {
             ParserError::ParseError(format!("Invalid numeric token: {}", value_repr))
         })?;
 
@@ -591,40 +952,40 @@ impl Parser {
         {
             // 19990101T23[59]
             let s = &tokens[idx];
-            res.hour = Some(s[..2].parse().unwrap_or(0));
+            res.hour = Some(parse_str_u32(substr_range(s, 0, 2)).unwrap_or(0));
 
             if len_li == 4 {
-                res.minute = Some(s[2..].parse().unwrap_or(0));
+                res.minute = Some(parse_str_u32(substr_range(s, 2, 4)).unwrap_or(0));
             }
-        } else if len_li == 6 || (len_li > 6 && tokens[idx].find('.') == Some(6)) {
+        } else if len_li == 6 || (len_li > 6 && find_char(&tokens[idx], '.') == Some(6)) {
             // YYMMDD or HHMMSS[.ss]
             let s = &tokens[idx];
 
-            if ymd.is_empty() && !tokens[idx].contains('.') {
-                ymd.append_str(&s[..2], None)?;
-                ymd.append_str(&s[2..4], None)?;
-                ymd.append_str(&s[4..], None)?;
+            if ymd.is_empty() && !contains_char(&tokens[idx], '.') {
+                ymd.append_str(substr_range(s, 0, 2), None)?;
+                ymd.append_str(substr_range(s, 2, 4), None)?;
+                ymd.append_str(substr_range(s, 4, s.len()), None)?;
             } else {
                 // 19990101T235959[.59]
-                res.hour = Some(s[..2].parse().unwrap_or(0));
-                res.minute = Some(s[2..4].parse().unwrap_or(0));
-                let (sec, micro) = self.parsems(&s[4..]);
+                res.hour = Some(parse_str_u32(substr_range(s, 0, 2)).unwrap_or(0));
+                res.minute = Some(parse_str_u32(substr_range(s, 2, 4)).unwrap_or(0));
+                let (sec, micro) = self.parsems(substr_range(s, 4, s.len()));
                 res.second = Some(sec);
                 res.microsecond = Some(micro);
             }
         } else if len_li == 8 || len_li == 12 || len_li == 14 {
             // YYYYMMDD[HHMMSS]
             let s = &tokens[idx];
-            ymd.append_str(&s[..4], Some('Y'))?;
-            ymd.append_str(&s[4..6], None)?;
-            ymd.append_str(&s[6..8], None)?;
+            ymd.append_str(substr_range(s, 0, 4), Some('Y'))?;
+            ymd.append_str(substr_range(s, 4, 6), None)?;
+            ymd.append_str(substr_range(s, 6, 8), None)?;
 
             if len_li > 8 {
-                res.hour = Some(s[8..10].parse().unwrap_or(0));
-                res.minute = Some(s[10..12].parse().unwrap_or(0));
+                res.hour = Some(parse_str_u32(substr_range(s, 8, 10)).unwrap_or(0));
+                res.minute = Some(parse_str_u32(substr_range(s, 10, 12)).unwrap_or(0));
 
                 if len_li > 12 {
-                    res.second = Some(s[12..].parse().unwrap_or(0));
+                    res.second = Some(parse_str_u32(substr_range(s, 12, s.len())).unwrap_or(0));
                 }
             }
         } else if let Some(hms_idx) = self.find_hms_idx(idx, tokens, true) {
@@ -637,7 +998,7 @@ impl Parser {
         } else if idx + 2 < len_l && tokens[idx + 1] == ":" {
             // HH:MM[:SS[.ss]]
             res.hour = Some(value as u32);
-            let min_val: f64 = tokens[idx + 2].parse().unwrap_or(0.0);
+            let min_val: f64 = parse_str_f64(&tokens[idx + 2]).unwrap_or(0.0);
             let (minute, second) = self.parse_min_sec(min_val);
             res.minute = Some(minute);
             if let Some(s) = second {
@@ -659,7 +1020,7 @@ impl Parser {
             ymd.append_str(value_repr, None)?;
 
             if idx + 2 < len_l && !self.info.jump(&tokens[idx + 2]) {
-                if tokens[idx + 2].chars().all(|c| c.is_ascii_digit()) {
+                if str_all_digits(&tokens[idx + 2]) {
                     // 01-01[-01]
                     ymd.append_str(&tokens[idx + 2], None)?;
                 } else {
@@ -698,10 +1059,10 @@ impl Parser {
             } else {
                 // Year, month or day - but only if it looks valid
                 let int_val = value as i32;
-                let could_be_date_component = (1..=31).contains(&int_val)  // day
-                    || (1..=12).contains(&int_val)  // month
-                    || (0..=99).contains(&int_val)  // 2-digit year
-                    || (1000..=9999).contains(&int_val); // 4-digit year
+                let could_be_date_component = (int_val >= 1 && int_val <= 31)  // day
+                    || (int_val >= 1 && int_val <= 12)  // month
+                    || (int_val >= 0 && int_val <= 99)  // 2-digit year
+                    || (int_val >= 1000 && int_val <= 9999); // 4-digit year
 
                 if could_be_date_component {
                     ymd.append(value as i32, None)?;
@@ -714,7 +1075,7 @@ impl Parser {
                 // In fuzzy mode with invalid date component, just skip it
             }
             idx += 1;
-        } else if self.info.ampm(&tokens[idx + 1]).is_some() && (0.0..24.0).contains(&value) {
+        } else if self.info.ampm(&tokens[idx + 1]).is_some() && value >= 0.0 && value < 24.0 {
             // 12am
             let hour = value as u32;
             res.hour = Some(self.adjust_ampm(hour, self.info.ampm(&tokens[idx + 1]).unwrap()));
@@ -767,7 +1128,10 @@ impl Parser {
 
         // If looking backwards, increment by one (for the next component)
         let hms = if hms_idx < idx {
-            hms.map(|h| h + 1)
+            match hms {
+                Some(h) => Some(h + 1),
+                None => None,
+            }
         } else {
             hms
         };
@@ -782,14 +1146,15 @@ impl Parser {
         value_repr: &str,
         hms: u32,
     ) -> Result<(), ParserError> {
-        let value: f64 = value_repr.parse().unwrap_or(0.0);
+        let value: f64 = parse_str_f64(value_repr).unwrap_or(0.0);
 
         match hms {
             0 => {
                 // Hour
                 res.hour = Some(value as u32);
-                if value.fract() != 0.0 {
-                    res.minute = Some((60.0 * value.fract()) as u32);
+                let fract = value - (value as u32) as f64;
+                if fract != 0.0 {
+                    res.minute = Some((60.0 * fract) as u32);
                 }
             }
             1 => {
@@ -824,7 +1189,7 @@ impl Parser {
             && tzname.is_none()
             && tzoffset.is_none()
             && token.len() <= 5
-            && (token.chars().all(|c| c.is_ascii_uppercase()) || self.info.utczone(token))
+            && (all_ascii_uppercase(token) || self.info.utczone(token))
     }
 
     /// Check if AM/PM is valid.
@@ -843,13 +1208,16 @@ impl Parser {
                 // In non-fuzzy mode, we'd raise an error but we'll just return false here
                 false
             }
-            Some(h) if !(0..=12).contains(&h) => {
-                if fuzzy {
-                    return false;
+            Some(h) => {
+                if h > 12 {
+                    if fuzzy {
+                        return false;
+                    }
+                    false
+                } else {
+                    true
                 }
-                false
             }
-            _ => true,
         }
     }
 
@@ -867,7 +1235,7 @@ impl Parser {
     /// Parse minute/second from fractional value.
     fn parse_min_sec(&self, value: f64) -> (u32, Option<u32>) {
         let minute = value as u32;
-        let sec_remainder = value.fract();
+        let sec_remainder = value - (minute as f64);
         let second = if sec_remainder != 0.0 {
             Some((60.0 * sec_remainder) as u32)
         } else {
@@ -878,15 +1246,16 @@ impl Parser {
 
     /// Parse seconds with microseconds.
     fn parsems(&self, value: &str) -> (u32, u32) {
-        if !value.contains('.') {
-            (value.parse().unwrap_or(0), 0)
+        if !contains_char(value, '.') {
+            (parse_str_u32(value).unwrap_or(0), 0)
         } else {
-            let parts: Vec<&str> = value.split('.').collect();
-            let seconds: u32 = parts[0].parse().unwrap_or(0);
-            let frac = parts.get(1).unwrap_or(&"0");
+            let parts: Vec<&str> = split_char(value, '.');
+            let parts_len = parts.len();
+            let seconds: u32 = parse_str_u32(parts[0]).unwrap_or(0);
+            let frac = if parts_len > 1 { parts[1] } else { "0" };
             // Pad to 6 digits and take first 6
-            let padded = format!("{:0<6}", frac);
-            let microseconds: u32 = padded[..6].parse().unwrap_or(0);
+            let padded = pad_right_zeros(frac, 6);
+            let microseconds: u32 = parse_str_u32(substr_range(&padded, 0, 6)).unwrap_or(0);
             (seconds, microseconds)
         }
     }
@@ -897,44 +1266,50 @@ impl Parser {
     /// where the ISO parser parsed the datetime but not the timezone.
     fn extract_trailing_timezone(&self, timestr: &str, mut result: ParseResult) -> ParseResult {
         // Find the last space-separated token(s) that could be timezone info
-        let parts: Vec<&str> = timestr.split_whitespace().collect();
-        if parts.len() < 2 {
+        let parts: Vec<&str> = split_whitespace_vec(timestr);
+        let parts_len = parts.len();
+        if parts_len < 2 {
             return result;
         }
 
         // Check the last part for timezone name
-        let last_part = parts[parts.len() - 1];
+        let last_part = parts[parts_len - 1];
 
         // Handle "UTC", "GMT", etc. (pure timezone name)
         if self.info.utczone(last_part) {
-            result.tzname = Some(last_part.to_uppercase());
+            result.tzname = Some(to_uppercase(last_part));
             result.tzoffset = Some(0);
             return result;
         }
 
         // Handle "EST", "PST", etc. (timezone abbreviation without defined offset)
-        if last_part.len() <= 5 && last_part.chars().all(|c| c.is_ascii_uppercase()) {
+        let last_part_len = last_part.len();
+        if last_part_len <= 5 && all_ascii_uppercase(last_part) {
             result.tzname = Some(last_part.to_string());
             // No offset - user needs tzinfos to resolve
             return result;
         }
 
         // Handle "GMT+3", "GMT-5", etc.
-        if last_part.len() >= 4 {
-            let upper = last_part.to_uppercase();
-            if upper.starts_with("GMT") || upper.starts_with("UTC") {
-                let rest = &last_part[3..];
-                if let Some((sign, offset_str)) = rest
-                    .strip_prefix('+')
-                    .map(|s| (-1i32, s))
-                    .or_else(|| rest.strip_prefix('-').map(|s| (1i32, s)))
-                {
-                    // GMT+N means "my time + N = GMT", so offset is -N
-                    // GMT-N means "my time - N = GMT", so offset is +N
-                    if let Ok(hours) = offset_str.parse::<i32>() {
-                        result.tzoffset = Some(sign * hours * 3600);
-                        // Don't set tzname for GMT+N since it's not actually GMT
-                        return result;
+        if last_part_len >= 4 {
+            let upper = to_uppercase(last_part);
+            if starts_with_str(&upper, "GMT") || starts_with_str(&upper, "UTC") {
+                let rest = substr_range(last_part, 3, last_part_len);
+                let rest_bytes = rest.as_bytes();
+                let rest_len = rest_bytes.len();
+
+                if rest_len > 0 {
+                    let first_char = rest_bytes[0];
+                    if first_char == b'+' || first_char == b'-' {
+                        // GMT+N means "my time + N = GMT", so offset is -N
+                        // GMT-N means "my time - N = GMT", so offset is +N
+                        let sign: i32 = if first_char == b'+' { -1 } else { 1 };
+                        let offset_str = substr_range(rest, 1, rest_len);
+                        if let Ok(hours) = parse_str_i32(offset_str) {
+                            result.tzoffset = Some(sign * hours * 3600);
+                            // Don't set tzname for GMT+N since it's not actually GMT
+                            return result;
+                        }
                     }
                 }
             }
@@ -946,18 +1321,44 @@ impl Parser {
     /// Recombine skipped tokens.
     fn recombine_skipped(&self, tokens: &[String], skipped_idxs: &[usize]) -> Vec<String> {
         let mut skipped_tokens: Vec<String> = Vec::new();
-        let mut sorted_idxs: Vec<usize> = skipped_idxs.to_vec();
-        sorted_idxs.sort();
+        let mut sorted_idxs: Vec<usize> = Vec::with_capacity(skipped_idxs.len());
 
-        for (i, &idx) in sorted_idxs.iter().enumerate() {
+        // Copy indices
+        let n = skipped_idxs.len();
+        let mut i = 0usize;
+        while i < n {
+            sorted_idxs.push(skipped_idxs[i]);
+            i += 1;
+        }
+
+        // Sort indices (simple bubble sort for small arrays)
+        let m = sorted_idxs.len();
+        let mut i = 0usize;
+        while i < m {
+            let mut j = 0usize;
+            while j < m - 1 - i {
+                if sorted_idxs[j] > sorted_idxs[j + 1] {
+                    let tmp = sorted_idxs[j];
+                    sorted_idxs[j] = sorted_idxs[j + 1];
+                    sorted_idxs[j + 1] = tmp;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+
+        let mut i = 0usize;
+        while i < m {
+            let idx = sorted_idxs[i];
             if i > 0 && idx == sorted_idxs[i - 1] + 1 {
                 // Adjacent to previous
-                if let Some(last) = skipped_tokens.last_mut() {
-                    last.push_str(&tokens[idx]);
-                }
+                let last_idx = skipped_tokens.len() - 1;
+                let token_str = &tokens[idx];
+                skipped_tokens[last_idx].push_str(token_str);
             } else {
                 skipped_tokens.push(tokens[idx].clone());
             }
+            i += 1;
         }
 
         skipped_tokens

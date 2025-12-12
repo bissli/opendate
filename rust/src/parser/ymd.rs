@@ -3,6 +3,7 @@
 //! Port of dateutil.parser._ymd to Rust.
 
 use super::errors::ParserError;
+use std::collections::{HashMap, HashSet};
 
 /// Type alias for resolved Y/M/D result (year, month, day).
 type YmdResult = Result<(Option<i32>, Option<i32>, Option<i32>), ParserError>;
@@ -35,7 +36,7 @@ impl Ymd {
 
     /// Check if empty.
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty()
+        self.values.len() == 0
     }
 
     /// Check if year is known.
@@ -60,18 +61,26 @@ impl Ymd {
         }
 
         if !self.has_month() {
-            return (1..=31).contains(&value);
+            return value >= 1 && value <= 31;
         }
 
-        let month = self.values[self.mstridx.unwrap()] as u32;
+        let month_idx = match self.mstridx {
+            Some(idx) => idx,
+            None => return false,
+        };
+        let month = self.values[month_idx] as u32;
         let year = if self.has_year() {
-            self.values[self.ystridx.unwrap()]
+            let year_idx = match self.ystridx {
+                Some(idx) => idx,
+                None => return false,
+            };
+            self.values[year_idx]
         } else {
             2000 // Assume leap year if year unknown
         };
 
         let max_day = days_in_month(year, month);
-        (1..=max_day as i32).contains(&value)
+        value >= 1 && value <= max_day as i32
     }
 
     /// Append a value with an optional label.
@@ -126,12 +135,11 @@ impl Ymd {
 
     /// Append a value that is known to be a string token (for century detection).
     pub fn append_str(&mut self, s: &str, label: Option<char>) -> Result<(), ParserError> {
-        let value: i32 = s
-            .parse()
-            .map_err(|_| ParserError::ParseError(format!("Invalid number: {}", s)))?;
+        let value: i32 = parse_i32(s)?;
 
         // Check for century specification based on string length
-        if s.len() > 2 && s.chars().all(|c| c.is_ascii_digit()) {
+        let slen = str_len(s);
+        if slen > 2 && all_ascii_digits(s) {
             self.century_specified = true;
         }
 
@@ -141,7 +149,11 @@ impl Ymd {
     /// Get value at index.
     #[allow(dead_code)]
     pub fn get(&self, idx: usize) -> Option<i32> {
-        self.values.get(idx).copied()
+        if idx < self.values.len() {
+            Some(self.values[idx])
+        } else {
+            None
+        }
     }
 
     /// Resolve the Y/M/D values based on yearfirst and dayfirst settings.
@@ -161,9 +173,16 @@ impl Ymd {
         }
 
         // If we have enough stride indices, use them
-        let strids_count = self.ystridx.is_some() as usize
-            + self.mstridx.is_some() as usize
-            + self.dstridx.is_some() as usize;
+        let mut strids_count = 0usize;
+        if self.ystridx.is_some() {
+            strids_count += 1;
+        }
+        if self.mstridx.is_some() {
+            strids_count += 1;
+        }
+        if self.dstridx.is_some() {
+            strids_count += 1;
+        }
 
         if (len_ymd == strids_count && strids_count > 0) || (len_ymd == 3 && strids_count == 2) {
             return self.resolve_from_stridxs();
@@ -186,40 +205,47 @@ impl Ymd {
                     }
                 }
             }
-            2 if self.mstridx.is_some() => {
-                // Two values with month string
-                let m_idx = self.mstridx.unwrap();
-                let month = self.values[m_idx];
-                let other_idx = if m_idx == 0 { 1 } else { 0 };
-                let other = self.values[other_idx];
-
-                if other > 31 {
-                    Ok((Some(other), Some(month), None))
-                } else {
-                    Ok((None, Some(month), Some(other)))
-                }
-            }
             2 => {
-                // Two numeric values
-                let (v0, v1) = (self.values[0], self.values[1]);
+                if self.mstridx.is_some() {
+                    // Two values with month string
+                    let m_idx = match self.mstridx {
+                        Some(idx) => idx,
+                        None => return Err(ParserError::ParseError("No month index".to_string())),
+                    };
+                    let month = self.values[m_idx];
+                    let other_idx = if m_idx == 0 { 1 } else { 0 };
+                    let other = self.values[other_idx];
 
-                if v0 > 31 {
-                    // 99-01: year-month
-                    Ok((Some(v0), Some(v1), None))
-                } else if v1 > 31 {
-                    // 01-99: month-year
-                    Ok((Some(v1), Some(v0), None))
-                } else if dayfirst && v1 <= 12 {
-                    // 13-01: day-month
-                    Ok((None, Some(v1), Some(v0)))
+                    if other > 31 {
+                        Ok((Some(other), Some(month), None))
+                    } else {
+                        Ok((None, Some(month), Some(other)))
+                    }
                 } else {
-                    // 01-13: month-day
-                    Ok((None, Some(v0), Some(v1)))
+                    // Two numeric values
+                    let v0 = self.values[0];
+                    let v1 = self.values[1];
+
+                    if v0 > 31 {
+                        // 99-01: year-month
+                        Ok((Some(v0), Some(v1), None))
+                    } else if v1 > 31 {
+                        // 01-99: month-year
+                        Ok((Some(v1), Some(v0), None))
+                    } else if dayfirst && v1 <= 12 {
+                        // 13-01: day-month
+                        Ok((None, Some(v1), Some(v0)))
+                    } else {
+                        // 01-13: month-day
+                        Ok((None, Some(v0), Some(v1)))
+                    }
                 }
             }
             3 => {
                 // Three values
-                let (v0, v1, v2) = (self.values[0], self.values[1], self.values[2]);
+                let v0 = self.values[0];
+                let v1 = self.values[1];
+                let v2 = self.values[2];
 
                 if let Some(midx) = self.mstridx {
                     // Month is known
@@ -258,7 +284,11 @@ impl Ymd {
                     }
                 } else {
                     // No month identified - pure numeric disambiguation
-                    if v0 > 31 || self.ystridx == Some(0) || (yearfirst && v1 <= 12 && v2 <= 31) {
+                    let ystridx_is_zero = match self.ystridx {
+                        Some(idx) => idx == 0,
+                        None => false,
+                    };
+                    if v0 > 31 || ystridx_is_zero || (yearfirst && v1 <= 12 && v2 <= 31) {
                         // Year first: 99-01-01
                         if dayfirst && v2 <= 12 {
                             // 99-31-01: year-day-month
@@ -282,7 +312,7 @@ impl Ymd {
 
     /// Resolve using known stride indices.
     fn resolve_from_stridxs(&self) -> YmdResult {
-        let mut strids: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+        let mut strids: HashMap<char, usize> = HashMap::new();
 
         if let Some(idx) = self.ystridx {
             strids.insert('y', idx);
@@ -296,18 +326,52 @@ impl Ymd {
 
         // If we have 3 values and 2 known strides, we can infer the third
         if self.len() == 3 && strids.len() == 2 {
-            let used: std::collections::HashSet<usize> = strids.values().copied().collect();
-            let missing_idx = (0..3).find(|i| !used.contains(i)).unwrap();
-            let missing_key = ['y', 'm', 'd']
-                .into_iter()
-                .find(|k| !strids.contains_key(k))
-                .unwrap();
+            let mut used: HashSet<usize> = HashSet::new();
+            if let Some(&v) = strids.get(&'y') {
+                used.insert(v);
+            }
+            if let Some(&v) = strids.get(&'m') {
+                used.insert(v);
+            }
+            if let Some(&v) = strids.get(&'d') {
+                used.insert(v);
+            }
+
+            let mut missing_idx = 0usize;
+            let mut i = 0usize;
+            while i < 3 {
+                if !used.contains(&i) {
+                    missing_idx = i;
+                    break;
+                }
+                i += 1;
+            }
+
+            let keys = ['y', 'm', 'd'];
+            let mut missing_key = 'y';
+            let mut k = 0usize;
+            while k < 3 {
+                if !strids.contains_key(&keys[k]) {
+                    missing_key = keys[k];
+                    break;
+                }
+                k += 1;
+            }
             strids.insert(missing_key, missing_idx);
         }
 
-        let year = strids.get(&'y').map(|&idx| self.values[idx]);
-        let month = strids.get(&'m').map(|&idx| self.values[idx]);
-        let day = strids.get(&'d').map(|&idx| self.values[idx]);
+        let year = match strids.get(&'y') {
+            Some(&idx) => Some(self.values[idx]),
+            None => None,
+        };
+        let month = match strids.get(&'m') {
+            Some(&idx) => Some(self.values[idx]),
+            None => None,
+        };
+        let day = match strids.get(&'d') {
+            Some(&idx) => Some(self.values[idx]),
+            None => None,
+        };
 
         Ok((year, month, day))
     }
@@ -332,6 +396,57 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 /// Check if a year is a leap year.
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+/// Parse i32 from string.
+fn parse_i32(s: &str) -> Result<i32, ParserError> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return Err(ParserError::ParseError(format!("Invalid number: {}", s)));
+    }
+
+    let mut result: i32 = 0;
+    let mut i = 0usize;
+    let negative = bytes[0] == b'-';
+    if negative || bytes[0] == b'+' {
+        i = 1;
+    }
+
+    while i < n {
+        let c = bytes[i];
+        if c >= b'0' && c <= b'9' {
+            result = result * 10 + (c - b'0') as i32;
+        } else {
+            return Err(ParserError::ParseError(format!("Invalid number: {}", s)));
+        }
+        i += 1;
+    }
+
+    if negative {
+        result = -result;
+    }
+    Ok(result)
+}
+
+/// Get string length.
+fn str_len(s: &str) -> usize {
+    s.as_bytes().len()
+}
+
+/// Check if all characters are ASCII digits.
+fn all_ascii_digits(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i];
+        if c < b'0' || c > b'9' {
+            return false;
+        }
+        i += 1;
+    }
+    true
 }
 
 #[cfg(test)]

@@ -112,41 +112,84 @@ impl ParserInfo {
             century,
         };
 
-        // Initialize lookup tables
-        for &word in Self::JUMP {
-            info.jump.insert(word.to_lowercase(), true);
+        // Initialize jump lookup table
+        let jump_len = Self::JUMP.len();
+        let mut i = 0usize;
+        while i < jump_len {
+            info.jump.insert(to_lowercase(Self::JUMP[i]), true);
+            i += 1;
         }
 
-        for (i, &names) in Self::WEEKDAYS.iter().enumerate() {
-            for &name in names {
-                info.weekdays.insert(name.to_lowercase(), i as u32);
+        // Initialize weekdays lookup table
+        let weekdays_len = Self::WEEKDAYS.len();
+        let mut i = 0usize;
+        while i < weekdays_len {
+            let names = Self::WEEKDAYS[i];
+            let names_len = names.len();
+            let mut j = 0usize;
+            while j < names_len {
+                info.weekdays.insert(to_lowercase(names[j]), i as u32);
+                j += 1;
             }
+            i += 1;
         }
 
-        for (i, &names) in Self::MONTHS.iter().enumerate() {
-            for &name in names {
-                info.months.insert(name.to_lowercase(), (i + 1) as u32);
+        // Initialize months lookup table
+        let months_len = Self::MONTHS.len();
+        let mut i = 0usize;
+        while i < months_len {
+            let names = Self::MONTHS[i];
+            let names_len = names.len();
+            let mut j = 0usize;
+            while j < names_len {
+                info.months.insert(to_lowercase(names[j]), (i + 1) as u32);
+                j += 1;
             }
+            i += 1;
         }
 
-        for (i, &names) in Self::HMS.iter().enumerate() {
-            for &name in names {
-                info.hms.insert(name.to_lowercase(), i as u32);
+        // Initialize HMS lookup table
+        let hms_len = Self::HMS.len();
+        let mut i = 0usize;
+        while i < hms_len {
+            let names = Self::HMS[i];
+            let names_len = names.len();
+            let mut j = 0usize;
+            while j < names_len {
+                info.hms.insert(to_lowercase(names[j]), i as u32);
+                j += 1;
             }
+            i += 1;
         }
 
-        for (i, &names) in Self::AMPM.iter().enumerate() {
-            for &name in names {
-                info.ampm.insert(name.to_lowercase(), i as u32);
+        // Initialize AMPM lookup table
+        let ampm_len = Self::AMPM.len();
+        let mut i = 0usize;
+        while i < ampm_len {
+            let names = Self::AMPM[i];
+            let names_len = names.len();
+            let mut j = 0usize;
+            while j < names_len {
+                info.ampm.insert(to_lowercase(names[j]), i as u32);
+                j += 1;
             }
+            i += 1;
         }
 
-        for &zone in Self::UTCZONE {
-            info.utczone.insert(zone.to_lowercase(), true);
+        // Initialize UTC zone lookup table
+        let utczone_len = Self::UTCZONE.len();
+        let mut i = 0usize;
+        while i < utczone_len {
+            info.utczone.insert(to_lowercase(Self::UTCZONE[i]), true);
+            i += 1;
         }
 
-        for &word in Self::PERTAIN {
-            info.pertain.insert(word.to_lowercase(), true);
+        // Initialize pertain lookup table
+        let pertain_len = Self::PERTAIN.len();
+        let mut i = 0usize;
+        while i < pertain_len {
+            info.pertain.insert(to_lowercase(Self::PERTAIN[i]), true);
+            i += 1;
         }
 
         info
@@ -154,37 +197,49 @@ impl ParserInfo {
 
     /// Check if a token is a jump token (should be skipped).
     pub fn jump(&self, name: &str) -> bool {
-        self.jump.contains_key(&name.to_lowercase())
+        self.jump.contains_key(&to_lowercase(name))
     }
 
     /// Get weekday number (0=Monday, 6=Sunday) from name.
     pub fn weekday(&self, name: &str) -> Option<u32> {
-        self.weekdays.get(&name.to_lowercase()).copied()
+        match self.weekdays.get(&to_lowercase(name)) {
+            Some(&v) => Some(v),
+            None => None,
+        }
     }
 
     /// Get month number (1-12) from name.
     pub fn month(&self, name: &str) -> Option<u32> {
-        self.months.get(&name.to_lowercase()).copied()
+        match self.months.get(&to_lowercase(name)) {
+            Some(&v) => Some(v),
+            None => None,
+        }
     }
 
     /// Get HMS indicator (0=hour, 1=minute, 2=second) from name.
     pub fn hms(&self, name: &str) -> Option<u32> {
-        self.hms.get(&name.to_lowercase()).copied()
+        match self.hms.get(&to_lowercase(name)) {
+            Some(&v) => Some(v),
+            None => None,
+        }
     }
 
     /// Get AM/PM indicator (0=AM, 1=PM) from name.
     pub fn ampm(&self, name: &str) -> Option<u32> {
-        self.ampm.get(&name.to_lowercase()).copied()
+        match self.ampm.get(&to_lowercase(name)) {
+            Some(&v) => Some(v),
+            None => None,
+        }
     }
 
     /// Check if name is a UTC zone name.
     pub fn utczone(&self, name: &str) -> bool {
-        self.utczone.contains_key(&name.to_lowercase())
+        self.utczone.contains_key(&to_lowercase(name))
     }
 
     /// Check if name is a pertain word (like "of").
     pub fn pertain(&self, name: &str) -> bool {
-        self.pertain.contains_key(&name.to_lowercase())
+        self.pertain.contains_key(&to_lowercase(name))
     }
 
     /// Get timezone offset for a name, if defined.
@@ -192,7 +247,10 @@ impl ParserInfo {
         if self.utczone(name) {
             return Some(0);
         }
-        self.tzoffset.get(name).copied()
+        match self.tzoffset.get(name) {
+            Some(&v) => Some(v),
+            None => None,
+        }
     }
 
     /// Add a custom timezone offset.
@@ -252,6 +310,25 @@ impl ParserInfo {
             (offset, name) => (offset, name.map(String::from)),
         }
     }
+}
+
+/// Convert string to lowercase.
+fn to_lowercase(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    let mut result = String::with_capacity(n);
+    let mut i = 0usize;
+    while i < n {
+        let c = bytes[i];
+        // ASCII lowercase conversion
+        if c >= b'A' && c <= b'Z' {
+            result.push((c + 32) as char);
+        } else {
+            result.push(c as char);
+        }
+        i += 1;
+    }
+    result
 }
 
 /// Get current year (simplified, avoids chrono dependency).
@@ -347,7 +424,7 @@ mod tests {
     #[test]
     fn test_convertyear() {
         let info = ParserInfo::default();
-        let current_year = chrono_lite_year();
+        let _current_year = chrono_lite_year();
 
         // Four-digit year unchanged
         assert_eq!(info.convertyear(2024, true), 2024);
