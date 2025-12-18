@@ -41,6 +41,11 @@ DATETIME_METHODS_RETURNING_DATETIME = DATE_METHODS_RETURNING_DATE | {
     'in_tz',
 }
 
+METHODS_RETURNING_INTERVAL = {
+    'diff',
+    '__sub__',
+}
+
 
 def _make_context_preserver(original_method, target_cls):
     """Create a wrapper that preserves _calendar context.
@@ -55,6 +60,33 @@ def _make_context_preserver(original_method, target_cls):
         result = original_method(self, *args, **kwargs)
 
         if isinstance(result, (_pendulum.Date, _pendulum.DateTime)):
+            if not isinstance(result, target_cls):
+                result = target_cls.instance(result)
+            if hasattr(result, '_calendar'):
+                result._calendar = _calendar
+        return result
+    return wrapper
+
+
+def _make_interval_wrapper(original_method, target_cls):
+    """Create a wrapper that converts pendulum.Interval to opendate.Interval.
+
+    Parameters
+        original_method: The original pendulum method
+        target_cls: The target class (Date or DateTime) for context
+    """
+    @wraps(original_method)
+    def wrapper(self, *args, **kwargs):
+        from opendate.interval import Interval
+
+        _calendar: Calendar | None = getattr(self, '_calendar', None)
+        result = original_method(self, *args, **kwargs)
+
+        if isinstance(result, _pendulum.Interval) and not isinstance(result, Interval):
+            result = Interval(result.start, result.end)
+            if _calendar:
+                result._calendar = _calendar
+        elif isinstance(result, (_pendulum.Date, _pendulum.DateTime)):
             if not isinstance(result, target_cls):
                 result = target_cls.instance(result)
             if hasattr(result, '_calendar'):
@@ -86,38 +118,37 @@ class DateContextMeta(type):
     def __new__(mcs, name, bases, namespace, methods_to_wrap=None, **kwargs):
         cls = super().__new__(mcs, name, bases, namespace, **kwargs)
 
+        pendulum_bases = tuple(
+            base for base in bases
+            if issubclass(base, (_pendulum.Date, _pendulum.DateTime))
+        )
+
+        def _is_explicitly_defined(method_name):
+            if method_name in namespace:
+                return True
+            for base in bases:
+                if base in pendulum_bases:
+                    continue
+                if method_name in base.__dict__:
+                    return True
+            return False
+
+        def _wrap_method(method_name, wrapper_fn):
+            for base in pendulum_bases:
+                if hasattr(base, method_name):
+                    original = getattr(base, method_name)
+                    if callable(original):
+                        wrapped = wrapper_fn(original, cls)
+                        setattr(cls, method_name, wrapped)
+                    break
+
         if methods_to_wrap:
-            # Identify which bases are pendulum classes (we want to wrap their methods)
-            pendulum_bases = tuple(
-                base for base in bases
-                if issubclass(base, (_pendulum.Date, _pendulum.DateTime))
-            )
-
             for method_name in methods_to_wrap:
-                # Skip if method is already explicitly defined in namespace
-                if method_name in namespace:
-                    continue
+                if not _is_explicitly_defined(method_name):
+                    _wrap_method(method_name, _make_context_preserver)
 
-                # Check if any NON-pendulum base class has this method defined
-                # (i.e., our mixins like DateBusinessMixin have explicit overrides)
-                explicitly_defined = False
-                for base in bases:
-                    if base in pendulum_bases:
-                        continue  # Skip pendulum classes
-                    if method_name in base.__dict__:
-                        explicitly_defined = True
-                        break
-
-                if explicitly_defined:
-                    continue
-
-                # Find the method in pendulum base classes and wrap it
-                for base in pendulum_bases:
-                    if hasattr(base, method_name):
-                        original = getattr(base, method_name)
-                        if callable(original):
-                            wrapped = _make_context_preserver(original, cls)
-                            setattr(cls, method_name, wrapped)
-                        break
+        for method_name in METHODS_RETURNING_INTERVAL:
+            if not _is_explicitly_defined(method_name):
+                _wrap_method(method_name, _make_interval_wrapper)
 
         return cls

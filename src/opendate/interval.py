@@ -187,7 +187,8 @@ class Interval(_pendulum.Interval):
         """Get number of days in the interval (respects business mode and sign).
         """
         if not self._business:
-            return self._direction * (self._end - self._start).days
+            # Use toordinal to avoid recursion with wrapped __sub__
+            return self._direction * (self._end.toordinal() - self._start.toordinal())
         return self._direction * len(tuple(self.range('days'))) - self._direction
 
     @property
@@ -251,7 +252,9 @@ class Interval(_pendulum.Interval):
 
         def average_year_length(date1, date2):
             """Algorithm for average year length"""
-            days = (_date.Date(date2.year + 1, 1, 1) - _date.Date(date1.year, 1, 1)).days
+            end_date = _date.Date(date2.year + 1, 1, 1)
+            start_date = _date.Date(date1.year, 1, 1)
+            days = end_date.toordinal() - start_date.toordinal()
             years = (date2.year - date1.year) + 1
             return days / years
 
@@ -301,6 +304,10 @@ class Interval(_pendulum.Interval):
                 - (date1day + date1month * 30 + date1year * 360)
             return daydiff360 / 360
 
+        def _days_between(date1, date2):
+            """Compute days between dates using ordinal to avoid recursion."""
+            return date2.toordinal() - date1.toordinal()
+
         def basis1(date1, date2):
             if appears_lte_one_year(date1, date2):
                 if date1.year == date2.year and calendar.isleap(date1.year):
@@ -309,14 +316,14 @@ class Interval(_pendulum.Interval):
                     year_length = 366.0
                 else:
                     year_length = 365.0
-                return (date2 - date1).days / year_length
-            return (date2 - date1).days / average_year_length(date1, date2)
+                return _days_between(date1, date2) / year_length
+            return _days_between(date1, date2) / average_year_length(date1, date2)
 
         def basis2(date1, date2):
-            return (date2 - date1).days / 360.0
+            return _days_between(date1, date2) / 360.0
 
         def basis3(date1, date2):
-            return (date2 - date1).days / 365.0
+            return _days_between(date1, date2) / 365.0
 
         def basis4(date1, date2):
             # change day-of-month for purposes of calculation.
