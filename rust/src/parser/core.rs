@@ -430,7 +430,10 @@ impl Parser {
         // Find fraction separator position (. or ,)
         let delims: [char; 2] = ['.', ','];
         let (digits_part, frac_part) = if let Some(pos) = find_any_char(s, &delims) {
-            (substr_range(s, 0, pos), Some(substr_range(s, pos + 1, s.len())))
+            (
+                substr_range(s, 0, pos),
+                Some(substr_range(s, pos + 1, s.len())),
+            )
         } else {
             (s, None)
         };

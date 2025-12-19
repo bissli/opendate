@@ -177,7 +177,10 @@ impl Tokenizer {
         // Handle compound tokens with dots
         let dot_count = count_char(&token, '.');
         if (state == State::WordDot || state == State::NumberDot)
-            && (seen_letters || dot_count > 1 || ends_with_char(&token, '.') || ends_with_char(&token, ','))
+            && (seen_letters
+                || dot_count > 1
+                || ends_with_char(&token, '.')
+                || ends_with_char(&token, ','))
         {
             // Clone before splitting to avoid borrow issues
             let original = token.clone();
