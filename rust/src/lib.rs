@@ -4,9 +4,11 @@
 #![allow(clippy::redundant_pattern_matching)]
 #![allow(clippy::manual_map)]
 #![allow(clippy::collapsible_else_if)]
+#![allow(clippy::collapsible_if)]
 #![allow(clippy::nonminimal_bool)]
 #![allow(clippy::manual_swap)]
 #![allow(clippy::while_let_loop)]
+#![allow(clippy::needless_as_bytes)]
 
 mod calendar;
 mod parser;
