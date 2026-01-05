@@ -105,6 +105,7 @@ def test_months_cross_year():
     (2, 42.8306),   # Actual/360
     (3, 42.2438),   # Actual/365
     (4, 42.2194),   # European 30/360
+    (5, 42.2149),   # Actual/365.25
 ])
 def test_yearfrac_basis(basis, expected):
     """Test yearfrac with different basis values."""

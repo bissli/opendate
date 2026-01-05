@@ -245,6 +245,7 @@ class Interval(_pendulum.Interval):
                 2 = Actual/360
                 3 = Actual/365
                 4 = European 30/360
+                5 = Actual/365.25
 
         Note: Excel has a known leap year bug for year 1900 which is intentionally
         replicated for compatibility (1900 is treated as a leap year even though it wasn't).
@@ -338,6 +339,9 @@ class Interval(_pendulum.Interval):
                 (date1day + date1month * 30 + date1year * 360)
             return daydiff360 / 360
 
+        def basis5(date1, date2):
+            return _days_between(date1, date2) / 365.25
+
         if self._start == self._end:
             return 0.0
         if basis == 0:
@@ -350,8 +354,10 @@ class Interval(_pendulum.Interval):
             return basis3(self._start, self._end) * self._direction
         if basis == 4:
             return basis4(self._start, self._end) * self._direction
+        if basis == 5:
+            return basis5(self._start, self._end) * self._direction
 
-        raise ValueError(f'Basis range [0, 4]. Unknown basis {basis}.')
+        raise ValueError(f'Basis range [0, 5]. Unknown basis {basis}.')
 
     @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:
