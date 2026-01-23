@@ -124,7 +124,7 @@ def test_now():
     DateTime.now()  # basic check
 
 
-@mock.patch('date.DateTime.now')
+@mock.patch('opendate.DateTime.now')
 def test_today(mock):
     mock.return_value = DateTime(2020, 1, 1, 12, 30, tzinfo=UTC)
     D = DateTime.today()
