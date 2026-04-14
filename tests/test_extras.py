@@ -1,10 +1,9 @@
 from unittest.mock import patch
 
 import pytest
-
 from opendate import EST, Date, DateTime, get_calendar
-from opendate.extras import create_ics, is_business_day, is_within_business_hours
-from opendate.extras import overlap_days
+from opendate.extras import create_ics, is_business_day
+from opendate.extras import is_within_business_hours, overlap_days
 
 
 def test_is_within_business_hours():
@@ -117,6 +116,13 @@ def test_create_ics_with_date():
     assert 'DTEND;TZID=America/New_York:20240115T000000' in ics_content
     assert 'SUMMARY:All Day Event' in ics_content
     assert 'LOCATION:Virtual' in ics_content
+
+
+def test_is_within_business_hours_has_no_datetime_param():
+    """is_within_business_hours accepts only calendar, no datetime parameter."""
+    import inspect
+    sig = inspect.signature(is_within_business_hours)
+    assert list(sig.parameters.keys()) == ['calendar']
 
 
 if __name__ == '__main__':

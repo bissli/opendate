@@ -3,7 +3,6 @@ import datetime
 import numpy as np
 import pandas as pd
 import pytest
-
 from opendate import EST, UTC, Date, DateTime, Interval, get_calendar
 
 
@@ -869,6 +868,21 @@ def test_interval_init_decorator_chain():
     assert interval2.start.month == 2
     assert interval2.start.day == 1
     assert interval2.end.day == 15
+
+
+def test_interval_business_days_across_holiday():
+    """Business days count across Good Friday 2024."""
+    assert Interval(Date(2024, 3, 28), Date(2024, 4, 1)).b.days == 1
+
+
+def test_interval_business_days_same_day():
+    """Same-day interval has 0 business days."""
+    assert Interval(Date(2024, 4, 1), Date(2024, 4, 1)).b.days == 0
+
+
+def test_interval_business_days_weekend_end():
+    """Business days when end is weekend (not a business day)."""
+    assert Interval(Date(2024, 4, 5), Date(2024, 4, 6)).b.days == 1
 
 
 if __name__ == '__main__':

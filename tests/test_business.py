@@ -1,5 +1,5 @@
 import pytest
-from opendate import Date, DateTime, WeekDay
+from opendate import UTC, Date, DateTime, WeekDay
 from opendate.constants import MAX_YEAR, MIN_YEAR
 
 
@@ -346,6 +346,41 @@ def test_min_year_plus_ten_decade_boundary():
     while not prev_bd.is_business_day():
         prev_bd = prev_bd.subtract(days=1)
     assert first_bd.b.subtract(days=1) == prev_bd
+
+
+def test_business_add_preserves_sub_day_kwargs():
+    """b.add(days=1, hours=2) should apply both business days and hours."""
+    dt = DateTime(2024, 4, 1, 9, 0, 0, tzinfo=UTC)
+    result = dt.b.add(days=1, hours=2)
+    assert result == DateTime(2024, 4, 2, 11, 0, 0, tzinfo=UTC)
+
+
+def test_business_subtract_preserves_sub_day_kwargs():
+    """b.subtract(days=1, hours=2) should apply both business days and hours."""
+    dt = DateTime(2024, 4, 2, 14, 0, 0, tzinfo=UTC)
+    result = dt.b.subtract(days=1, hours=2)
+    assert result == DateTime(2024, 4, 1, 12, 0, 0, tzinfo=UTC)
+
+
+def test_is_business_day_preserves_calendar_on_datetime():
+    """DateTime.calendar('LSE').is_business_day() should use LSE, not default NYSE."""
+    dt = DateTime(2024, 4, 1, 12, 0, 0, tzinfo=UTC)
+    assert dt.calendar('LSE').is_business_day() is False
+    assert dt.calendar('NYSE').is_business_day() is True
+
+
+def test_business_hours_preserves_calendar_on_datetime():
+    """DateTime.calendar('LSE').business_hours() should use LSE hours, not NYSE."""
+    dt = DateTime(2024, 4, 2, 12, 0, 0, tzinfo=UTC)
+    nyse_hours = dt.calendar('NYSE').business_hours()
+    lse_hours = dt.calendar('LSE').business_hours()
+    assert nyse_hours != lse_hours
+
+
+def test_is_business_day_uses_wallclock_date():
+    """is_business_day uses wall-clock date, not calendar-tz date."""
+    dt = DateTime(2024, 4, 6, 2, 0, 0, tzinfo=UTC)
+    assert dt.is_business_day() is False
 
 
 if __name__ == '__main__':

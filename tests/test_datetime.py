@@ -527,5 +527,24 @@ def test_datetime_instance_with_numpy_datetime64_various_formats():
     assert dt3.microsecond == 123456
 
 
+def test_instance_injects_utc_on_naive_datetime():
+    """DateTime.instance() silently attaches UTC to naive datetimes."""
+    naive = datetime.datetime(2024, 1, 1, 12, 30, 0)
+    assert naive.tzinfo is None
+    result = DateTime.instance(naive)
+    assert result.tzinfo is not None
+
+
+def test_store_calendar_handles_none_return():
+    """store_calendar returns None when decorated fn returns None."""
+    from opendate.decorators import store_calendar
+
+    @store_calendar
+    def returns_none(self):
+        return None
+
+    assert returns_none(Date(2024, 1, 1)) is None
+
+
 if __name__ == '__main__':
     pytest.main([__file__])

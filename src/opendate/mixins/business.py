@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from opendate.calendars import get_calendar, get_default_calendar
 from opendate.constants import MAX_YEAR, MIN_YEAR, WeekDay
-from opendate.decorators import expect_date, store_calendar
+from opendate.decorators import store_calendar
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -108,14 +108,19 @@ class DateBusinessMixin:
         _business = self._business
         self._business = False
         if _business:
-            if days == 0:
+            if days == 0 and not kwargs:
                 return self._business_or_next()
+            if days == 0 and kwargs:
+                return self._business_or_next().add(**kwargs)
             if days < 0:
-                return self.business().subtract(days=abs(days))
+                return self.business().subtract(days=abs(days), **kwargs)
             if self._is_out_of_range():
                 return self
             result = self._add_business_days(days)
-            return result if result is not None else self
+            result = result if result is not None else self
+            if kwargs:
+                return result.add(**kwargs)
+            return result
         return super().add(years, months, weeks, days, **kwargs)
 
     @store_calendar
@@ -127,14 +132,19 @@ class DateBusinessMixin:
         _business = self._business
         self._business = False
         if _business:
-            if days == 0:
+            if days == 0 and not kwargs:
                 return self._business_or_previous()
+            if days == 0 and kwargs:
+                return self._business_or_previous().subtract(**kwargs)
             if days < 0:
-                return self.business().add(days=abs(days))
+                return self.business().add(days=abs(days), **kwargs)
             if self._is_out_of_range():
                 return self
             result = self._add_business_days(-days)
-            return result if result is not None else self
+            result = result if result is not None else self
+            if kwargs:
+                return result.subtract(**kwargs)
+            return result
         kwargs = {k: -1*v for k, v in kwargs.items()}
         return super().add(-years, -months, -weeks, -days, **kwargs)
 
@@ -210,30 +220,37 @@ class DateBusinessMixin:
             self = self._business_or_next()
         return self
 
-    @expect_date
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the calendar.
 
         Returns False for dates outside valid calendar range (1900-2100).
         """
-        if self._is_out_of_range():
+        import opendate
+        obj = self
+        if isinstance(self, opendate.DateTime):
+            obj = opendate.Date(self.year, self.month, self.day)
+            obj._calendar = self._calendar
+        if obj._is_out_of_range():
             return False
-        cal = self._active_calendar._get_calendar(self)
+        cal = obj._active_calendar._get_calendar(obj)
         if cal is None:
             return False
-        return cal.is_business_day(self.toordinal())
+        return cal.is_business_day(obj.toordinal())
 
-    # Alias for backwards compatibility
     business_open = is_business_day
 
-    @expect_date
     def business_hours(self) -> tuple[DateTime, DateTime]:
         """Get market open and close times for this date.
 
         Returns (None, None) if not a business day.
         """
-        return self._active_calendar.business_hours(self, self)\
-            .get(self, (None, None))
+        import opendate
+        obj = self
+        if isinstance(self, opendate.DateTime):
+            obj = opendate.Date(self.year, self.month, self.day)
+            obj._calendar = self._calendar
+        return obj._active_calendar.business_hours(obj, obj)\
+            .get(obj, (None, None))
 
     def _add_business_days(self, days: int) -> Self | None:
         """Add business days using Rust calendar.

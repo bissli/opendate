@@ -449,6 +449,27 @@ def test_lookback():
     assert test_date.b.lookback('last') == Date(2018, 12, 6)
     assert test_date.b.lookback('month') == Date(2018, 11, 7)
 
+    # All units work in business mode (fixed eager evaluation bug)
+    d = Date(2024, 4, 5)
+    assert d.b.lookback('day') == Date(2024, 4, 4)
+    assert d.b.lookback('last') == Date(2024, 4, 4)
+    assert d.b.lookback('week') == Date(2024, 3, 28)
+    assert d.b.lookback('month') == Date(2024, 3, 5)
+    assert d.b.lookback('quarter') == Date(2024, 1, 5)
+    assert d.b.lookback('year') == Date(2023, 4, 5)
+
+
+def test_lookback_business_snaps_to_previous():
+    """Lookback in business mode snaps past holidays to previous business day."""
+    d = Date(2024, 4, 29)
+    result = d.b.lookback('month')
+    assert result == Date(2024, 3, 28)
+
+
+def test_lookback_invalid_unit_returns_none():
+    """Lookback with unrecognized unit returns None."""
+    assert Date(2024, 1, 1).lookback('decade') is None
+
 
 @pytest.mark.parametrize(('year', 'month', 'expected'), [
     (2022, 6, Date(2022, 6, 15)),

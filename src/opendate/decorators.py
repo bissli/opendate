@@ -8,7 +8,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import pendulum as _pendulum
-
 from opendate.constants import LCL, UTC
 from opendate.helpers import isdateish
 
@@ -115,7 +114,8 @@ def store_calendar(func=None, *, typ=None):
     def wrapper(self, *args, **kwargs):
         _calendar = self._calendar
         d = type_class(typ, self).instance(func(self, *args, **kwargs))
-        d._calendar = _calendar
+        if d is not None:
+            d._calendar = _calendar
         return d
     if func is None:
         return partial(store_calendar, typ=typ)
