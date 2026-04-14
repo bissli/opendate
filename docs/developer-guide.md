@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- **Python 3.9+**
+- **Python 3.10+**
 - **Rust** - Install via [rustup](https://rustup.rs/):
   ```bash
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -28,15 +28,15 @@ make test     # Run tests
 
 ## Makefile Commands
 
-| Command | Description |
-|---------|-------------|
-| `make dev` | Install dependencies and build native extension |
-| `make build` | Build native extension only |
-| `make test` | Run all tests |
-| `make lint` | Run all linters (Python + Rust) |
-| `make lint-rust` | Check Rust formatting and clippy |
-| `make format-rust` | Auto-format Rust code |
-| `make clean` | Remove build artifacts |
+| Command            | Description                                     |
+| ------------------ | ----------------------------------------------- |
+| `make dev`         | Install dependencies and build native extension |
+| `make build`       | Build native extension only                     |
+| `make test`        | Run all tests                                   |
+| `make lint`        | Run all linters (Python + Rust)                 |
+| `make lint-rust`   | Check Rust formatting and clippy                |
+| `make format-rust` | Auto-format Rust code                           |
+| `make clean`       | Remove build artifacts                          |
 
 ## Setting Up the Development Environment
 
@@ -121,7 +121,7 @@ ls rust/target/wheels/
 ```
 
 > **Note:** For releases, GitHub Actions automatically builds wheels for all platforms
-> (Linux, macOS, Windows) and Python versions (3.9-3.13). Do not manually upload
+> (Linux, macOS, Windows) and Python versions (3.10-3.13). Do not manually upload
 > wheels to PyPI—use the release process below instead.
 
 ### Clean Build Artifacts
@@ -178,7 +178,7 @@ This automatically:
      - Linux (x86_64, aarch64) - glibc and musl
      - macOS (x86_64, Apple Silicon)
      - Windows (x86_64)
-   - Builds for Python 3.9, 3.10, 3.11, 3.12, 3.13
+   - Builds for Python 3.10, 3.11, 3.12, 3.13
    - Creates a GitHub Release with all wheel artifacts
    - Publishes to PyPI
 
