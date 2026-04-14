@@ -1,5 +1,6 @@
 import pytest
 from opendate import Date, DateTime, WeekDay
+from opendate.constants import MAX_YEAR, MIN_YEAR
 
 
 def test_date_business_date_or_next():
@@ -247,6 +248,104 @@ def test_negative_days_custom_calendar():
     assert Date(2024, 4, 2).calendar('NYSE').b.add(days=-1) == Date(2024, 4, 1)
     assert Date(2024, 4, 2).calendar('LSE').b.add(days=-2) == Date(2024, 3, 27)
     assert Date(2024, 4, 2).calendar('NYSE').b.add(days=-2) == Date(2024, 3, 28)
+
+
+def test_subtract_from_holiday_on_decade_boundary():
+    """Subtract 1 business day from New Year's Day at decade boundaries.
+
+    Jan 1 is always a holiday. Subtracting should cross into the prior
+    decade and return the last business day of the previous year.
+    """
+    assert Date(2020, 1, 1).b.subtract(days=1) == Date(2019, 12, 31)
+    assert Date(2010, 1, 1).b.subtract(days=1) == Date(2009, 12, 31)
+    assert Date(2000, 1, 1).b.subtract(days=1) == Date(1999, 12, 31)
+
+
+def test_subtract_from_business_day_near_decade_boundary():
+    """Subtract business days from first business days of a decade.
+
+    The result crosses into the prior decade's calendar range.
+    """
+    assert Date(2020, 1, 2).b.subtract(days=1) == Date(2019, 12, 31)
+    assert Date(2020, 1, 2).b.subtract(days=2) == Date(2019, 12, 30)
+    assert Date(2020, 1, 3).b.subtract(days=3) == Date(2019, 12, 30)
+
+
+def test_add_forward_across_decade_boundary():
+    """Add business days forward from last business day of a decade.
+
+    The result lands in the next decade's calendar range.
+    """
+    assert Date(2029, 12, 31).b.add(days=1) == Date(2030, 1, 2)
+    assert Date(2019, 12, 31).b.add(days=1) == Date(2020, 1, 2)
+    assert Date(2009, 12, 31).b.add(days=1) == Date(2010, 1, 4)
+
+
+def test_multiday_spanning_decade_boundary():
+    """Multi-day business day operations that span a decade boundary."""
+    assert Date(2020, 1, 6).b.subtract(days=5) == Date(2019, 12, 27)
+    assert Date(2019, 12, 27).b.add(days=5) == Date(2020, 1, 6)
+
+
+@pytest.mark.parametrize(('start', 'n'), [
+    (Date(2020, 1, 2), 1),
+    (Date(2020, 1, 2), 3),
+    (Date(2020, 1, 3), 5),
+    (Date(2010, 1, 4), 3),
+    ])
+def test_negative_days_equivalence_at_decade_boundary(start, n):
+    """Negative-days equivalence across decade boundaries."""
+    assert start.b.add(days=-n) == start.b.subtract(days=n)
+    assert start.b.subtract(days=-n) == start.b.add(days=n)
+
+
+def test_snap_backward_at_decade_boundary():
+    """subtract(days=0) snaps to previous business day across decade boundary.
+
+    When a holiday falls on Jan 1 of a decade-start year, snapping backward
+    must cross into the prior decade to find the previous business day.
+    """
+    assert Date(2020, 1, 1).b.subtract(days=0) == Date(2019, 12, 31)
+    assert Date(2010, 1, 1).b.subtract(days=0) == Date(2009, 12, 31)
+
+
+def test_custom_calendar_at_decade_boundary():
+    """LSE calendar subtract across decade boundary."""
+    assert (
+        Date(2020, 1, 2).calendar('LSE').b.subtract(days=1)
+        == Date(2019, 12, 31)
+        )
+
+
+def test_max_year_decade_boundary():
+    """Business day subtract across the decade boundary nearest MAX_YEAR.
+
+    The first business day of the MAX_YEAR decade should be able to
+    subtract back into the prior year.
+    """
+    first_bd = Date(MAX_YEAR, 1, 1)
+    while not first_bd.is_business_day():
+        first_bd = first_bd.add(days=1)
+    prev_bd = Date(MAX_YEAR - 1, 12, 31)
+    while not prev_bd.is_business_day():
+        prev_bd = prev_bd.subtract(days=1)
+    assert first_bd.b.subtract(days=1) == prev_bd
+
+
+def test_min_year_plus_ten_decade_boundary():
+    """Business day subtract across the MIN_YEAR+10 decade boundary.
+
+    The first business day of the second decade should subtract back
+    into the first decade.
+    """
+    boundary_year = MIN_YEAR + 10
+    first_bd = Date(boundary_year, 1, 1)
+    while not first_bd.is_business_day():
+        first_bd = first_bd.add(days=1)
+    prev_bd = Date(boundary_year - 1, 12, 31)
+    while not prev_bd.is_business_day():
+        prev_bd = prev_bd.subtract(days=1)
+    assert first_bd.b.subtract(days=1) == prev_bd
 
 
 if __name__ == '__main__':

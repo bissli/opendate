@@ -4,10 +4,9 @@ import datetime as _datetime
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
 
+import opendate as _date
 import pandas as pd
 import pandas_market_calendars as mcal
-
-import opendate as _date
 from opendate.constants import MAX_YEAR, UTC, Timezone
 from opendate.helpers import _BusinessCalendar, _get_decade_bounds
 
@@ -84,14 +83,10 @@ class ExchangeCalendar(Calendar):
         if begdate.year > MAX_YEAR:
             return set()
 
-        decade_start = _datetime.date(begdate.year // 10 * 10, 1, 1)
-        next_decade_year = (enddate.year // 10 + 1) * 10
-        if next_decade_year > MAX_YEAR:
-            decade_end = _datetime.date(MAX_YEAR, 12, 31)
-        else:
-            decade_end = _datetime.date(next_decade_year, 1, 1)
-
-        return self._get_business_days_cached(decade_start, decade_end)
+        bounds = _get_decade_bounds(begdate.year)
+        if bounds is None:
+            return set()
+        return self._get_business_days_cached(*bounds)
 
     def _get_business_days_cached(self, begdate: _datetime.date, enddate: _datetime.date) -> set:
         """Internal method to load and cache business days by decade.
