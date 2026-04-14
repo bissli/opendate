@@ -1,3 +1,4 @@
+import pytest
 from opendate import Date, DateTime, WeekDay
 
 
@@ -188,6 +189,64 @@ def test_previous_thursday_snaps_backward_when_landing_on_thanksgiving():
 
     # Should be Nov 27 (Wednesday) - snap backward from holiday
     assert result == Date(2024, 11, 27), f'Expected Nov 27, got {result}'
+
+
+def test_negative_add_business():
+    """Test b.add(days=-N) from weekday, crossing holidays."""
+    # 2024-03-29 is Good Friday (closed)
+    assert Date(2024, 4, 1).b.add(days=-1) == Date(2024, 3, 28)
+    assert Date(2024, 4, 1).b.add(days=-2) == Date(2024, 3, 27)
+    assert Date(2024, 4, 1).b.add(days=-3) == Date(2024, 3, 26)
+
+    # 2018-12-05 closed for Bush funeral
+    assert Date(2018, 12, 6).b.add(days=-2) == Date(2018, 12, 3)
+
+
+def test_negative_subtract_business():
+    """Test b.subtract(days=-N) from weekday goes forward."""
+    assert Date(2024, 4, 1).b.subtract(days=-1) == Date(2024, 4, 2)
+    assert Date(2024, 4, 1).b.subtract(days=-3) == Date(2024, 4, 4)
+    assert Date(2024, 4, 1).b.subtract(days=-5) == Date(2024, 4, 8)
+
+
+def test_negative_days_from_non_business_day():
+    """Test negative days starting from weekend or holiday."""
+    # Saturday 3/30, Good Friday 3/29 closed
+    assert Date(2024, 3, 30).b.add(days=-1) == Date(2024, 3, 28)
+    assert Date(2024, 3, 31).b.add(days=-1) == Date(2024, 3, 28)
+    assert Date(2024, 3, 30).b.add(days=-3) == Date(2024, 3, 26)
+
+    # subtract(days=-N) from Sunday goes forward
+    assert Date(2024, 3, 31).b.subtract(days=-1) == Date(2024, 4, 1)
+
+    # from Good Friday itself
+    assert Date(2024, 3, 29).b.add(days=-1) == Date(2024, 3, 28)
+    assert Date(2024, 3, 29).b.add(days=-3) == Date(2024, 3, 26)
+
+
+@pytest.mark.parametrize(('start', 'n'), [
+    (Date(2024, 4, 10), 1),
+    (Date(2024, 4, 10), 3),
+    (Date(2024, 4, 10), 5),
+    (Date(2024, 4, 10), 10),
+    (Date(2024, 4, 1), 1),
+    (Date(2024, 4, 1), 5),
+    (Date(2018, 12, 7), 5),
+    (Date(2021, 11, 24), 5),
+])
+def test_negative_days_equivalence(start, n):
+    """Test b.add(days=-N) == b.subtract(days=N) and vice versa."""
+    assert start.b.add(days=-n) == start.b.subtract(days=n)
+    assert start.b.subtract(days=-n) == start.b.add(days=n)
+
+
+def test_negative_days_custom_calendar():
+    """Test negative days with LSE vs NYSE (Easter Monday divergence)."""
+    # Easter Monday 2024-04-01: closed on LSE, open on NYSE
+    assert Date(2024, 4, 2).calendar('LSE').b.add(days=-1) == Date(2024, 3, 28)
+    assert Date(2024, 4, 2).calendar('NYSE').b.add(days=-1) == Date(2024, 4, 1)
+    assert Date(2024, 4, 2).calendar('LSE').b.add(days=-2) == Date(2024, 3, 27)
+    assert Date(2024, 4, 2).calendar('NYSE').b.add(days=-2) == Date(2024, 3, 28)
 
 
 if __name__ == '__main__':

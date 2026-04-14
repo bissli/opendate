@@ -8,10 +8,9 @@ import numpy as np
 import pandas as pd
 import pendulum
 import pytest
+from opendate import EST, UTC, Date, DateTime, Time, expect_datetime
+from opendate import get_calendar, now
 from pendulum.tz import Timezone
-
-from opendate import EST, UTC, Date, DateTime, Time, expect_datetime, get_calendar
-from opendate import now
 
 
 def test_add():
@@ -52,6 +51,38 @@ def test_business():
     d = DateTime(2024, 11, 4).start_of('day')  # Monday
     assert d.business().subtract(days=1) == DateTime(2024, 11, 1)
     assert d.subtract(days=1) == DateTime(2024, 11, 3)
+
+
+def test_negative_days_calendar():
+    """Test DateTime add/subtract with negative days in calendar mode."""
+    d = DateTime(2024, 4, 1, 12, 30, tzinfo=UTC)
+    assert d.add(days=-3) == DateTime(2024, 3, 29, 12, 30, tzinfo=UTC)
+    assert d.subtract(days=-3) == DateTime(2024, 4, 4, 12, 30, tzinfo=UTC)
+
+    # year boundary with time preservation
+    d2 = DateTime(2024, 1, 1, 8, 0, tzinfo=UTC)
+    assert d2.add(days=-1) == DateTime(2023, 12, 31, 8, 0, tzinfo=UTC)
+
+
+def test_negative_days_business():
+    """Test DateTime add/subtract with negative business days and time preservation."""
+    d = DateTime(2024, 4, 1, 14, 30, 45, tzinfo=UTC)
+
+    # negative add goes backward, skips Good Friday
+    assert d.b.add(days=-1) == DateTime(2024, 3, 28, 14, 30, 45, tzinfo=UTC)
+    assert d.b.add(days=-3) == DateTime(2024, 3, 26, 14, 30, 45, tzinfo=UTC)
+
+    # negative subtract goes forward
+    assert d.b.subtract(days=-1) == DateTime(2024, 4, 2, 14, 30, 45, tzinfo=UTC)
+
+    # equivalence
+    assert d.b.add(days=-5) == d.b.subtract(days=5)
+    assert d.b.subtract(days=-3) == d.b.add(days=3)
+
+    # from weekend
+    d_sat = DateTime(2024, 3, 30, 9, 0, tzinfo=UTC)
+    assert d_sat.b.add(days=-1) == DateTime(2024, 3, 28, 9, 0, tzinfo=UTC)
+    assert d_sat.b.add(days=-3) == DateTime(2024, 3, 26, 9, 0, tzinfo=UTC)
 
 
 def test_combine():

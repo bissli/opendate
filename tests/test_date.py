@@ -241,6 +241,28 @@ def test_subtract():
     assert d == Date(2021, 11, 17)
 
 
+def test_negative_days_calendar():
+    """Test add/subtract with negative days in calendar (non-business) mode."""
+    # add(days=-N) goes backward
+    assert Date(2024, 4, 1).add(days=-1) == Date(2024, 3, 31)
+    assert Date(2024, 4, 1).add(days=-3) == Date(2024, 3, 29)
+    assert Date(2024, 1, 1).add(days=-1) == Date(2023, 12, 31)
+
+    # subtract(days=-N) goes forward
+    assert Date(2024, 4, 1).subtract(days=-1) == Date(2024, 4, 2)
+    assert Date(2024, 12, 31).subtract(days=-1) == Date(2025, 1, 1)
+
+    # equivalence: add(days=-N) == subtract(days=N)
+    assert Date(2024, 6, 15).add(days=-10) == Date(2024, 6, 15).subtract(days=10)
+    assert Date(2024, 6, 15).subtract(days=-10) == Date(2024, 6, 15).add(days=10)
+
+    # negative with other units
+    assert Date(2024, 4, 15).add(months=-1) == Date(2024, 3, 15)
+    assert Date(2024, 4, 15).subtract(months=-1) == Date(2024, 5, 15)
+    assert Date(2024, 4, 15).add(weeks=-2) == Date(2024, 4, 1)
+    assert Date(2024, 4, 15).subtract(weeks=-2) == Date(2024, 4, 29)
+
+
 def test_set_calendar():
     """Test setting calendar on Date."""
     d = Date(2000, 1, 1).calendar('NYSE').b.add(days=10)
