@@ -6,9 +6,8 @@ import sys
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
-import pendulum as _pendulum
-
 import opendate as _date
+import pendulum as _pendulum
 from opendate.decorators import expect_date_or_datetime
 from opendate.decorators import normalize_date_datetime_pairs, reset_business
 
@@ -189,7 +188,8 @@ class Interval(_pendulum.Interval):
         if not self._business:
             # Use toordinal to avoid recursion with wrapped __sub__
             return self._direction * (self._end.toordinal() - self._start.toordinal())
-        return self._direction * len(tuple(self.range('days'))) - self._direction
+        brange = tuple(self.range('days'))
+        return self._direction * (len(brange) - int(self._end.is_business_day()))
 
     @property
     def months(self) -> float:

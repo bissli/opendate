@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 import pendulum as _pendulum
-
 from opendate.constants import _IS_WINDOWS, DATEMATCH, LCL, UTC
 from opendate.helpers import _rust_parse_datetime
 from opendate.metaclass import DATE_METHODS_RETURNING_DATE, DateContextMeta
@@ -236,20 +235,20 @@ class Date(
         Supported units: 'last'/'day' (1 day), 'week', 'month', 'quarter', 'year'.
         Respects business day mode if enabled.
         """
-        def _lookback(years=0, months=0, weeks=0, days=0):
-            _business = self._business
-            self._business = False
-            d = self\
-                .subtract(years=years, months=months, weeks=weeks, days=days)
-            if _business:
-                return d._business_or_previous()
-            return d
-
-        return {
-            'day': _lookback(days=1),
-            'last': _lookback(days=1),
-            'week': _lookback(weeks=1),
-            'month': _lookback(months=1),
-            'quarter': _lookback(months=3),
-            'year': _lookback(years=1),
-            }.get(unit)
+        _units = {
+            'day': {'days': 1},
+            'last': {'days': 1},
+            'week': {'weeks': 1},
+            'month': {'months': 1},
+            'quarter': {'months': 3},
+            'year': {'years': 1},
+            }
+        kwargs = _units.get(unit)
+        if kwargs is None:
+            return None
+        _business = self._business
+        self._business = False
+        d = self.subtract(**kwargs)
+        if _business:
+            return d._business_or_previous()
+        return d
