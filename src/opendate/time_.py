@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from opendate.constants import UTC
+from opendate.constants import PENDULUM_TIMEZONES, UTC, normalize_timezone
 from opendate.decorators import prefer_utc_timezone
 from opendate.helpers import _rust_parse_time
 
@@ -30,6 +30,47 @@ class Time(_pendulum.Time):
     Unlike pendulum.Time, this class has more lenient parsing capabilities
     and different timezone defaults.
     """
+
+    def __new__(cls, *args, **kwargs) -> Self:
+        """Build the instance, rebuilding a tzinfo pendulum cannot read.
+
+        Returns
+        -------
+        Time
+            The new instance, carrying a pendulum timezone wherever the
+            caller supplied any timezone at all.
+
+        See Also
+        --------
+        opendate.constants.normalize_timezone : the rebuild itself
+
+        Notes
+        -----
+        - Every construction path lands here, so one timezone class
+          serves the whole type. A `timetz` column read back through a
+          database driver is the shape this catches.
+        - No reference instant is passed, and none could be: a time
+          carries no date to read a zone at. A named zone therefore
+          still answers None from `utcoffset()`, exactly as it did
+          before - a time is only comparable where its zone is fixed.
+        - A str is taken as a zone name, which the stdlib rejects, and
+          lands in that same named-zone case.
+        """
+        if len(args) > 4:
+            tzinfo = args[4]
+        elif kwargs:
+            tzinfo = kwargs.get('tzinfo')
+        else:
+            return super().__new__(cls, *args)
+        if tzinfo is None or isinstance(tzinfo, PENDULUM_TIMEZONES):
+            return super().__new__(cls, *args, **kwargs)
+
+        settled = normalize_timezone(tzinfo)
+        if 'tzinfo' in kwargs:
+            kwargs['tzinfo'] = settled
+        else:
+            args = (*args[:4], settled, *args[5:])
+        return super().__new__(cls, *args, **kwargs)
 
     @classmethod
     @prefer_utc_timezone

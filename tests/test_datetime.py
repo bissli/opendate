@@ -2,12 +2,15 @@ import copy
 import datetime
 import pathlib
 import pickle
+import zoneinfo
 from unittest import mock
 
+import dateutil.tz
 import numpy as np
 import pandas as pd
 import pendulum
 import pytest
+import pytz
 from opendate import EST, UTC, Date, DateTime, Time, expect_datetime
 from opendate import get_calendar, now
 from pendulum.tz import Timezone
@@ -127,12 +130,29 @@ def test_copy():
 
 
 def test_deepcopy():
+    """Verify a copy carries the same instant, whoever built the zone.
 
+    pendulum's `__deepcopy__` rebuilds through `self.tz`, which answers
+    None for a tzinfo pendulum does not own, so a value carrying a
+    driver's zone came back naive. Only opendate's DateTime is fixed:
+    the pendulum row below is the shape that already worked.
+
+    Mutation: dropping normalize_timezone from DateTime.__new__, which
+        lets a zoneinfo.ZoneInfo reach the instance and makes the copy
+        naive.
+    Oracle: equality against the source, which is False between an
+        aware value and a naive one, plus the -4 hour offset the source
+        reports.
+    """
     d = pendulum.DateTime(2022, 1, 1, 12, 30, tzinfo=UTC)
     assert copy.deepcopy(d) == d
 
     d = DateTime(2022, 1, 1, 12, 30, tzinfo=UTC)
     assert copy.deepcopy(d) == d
+
+    d = DateTime(2026, 8, 28, 8, 1, 27, tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+    assert copy.deepcopy(d) == d
+    assert copy.deepcopy(d).utcoffset() == datetime.timedelta(hours=-4)
 
 
 def test_pickle(tmp_path):
@@ -495,16 +515,30 @@ def test_datetime_instance_with_numpy_nat():
 
 
 def test_datetime_instance_with_pandas_timestamp_timezones():
-    """Test DateTime.instance preserves timezone from pandas Timestamp."""
+    """Verify a pandas Timestamp's zone arrives as one pendulum reads.
+
+    pandas hands back pytz. The `hasattr(tzinfo, 'zone') or
+    hasattr(tzinfo, 'key')` guard this replaces could not tell a
+    repaired value from a broken one - a plain zoneinfo.ZoneInfo has
+    `key` and passed, and so did the pytz object itself.
+
+    Mutation: dropping normalize_timezone from DateTime.__new__, which
+        leaves the pytz DstTzInfo in place - the exact shape that came
+        back naive from deepcopy and shifted from subtract.
+    Oracle: pendulum's own gate, `.tz`, plus the zone name and the
+        January offset of -05:00.
+    """
     ts_utc = pd.Timestamp('2022-01-01 12:00:00', tz='UTC')
     dt = DateTime.instance(ts_utc)
     assert dt.tzinfo == UTC
 
     ts_est = pd.Timestamp('2022-01-01 12:00:00', tz='US/Eastern')
     dt = DateTime.instance(ts_est)
-    assert hasattr(dt.tzinfo, 'zone') or hasattr(dt.tzinfo, 'key')
-    tz_name = dt.tzinfo.zone if hasattr(dt.tzinfo, 'zone') else dt.tzinfo.key
-    assert tz_name in {'US/Eastern', 'America/New_York'}
+
+    assert dt.tz is not None
+    assert dt.timezone_name in {'US/Eastern', 'America/New_York'}
+    assert dt.utcoffset() == datetime.timedelta(hours=-5)
+    assert copy.deepcopy(dt).utcoffset() == datetime.timedelta(hours=-5)
 
 
 def test_datetime_instance_with_numpy_datetime64_various_formats():
@@ -528,11 +562,227 @@ def test_datetime_instance_with_numpy_datetime64_various_formats():
 
 
 def test_instance_injects_utc_on_naive_datetime():
-    """DateTime.instance() silently attaches UTC to naive datetimes."""
+    """Verify DateTime.instance attaches UTC, not merely something.
+
+    Mutation: attaching the local zone in place of UTC, which the old
+        `tzinfo is not None` assertion could not see.
+    Oracle: the UTC singleton opendate exports, and a zero offset.
+    """
     naive = datetime.datetime(2024, 1, 1, 12, 30, 0)
     assert naive.tzinfo is None
+
     result = DateTime.instance(naive)
-    assert result.tzinfo is not None
+
+    assert result.tzinfo is UTC
+    assert result.utcoffset() == datetime.timedelta(0)
+
+
+DRIVER_TIMEZONES = [
+    zoneinfo.ZoneInfo('America/New_York'),
+    datetime.timezone(datetime.timedelta(hours=-4)),
+    ]
+
+
+@pytest.mark.parametrize('tzinfo', DRIVER_TIMEZONES)
+@pytest.mark.parametrize('build', [
+    lambda tzinfo: DateTime(2026, 8, 28, 8, 1, 27, tzinfo=tzinfo),
+    lambda tzinfo: DateTime(2026, 8, 28, 8, 1, 27, 0, tzinfo),
+    lambda tzinfo: DateTime.instance(
+        datetime.datetime(2026, 8, 28, 8, 1, 27, tzinfo=tzinfo)),
+    lambda tzinfo: DateTime.combine(
+        Date(2026, 8, 28), Time(8, 1, 27), tzinfo=tzinfo),
+    ], ids=['keyword', 'positional', 'instance', 'combine'])
+def test_every_way_in_answers_tz(build, tzinfo):
+    """Verify `.tz` answers however the value was built.
+
+    A database driver hands back a tzinfo pendulum does not own -
+    psycopg3 a zoneinfo.ZoneInfo, psycopg2 a fixed datetime.timezone -
+    and pendulum answers `.timezone` and `.tz` for its own two classes
+    only. Every rebuild keyed on that answer then loses the zone.
+
+    The `instance` and `combine` rows would survive a fix placed in
+    `instance` alone - `combine` ends in `DateTime.instance` - so it is
+    the keyword and positional rows that pin the choice of `__new__`.
+
+    Mutation: normalizing inside `instance` rather than inside
+        `__new__`, which leaves the keyword and positional rows holding
+        the driver's own tzinfo.
+    Oracle: pendulum's own gate, `.tz`, which is None for exactly the
+        tzinfo classes it cannot read, checked against the -4 hour
+        offset the source reports.
+    """
+    value = build(tzinfo)
+
+    assert value.tz is not None
+    assert value.utcoffset() == datetime.timedelta(hours=-4)
+    assert (value.hour, value.minute, value.second) == (8, 1, 27)
+
+
+@pytest.mark.parametrize('tzinfo', DRIVER_TIMEZONES)
+def test_arithmetic_on_a_driver_timezone_moves_only_the_clock(tzinfo):
+    """Verify add and subtract keep the zone and shift by what was asked.
+
+    pendulum normalizes to UTC, does the arithmetic, then reattaches
+    `self.tz`. Where that answered None the result came back naive AND
+    carrying UTC digits, so subtracting an hour from 08:01-04:00 read
+    11:01 rather than 07:01 - a four hour jump forward, dressed as a
+    step back.
+
+    Mutation: dropping normalize_timezone from DateTime.__new__.
+    Oracle: hand-computed 07:01:27 for an hour before 08:01:27, and
+        the same wall clock a day later, both against the -4 hour
+        offset the source reports.
+    """
+    value = DateTime(2026, 8, 28, 8, 1, 27, tzinfo=tzinfo)
+
+    hour_before = value.subtract(hours=1)
+    day_after = value.add(days=1)
+
+    assert (hour_before.hour, hour_before.minute) == (7, 1)
+    assert hour_before.utcoffset() == datetime.timedelta(hours=-4)
+    assert (day_after.day, day_after.hour) == (29, 8)
+    assert day_after.utcoffset() == datetime.timedelta(hours=-4)
+
+
+@pytest.mark.parametrize(('text', 'offset_hours'), [
+    ('2026-08-28T08:01:27-04:00', -4),
+    ('2026-08-28T08:01:27+00:00', 0),
+    ('2026-08-28T08:01:27+05:30', 5.5),
+    ])
+def test_parse_of_an_offset_string_answers_tz(text, offset_hours):
+    """Verify a parsed offset lands on a timezone pendulum owns.
+
+    This needs no database to reach: pendulum's parser attaches a plain
+    `datetime.timezone` to any string spelling an offset, `+00:00`
+    included, so a csv column of ISO timestamps was enough.
+
+    Mutation: dropping normalize_timezone from `DateTime.__new__`, which
+        `parse` does reach, through `cls.instance`; or reading the offset
+        as whole hours, which the +05:30 row catches on its own.
+    Oracle: pendulum's own gate, `.tz`, against the offset each string
+        spells out.
+    """
+    parsed = DateTime.parse(text)
+
+    assert parsed.tz is not None
+    assert parsed.utcoffset() == datetime.timedelta(hours=offset_hours)
+
+
+def test_a_named_zone_is_rebuilt_by_name_not_by_offset():
+    """Verify the rebuild keeps the zone rather than freezing an offset.
+
+    Mutation: settling every unrecognized tzinfo on the fixed offset it
+        reports, which pins August's -04:00 onto the instance and makes
+        a January value out of it report -04:00 too.
+    Oracle: hand-computed - America/New_York is -04:00 in August and
+        -05:00 in January, which a fixed -04:00 cannot both be.
+    """
+    summer = DateTime(2026, 8, 28, 12, 0, tzinfo=zoneinfo.ZoneInfo('America/New_York'))
+
+    winter = summer.subtract(months=7)
+
+    assert summer.utcoffset() == datetime.timedelta(hours=-4)
+    assert winter.utcoffset() == datetime.timedelta(hours=-5)
+    assert summer.timezone_name == 'America/New_York'
+
+
+def test_a_zone_naming_nothing_keeps_its_offset_across_a_transition():
+    """Verify a fixed offset stays fixed, which is the deliberate half.
+
+    The converse of the rule above. psycopg2 hands back an offset and no
+    zone, so there is no daylight-saving rule to follow and an August
+    value stays on its August offset when moved into January. Pinning it
+    stops a later change from guessing a zone out of an offset.
+
+    Mutation: resolving a fixed datetime.timezone to whichever named
+        zone currently matches its offset, which would make the January
+        value report -05:00.
+    Oracle: hand-computed - the same -04:00 on both sides of the
+        November transition, against the -05:00 a named US Eastern zone
+        gives for January.
+    """
+    summer = DateTime(2026, 8, 28, 12, 0,
+                      tzinfo=datetime.timezone(datetime.timedelta(hours=-4)))
+
+    winter = summer.subtract(months=7)
+
+    assert summer.utcoffset() == datetime.timedelta(hours=-4)
+    assert winter.utcoffset() == datetime.timedelta(hours=-4)
+
+
+def test_a_pytz_zone_answers_tz():
+    """Verify a pytz zone reaches a pendulum one, by name.
+
+    pandas hands back pytz, and `DateTime.instance` is documented to
+    take a pd.Timestamp, so this is the likeliest driver shape after the
+    two psycopg ones.
+
+    Mutation: dropping the `.zone` half of the name lookup in
+        normalize_timezone, which sends a pytz zone to the offset branch
+        and freezes one season onto it.
+    Oracle: the zone name, plus the -4 hour August offset, checked on a
+        hand-built value and on one out of a pandas Timestamp.
+    """
+    built = DateTime(2026, 8, 28, 8, 1, 27,
+                     tzinfo=pytz.timezone('America/New_York'))
+    stamped = DateTime.instance(
+        pd.Timestamp('2026-08-28 08:01:27', tz='America/New_York'))
+
+    for value in (built, stamped):
+        assert value.tz is not None
+        assert value.timezone_name == 'America/New_York'
+        assert value.utcoffset() == datetime.timedelta(hours=-4)
+        assert copy.deepcopy(value).utcoffset() == datetime.timedelta(hours=-4)
+
+
+@pytest.mark.parametrize('positional', [False, True])
+def test_a_dateutil_zone_answers_tz(positional):
+    """Verify a zone naming itself nowhere is read at its own instant.
+
+    `dateutil.tz.gettz` answers no key, no zone, and None from
+    `utcoffset(None)`, so until the instant under construction was
+    passed through it fell out of normalize_timezone unrebuilt - and
+    `.utcoffset()` on the result did not return None, it raised.
+
+    Mutation: passing None rather than the instant under construction,
+        which sends every dateutil zone back out unrebuilt.
+    Oracle: hand-computed -04:00 in August against -05:00 in January,
+        read off two values built from the same zone object.
+    """
+    zone = dateutil.tz.gettz('America/New_York')
+    if positional:
+        august = DateTime(2026, 8, 28, 8, 1, 27, 0, zone)
+        january = DateTime(2026, 1, 15, 8, 1, 27, 0, zone)
+    else:
+        august = DateTime(2026, 8, 28, 8, 1, 27, tzinfo=zone)
+        january = DateTime(2026, 1, 15, 8, 1, 27, tzinfo=zone)
+
+    assert august.tz is not None
+    assert august.utcoffset() == datetime.timedelta(hours=-4)
+    assert january.utcoffset() == datetime.timedelta(hours=-5)
+    assert copy.deepcopy(august).utcoffset() == datetime.timedelta(hours=-4)
+    assert august.subtract(hours=1).hour == 7
+
+
+def test_an_unreadable_zone_is_handed_back_rather_than_raising():
+    """Verify a zone pendulum cannot represent survives construction.
+
+    Rebuilding a timezone is a repair, so it must never be the step that
+    turns a working value into an exception.
+
+    Mutation: dropping the try/except around the rebuild in
+        normalize_timezone, which raises InvalidTimezone for a ZoneInfo
+        whose key names no zone.
+    Oracle: the value constructing at all, plus the -4 hour offset the
+        zone file still reports through the untouched tzinfo.
+    """
+    with open('/usr/share/zoneinfo/America/New_York', 'rb') as handle:
+        unnamed = zoneinfo.ZoneInfo.from_file(handle, key='not/a/zone')
+
+    value = DateTime(2026, 8, 28, 8, 1, 27, tzinfo=unnamed)
+
+    assert value.tz is None
+    assert value.utcoffset() == datetime.timedelta(hours=-4)
 
 
 def test_store_calendar_handles_none_return():

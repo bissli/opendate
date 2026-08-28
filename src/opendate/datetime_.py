@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from opendate.constants import LCL, UTC, Timezone
+from opendate.constants import LCL, PENDULUM_TIMEZONES, UTC
+from opendate.constants import normalize_timezone
 from opendate.helpers import _rust_parse_datetime
 from opendate.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
 from opendate.mixins import DateBusinessMixin
@@ -44,6 +45,85 @@ class DateTime(
     - Methods preserve business status and entity when chaining
     - Has timezone handling helpers not present in pendulum
     """
+
+    def __new__(cls, *args, **kwargs) -> Self:
+        """Build the instance, rebuilding a tzinfo pendulum cannot read.
+
+        Returns
+        -------
+        DateTime
+            The new instance, carrying a pendulum timezone wherever the
+            caller supplied any timezone at all.
+
+        See Also
+        --------
+        opendate.constants.normalize_timezone : the rebuild itself
+
+        Notes
+        -----
+        - Every construction path lands here - `instance`, `parse`,
+          `combine`, `replace`, `__deepcopy__` and a plain call - so
+          this is the one place that has to hold for `.tz` to answer on
+          every instance. See `normalize_timezone` for what goes wrong
+          when it does not.
+        - A construction carrying no timezone, or one pendulum already
+          owns, leaves on the first two tests.
+        - Unpickling lands here too, and settles the timezone it reads.
+          pendulum overrides `__reduce_ex__` to the positional form, so
+          the `(bytes_state, tzinfo)` shape that would slip past never
+          arises - which means a value pickled by an older release comes
+          back repaired rather than as it went in.
+        - A str is taken as a zone name, which the stdlib rejects. It
+          settles without a reference instant, since a name carries its
+          own daylight-saving rule.
+        """
+        if len(args) > 7:
+            tzinfo = args[7]
+        elif kwargs:
+            tzinfo = kwargs.get('tzinfo')
+        else:
+            return super().__new__(cls, *args)
+        if tzinfo is None or isinstance(tzinfo, PENDULUM_TIMEZONES):
+            return super().__new__(cls, *args, **kwargs)
+
+        if args and isinstance(args[0], bytes):
+            # The pickle byte-state form carries no date to read a zone
+            # at, and the stdlib ignores a tzinfo keyword beside it.
+            return super().__new__(cls, *args, **kwargs)
+
+        if isinstance(tzinfo, str):
+            # A name settles on its own; it is also not a tzinfo, so it
+            # cannot go into the reference built below.
+            settled = normalize_timezone(tzinfo)
+            if 'tzinfo' in kwargs:
+                kwargs['tzinfo'] = settled
+            else:
+                args = (*args[:7], settled, *args[8:])
+            return super().__new__(cls, *args, **kwargs)
+
+        # Notes:
+        # - A daylight-saving zone reports no offset unless it is handed
+        #   an instant, so rebuild the one under construction.
+        # - The reference carries `tz` and the caller's `fold`, matching
+        #   what the stdlib passes: a tzinfo may read either, and the
+        #   docs' own recipe answers its standard offset for a naive
+        #   reference and the wrong side of an ambiguous hour for fold 0.
+        # - Missing date parts default to 1. The call is already invalid
+        #   without them, and `super().__new__` is what should say so.
+        fields = ('year', 'month', 'day', 'hour', 'minute', 'second',
+                  'microsecond')
+        parts = list(args[:7])
+        parts += [kwargs.get(field, 1 if index < 3 else 0)
+                  for index, field in enumerate(fields) if index >= len(parts)]
+        when = _datetime.datetime(*parts, tzinfo=tzinfo,
+                                  fold=kwargs.get('fold', 0))
+        settled = normalize_timezone(tzinfo, when)
+
+        if 'tzinfo' in kwargs:
+            kwargs['tzinfo'] = settled
+        else:
+            args = (*args[:7], settled, *args[8:])
+        return super().__new__(cls, *args, **kwargs)
 
     def epoch(self) -> float:
         """Translate a datetime object into unix seconds since epoch
@@ -304,13 +384,10 @@ class DateTime(
 
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
+            # No timezone handling here: the constructor settles every
+            # tzinfo this used to special-case, and its `zone` lookup
+            # answers None for a pytz fixed offset, which this raised on.
             tz = tz or obj.tzinfo or UTC
-            if tz is _datetime.timezone.utc:
-                tz = UTC
-            elif hasattr(tz, 'zone'):
-                tz = Timezone(tz.zone)
-            elif isinstance(tz, str):
-                tz = Timezone(tz)
             return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
                        obj.second, obj.microsecond, tzinfo=tz)
 

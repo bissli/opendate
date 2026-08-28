@@ -1,3 +1,6 @@
+import datetime
+import zoneinfo
+
 import pendulum
 import pytest
 
@@ -126,6 +129,54 @@ def test_combine():
 
     comb = DateTime.combine(D, T, tzinfo=EST)
     assert comb != _
+
+
+def test_a_driver_offset_survives_construction():
+    """Verify a `timetz` value keeps the offset it arrived with.
+
+    Mutation: settling the tzinfo by widening to UTC rather than by
+        rebuilding the offset it reports, which relabels 08:01-04:00 as
+        08:01+00:00 and moves the instant four hours.
+    Oracle: the -4 hour offset the source time reports, against
+        08:01:27 unmoved on the wall clock, and a comparison against a
+        UTC time of the column, which raises where either side is naive.
+    """
+    driver_tz = datetime.timezone(datetime.timedelta(hours=-4))
+    source = datetime.time(8, 1, 27, tzinfo=driver_tz)
+
+    held = Time.instance(source)
+
+    assert held.utcoffset() == datetime.timedelta(hours=-4)
+    assert (held.hour, held.minute, held.second) == (8, 1, 27)
+    assert held.tzinfo != UTC
+    assert held > Time(11, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize('positional', [False, True])
+@pytest.mark.parametrize('driver_tz', [
+    zoneinfo.ZoneInfo('America/New_York'),
+    datetime.timezone(datetime.timedelta(hours=-4)),
+    ])
+def test_a_driver_zone_becomes_a_pendulum_one(driver_tz, positional):
+    """Verify a time settles its timezone class like a datetime does.
+
+    Nothing a Time reports changes when its zone is settled - offset,
+    isoformat, equality and in_timezone all agree either way - so the
+    tzinfo class is the only thing that can tell the two apart, and the
+    only thing worth asserting. Settling it is what keeps one class of
+    timezone across the library rather than a bug fix in itself.
+
+    Mutation: dropping normalize_timezone from Time.__new__, or the
+        off-by-one `len(args) > 5` that skips a positional tzinfo.
+    Oracle: the pendulum timezone classes themselves, which a driver's
+        zoneinfo.ZoneInfo and datetime.timezone are not.
+    """
+    held = (Time(8, 1, 27, 0, driver_tz) if positional
+            else Time(8, 1, 27, tzinfo=driver_tz))
+
+    assert isinstance(held.tzinfo, (pendulum.tz.Timezone,
+                                    pendulum.tz.FixedTimezone))
+    assert (held.hour, held.minute, held.second) == (8, 1, 27)
 
 
 if __name__ == '__main__':
