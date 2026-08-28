@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from opendate.constants import LCL, PENDULUM_TIMEZONES, UTC
+from opendate.constants import DATEMATCH, LCL, PENDULUM_TIMEZONES, UTC
 from opendate.constants import normalize_timezone
 from opendate.helpers import _rust_parse_datetime
 from opendate.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
@@ -317,7 +317,11 @@ class DateTime(
             return cls(dt.year, dt.month, dt.day, dt.hour, dt.minute,
                        dt.second, dt.microsecond, tzinfo=LCL)
 
-        parsed = _rust_parse_datetime(s)
+        # A dynamic date code has to be recognized before the general
+        # parser is asked, which reads the offset digit of 'T-3' as a
+        # day of month and answers the third of January. `Date.parse`
+        # below resolves the code; this only keeps the parser off it.
+        parsed = None if DATEMATCH.match(s) else _rust_parse_datetime(s)
         if parsed is not None:
             return cls.instance(parsed)
 

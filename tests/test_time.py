@@ -152,6 +152,46 @@ def test_a_driver_offset_survives_construction():
     assert held > Time(11, 0, tzinfo=UTC)
 
 
+@pytest.mark.parametrize(('text', 'offset_hours'), [
+    ('08:01:27-04:00', -4),
+    ('08:01:27+05:30', 5.5),
+    ('08:01:27+0530', 5.5),
+    ('08:01:27Z', 0),
+    ('08:01:27', 0),
+    ])
+def test_parse_keeps_an_offset_the_string_spells_out(text, offset_hours):
+    """Verify a parsed time keeps its own offset instead of UTC.
+
+    The general parser answers hour, minute, second and microsecond
+    only, so an offset in the string was dropped and the UTC-preferring
+    decorator stamped UTC over the gap - moving the instant four hours
+    rather than merely relabeling it. A csv column of offset-bearing
+    times reached this with no database involved.
+
+    Mutation: dropping the offset split, so every row lands on UTC;
+        or reading the minutes off the wrong end, which the half-hour
+        rows catch.
+    Oracle: the offset each string spells out, against a bare time that
+        must still default to UTC.
+    """
+    parsed = Time.parse(text)
+
+    assert parsed.utcoffset() == datetime.timedelta(hours=offset_hours)
+    assert (parsed.hour, parsed.minute, parsed.second) == (8, 1, 27)
+
+
+def test_parse_does_not_read_a_dash_inside_a_time_as_an_offset():
+    """Verify the offset split needs minutes, so a dashed time is safe.
+
+    Mutation: accepting a two-digit offset form, which reads the '45' of
+        '14-30-45' as a timezone and answers a time built from '14-30'.
+    Oracle: None, the same answer the format got before - it is not a
+        supported spelling either way.
+    """
+    assert Time.parse('14-30-45') is None
+    assert Time.parse('14-30-45', fmt='%H-%M-%S') == Time(14, 30, 45, tzinfo=UTC)
+
+
 @pytest.mark.parametrize('positional', [False, True])
 @pytest.mark.parametrize('driver_tz', [
     zoneinfo.ZoneInfo('America/New_York'),

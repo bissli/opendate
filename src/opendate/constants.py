@@ -179,3 +179,7 @@ MONTH_SHORTNAME = {
 }
 
 DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
+
+# Only the forms that spell minutes, so a dash inside a time - the
+# '45' of '14-30-45' - cannot be read as an offset.
+TIMEOFFSET = re.compile(r'^(?P<time>.*\d)\s*(?P<offset>Z|[-+]\d{2}:\d{2}|[-+]\d{4})$')

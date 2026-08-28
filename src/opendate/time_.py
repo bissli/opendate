@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import pendulum as _pendulum
 
-from opendate.constants import PENDULUM_TIMEZONES, UTC, normalize_timezone
+from opendate.constants import PENDULUM_TIMEZONES, TIMEOFFSET, UTC
+from opendate.constants import normalize_timezone
 from opendate.decorators import prefer_utc_timezone
 from opendate.helpers import _rust_parse_time
 
@@ -132,10 +133,21 @@ class Time(_pendulum.Time):
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
 
+        # The general parser answers hour, minute, second and microsecond
+        # only, so an offset spelled in the string would be dropped and
+        # `prefer_utc_timezone` would stamp UTC over it - moving the
+        # instant rather than merely relabeling it. Split it off first.
+        tzinfo = None
+        if match := TIMEOFFSET.match(s):
+            s, offset = match.group('time'), match.group('offset')
+            tzinfo = UTC if offset == 'Z' else _datetime.timezone(
+                (-1 if offset[0] == '-' else 1) * _datetime.timedelta(
+                    hours=int(offset[1:3]), minutes=int(offset[-2:])))
+
         result = _rust_parse_time(s)
         if result is not None:
             hour, minute, second, microsecond = result
-            return cls(hour, minute, second, microsecond)
+            return cls(hour, minute, second, microsecond, tzinfo=tzinfo)
 
         if raise_err:
             raise ValueError('Failed to parse time: %s', s)

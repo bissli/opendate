@@ -764,6 +764,28 @@ def test_a_dateutil_zone_answers_tz(positional):
     assert august.subtract(hours=1).hour == 7
 
 
+@pytest.mark.parametrize('code', ['T-3', 'T+2', 'Y-1', 'P+2b', 'M-1'])
+def test_parse_resolves_a_dynamic_code_carrying_an_offset(code):
+    """Verify an offset date code resolves, rather than being misread.
+
+    The general parser reads the offset digit as a day of month, so
+    'T-3' came back as the third of January - silently, and years away
+    from the answer. Only the offset forms were wrong; a bare code was
+    already handled further down.
+
+    Mutation: calling `_rust_parse_datetime` before testing the string
+        against DATEMATCH, which is what let the general parser answer
+        first.
+    Oracle: `Date.parse` of the same code, which resolves the codes
+        correctly and independently of this path.
+    """
+    parsed = DateTime.parse(code)
+
+    assert parsed is not None
+    assert parsed.date() == Date.parse(code)
+    assert (parsed.hour, parsed.minute, parsed.second) == (0, 0, 0)
+
+
 def test_an_unreadable_zone_is_handed_back_rather_than_raising():
     """Verify a zone pendulum cannot represent survives construction.
 
