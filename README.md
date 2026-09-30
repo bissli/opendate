@@ -228,18 +228,24 @@ Interval(start, end)  # start/end are Date or DateTime
 | `is_business_day_range()` | Yields bool for each day                  |
 | `start_of(unit)`          | List of period starts in interval         |
 | `end_of(unit)`            | List of period ends in interval           |
-| `yearfrac(basis)`         | Year fraction (Excel-compatible)          |
+| `yearfrac(basis)`         | Year fraction under a day-count basis     |
 
 ### yearfrac Basis
 
-| Basis | Convention       | Use             |
-| ----- | ---------------- | --------------- |
-| 0     | US (NASD) 30/360 | Corporate bonds |
-| 1     | Actual/actual    | Treasury bonds  |
-| 2     | Actual/360       | Money market    |
-| 3     | Actual/365       | Some bonds      |
-| 4     | European 30/360  | Eurobonds       |
-| 5     | Actual/365.25    | Avg year length |
+Each basis equals its QuantLib day counter bitwise on an ascending
+interval. A reversed interval returns the negated ascending value.
+
+| Basis | Convention         | QuantLib twin              |
+| ----- | ------------------ | -------------------------- |
+| 0     | 30/360 US (SIA)    | `Thirty360(USA)`           |
+| 1     | ACT/ACT ISDA       | `ActualActual(ISDA)`       |
+| 2     | ACT/360            | `Actual360()`              |
+| 3     | ACT/365 Fixed      | `Actual365Fixed()`         |
+| 4     | 30E/360 (Eurobond) | `Thirty360(European)`      |
+| 5     | ACT/365.25         | `Actual36525()`            |
+| 6     | 30/360 Bond Basis  | `Thirty360(BondBasis)`     |
+| 7     | 30E/360 ISDA       | `Thirty360(German)`        |
+| 8     | ACT/365 No Leap    | `Actual365Fixed(NoLeap)`   |
 
 ---
 

@@ -233,92 +233,75 @@ class Interval(_pendulum.Interval):
         return self._direction * year_diff
 
     def yearfrac(self, basis: int = 0) -> float:
-        """Calculate the fraction of years between two dates (Excel-compatible).
+        """Year fraction between the endpoints under a day-count convention.
 
-        This method provides precise calculation using various day count conventions
-        used in finance. Results are tested against Excel for compatibility.
+        Every basis equals its QuantLib day counter bitwise on an ascending
+        interval.
 
         Parameters
-            basis: Day count convention to use:
-                0 = US (NASD) 30/360 (default)
-                1 = Actual/actual
-                2 = Actual/360
-                3 = Actual/365
-                4 = European 30/360
-                5 = Actual/365.25
+        ----------
+        basis : int, default 0
+            Day-count convention, with its QuantLib twin:
 
-        Note: Excel has a known leap year bug for year 1900 which is intentionally
-        replicated for compatibility (1900 is treated as a leap year even though it wasn't).
+            - 0: 30/360 US (SIA), ``Thirty360(USA)``
+            - 1: ACT/ACT ISDA, ``ActualActual(ISDA)``
+            - 2: ACT/360, ``Actual360()``
+            - 3: ACT/365 Fixed, ``Actual365Fixed()``
+            - 4: 30E/360 (Eurobond), ``Thirty360(European)``
+            - 5: ACT/365.25, ``Actual36525()``
+            - 6: 30/360 Bond Basis (ISDA 2006 4.16(f)),
+              ``Thirty360(BondBasis)``
+            - 7: 30E/360 ISDA (German), ``Thirty360(German)`` with no
+              termination date, so an end on the last day of February
+              always counts as the 30th
+            - 8: ACT/365 No Leap, ``Actual365Fixed(NoLeap)``
+
+        Returns
+        -------
+        float
+            The year fraction. A reversed interval returns the negated
+            ascending value, where QuantLib re-runs the 30/360 day rules on
+            the reversed pair.
+
+        Raises
+        ------
+        ValueError
+            For a basis outside 0-8.
         """
 
-        def average_year_length(date1, date2):
-            """Algorithm for average year length"""
-            end_date = _date.Date(date2.year + 1, 1, 1)
-            start_date = _date.Date(date1.year, 1, 1)
-            days = end_date.toordinal() - start_date.toordinal()
-            years = (date2.year - date1.year) + 1
-            return days / years
+        def is_end_of_feb(date: Date | DateTime) -> bool:
+            return date.month == 2 \
+                and date.day == calendar.monthrange(date.year, 2)[1]
 
-        def feb29_between(date1, date2):
-            """Requires date2.year = (date1.year + 1) or date2.year = date1.year.
-
-            Returns True if "Feb 29" is between the two dates (date1 may be Feb29).
-            Two possibilities: date1.year is a leap year, and date1 <= Feb 29 y1,
-            or date2.year is a leap year, and date2 > Feb 29 y2.
-            """
-            mar1_date1_year = _date.Date(date1.year, 3, 1)
-            if calendar.isleap(date1.year) and (date1 < mar1_date1_year) and (date2 >= mar1_date1_year):
-                return True
-            mar1_date2_year = _date.Date(date2.year, 3, 1)
-            return bool(calendar.isleap(date2.year) and date2 >= mar1_date2_year and date1 < mar1_date2_year)
-
-        def appears_lte_one_year(date1, date2):
-            """Returns True if date1 and date2 "appear" to be 1 year or less apart.
-
-            This compares the values of year, month, and day directly to each other.
-            Requires date1 <= date2; returns boolean. Used by basis 1.
-            """
-            if date1.year == date2.year:
-                return True
-            return bool(date1.year + 1 == date2.year and (date1.month > date2.month or date1.month == date2.month and date1.day >= date2.day))
-
-        def basis0(date1, date2):
-            # change day-of-month for purposes of calculation.
-            date1day, date1month, date1year = date1.day, date1.month, date1.year
-            date2day, date2month, date2year = date2.day, date2.month, date2.year
-            if date1day == 31 and date2day == 31:
+        def basis0(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            date1day, date2day = date1.day, date2.day
+            # SIA order: a later rule reads the day an earlier rule set.
+            if is_end_of_feb(date1):
+                if is_end_of_feb(date2):
+                    date2day = 30
                 date1day = 30
+            if date2day == 31 and date1day >= 30:
                 date2day = 30
-            elif date1day == 31:
+            if date1day == 31:
                 date1day = 30
-            elif date1day == 30 and date2day == 31:
-                date2day = 30
-            # Note: If date2day==31, it STAYS 31 if date1day < 30.
-            # Special fixes for February:
-            elif date1month == 2 and date2month == 2 and date1 == date1.end_of('month') \
-                and date2 == date2.end_of('month'):
-                date1day = 30  # Set the day values to be equal
-                date2day = 30
-            elif date1month == 2 and date1 == date1.end_of('month'):
-                date1day = 30  # "Illegal" Feb 30 date.
-            daydiff360 = (date2day + date2month * 30 + date2year * 360) \
-                - (date1day + date1month * 30 + date1year * 360)
+            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
+                - (date1day + date1.month * 30 + date1.year * 360)
             return daydiff360 / 360
 
         def _days_between(date1, date2):
             """Compute days between dates using ordinal to avoid recursion."""
             return date2.toordinal() - date1.toordinal()
 
-        def basis1(date1, date2):
-            if appears_lte_one_year(date1, date2):
-                if date1.year == date2.year and calendar.isleap(date1.year):
-                    year_length = 366.0
-                elif feb29_between(date1, date2) or (date2.month == 2 and date2.day == 29):
-                    year_length = 366.0
-                else:
-                    year_length = 365.0
-                return _days_between(date1, date2) / year_length
-            return _days_between(date1, date2) / average_year_length(date1, date2)
+        def basis1(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            year1_length = 366.0 if calendar.isleap(date1.year) else 365.0
+            year2_length = 366.0 if calendar.isleap(date2.year) else 365.0
+            year1_days = _days_between(date1, _date.Date(date1.year + 1, 1, 1))
+            year2_days = _days_between(_date.Date(date2.year, 1, 1), date2)
+            # QuantLib sums the three terms even within one year. A single
+            # days / length rounds differently in the last bit.
+            return (float(date2.year - date1.year - 1)
+                    + year1_days / year1_length
+                    + year2_days / year2_length)
 
         def basis2(date1, date2):
             return _days_between(date1, date2) / 360.0
@@ -342,7 +325,42 @@ class Interval(_pendulum.Interval):
         def basis5(date1, date2):
             return _days_between(date1, date2) / 365.25
 
-        if self._start == self._end:
+        def basis6(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            date1day, date2day = date1.day, date2.day
+            if date1day == 31:
+                date1day = 30
+            if date2day == 31 and date1day == 30:
+                date2day = 30
+            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
+                - (date1day + date1.month * 30 + date1.year * 360)
+            return daydiff360 / 360
+
+        def basis7(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            date1day, date2day = date1.day, date2.day
+            if date1day == 31 or is_end_of_feb(date1):
+                date1day = 30
+            if date2day == 31 or is_end_of_feb(date2):
+                date2day = 30
+            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
+                - (date1day + date1.month * 30 + date1.year * 360)
+            return daydiff360 / 360
+
+        def no_leap_index(date: Date | DateTime) -> int:
+            """Day index on a calendar with no February 29.
+
+            A February 29 takes February 28's index, so the difference of
+            two indices leaves out every leap day between them.
+            """
+            month_offset = (0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334)
+            index = date.year * 365 + month_offset[date.month - 1] + date.day
+            if date.month == 2 and date.day == 29:
+                return index - 1
+            return index
+
+        def basis8(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            return (no_leap_index(date2) - no_leap_index(date1)) / 365.0
+
+        if self._start.toordinal() == self._end.toordinal():
             return 0.0
         if basis == 0:
             return basis0(self._start, self._end) * self._direction
@@ -356,8 +374,14 @@ class Interval(_pendulum.Interval):
             return basis4(self._start, self._end) * self._direction
         if basis == 5:
             return basis5(self._start, self._end) * self._direction
+        if basis == 6:
+            return basis6(self._start, self._end) * self._direction
+        if basis == 7:
+            return basis7(self._start, self._end) * self._direction
+        if basis == 8:
+            return basis8(self._start, self._end) * self._direction
 
-        raise ValueError(f'Basis range [0, 5]. Unknown basis {basis}.')
+        raise ValueError(f'Basis range [0, 8]. Unknown basis {basis}.')
 
     @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:

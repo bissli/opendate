@@ -99,15 +99,23 @@ def test_months_cross_year():
 
 
 @pytest.mark.parametrize(('basis', 'expected'), [
-    (0, 42.2139),   # US 30/360
-    (1, 42.2142),   # Actual/actual
-    (2, 42.8306),   # Actual/360
-    (3, 42.2438),   # Actual/365
-    (4, 42.2194),   # European 30/360
-    (5, 42.2149),   # Actual/365.25
+    (0, 42.2139),   # 30/360 US
+    (1, 42.2154),   # ACT/ACT ISDA
+    (2, 42.8306),   # ACT/360
+    (3, 42.2438),   # ACT/365 Fixed
+    (4, 42.2194),   # 30E/360
+    (5, 42.2149),   # ACT/365.25
+    (6, 42.2194),   # 30/360 Bond Basis
+    (7, 42.2139),   # 30E/360 ISDA
+    (8, 42.2137),   # ACT/365 No Leap
 ])
 def test_yearfrac_basis(basis, expected):
-    """Test yearfrac with different basis values."""
+    """Verify each basis over one long span, forward and reversed.
+
+    Mutation: a basis dispatched to a neighbor's arithmetic, or the sign
+        lost on a reversed interval.
+    Oracle: QuantLib year fractions for 1978-02-28 -> 2020-05-17, 4dp.
+    """
     begdate = Date(1978, 2, 28)
     enddate = Date(2020, 5, 17)
 
@@ -120,7 +128,11 @@ def test_yearfrac_basis(basis, expected):
 
 
 def test_yearfrac_leap_year_edge_case():
-    """Test yearfrac with known leap year case (1900 is not a leap year in reality, but Excel has a bug).
+    """Verify 30E/360 before 1901, outside QuantLib's date domain.
+
+    Mutation: a day rule that needs a year after 1900, such as a
+        QuantLib-backed or ordinal-bounded path.
+    Oracle: hand-computed 330/360.
     """
     begdate = Date(1900, 1, 1)
     enddate = Date(1900, 12, 1)
