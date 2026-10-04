@@ -6,7 +6,7 @@ import pendulum
 import pytest
 import pytz
 
-from opendate import EST, UTC, DateTime, Time, Timezone, expect_date
+from opendate import EST, LCL, UTC, DateTime, Time, Timezone, expect_date
 from opendate import expect_native_timezone, expect_time
 from opendate import expect_utc_timezone, prefer_native_timezone
 from opendate import prefer_utc_timezone
@@ -15,7 +15,12 @@ from opendate.constants import normalize_timezone
 
 
 def test_timezone_function():
-    """Test Timezone function creates proper timezone objects."""
+    """Test Timezone function creates proper timezone objects.
+
+    Mutation: Timezone returning a pytz or fixed-offset zone, or mapping
+        'GMT' onto 'UTC'.
+    Oracle: the IANA keys passed in, read back off each zone.
+    """
     tz = Timezone('US/Eastern')
     assert isinstance(tz, zoneinfo.ZoneInfo)
     assert tz.key in {'US/Eastern', 'America/New_York'}
@@ -28,7 +33,13 @@ def test_timezone_function():
 
 
 def test_expect_time_decorator():
-    """Test expect_time decorator converts time-like objects."""
+    """Test expect_time decorator converts time-like objects.
+
+    Mutation: expect_time converting only the first argument, or
+        dropping the seconds field.
+    Oracle: hand-entered 12:30:45 fields and a Time check on every
+        argument.
+    """
     @expect_time
     def func(t):
         return t
@@ -51,7 +62,11 @@ def test_expect_time_decorator():
 
 
 def test_prefer_utc_timezone_decorator():
-    """Test prefer_utc_timezone adds UTC timezone when missing."""
+    """Test prefer_utc_timezone adds UTC timezone when missing.
+
+    Mutation: stamping UTC on an aware result too, as force=True does.
+    Oracle: the EST zone the aware result carried in.
+    """
     @prefer_utc_timezone
     def get_datetime():
         return DateTime(2022, 1, 1, 12, 0, 0)
@@ -68,9 +83,11 @@ def test_prefer_utc_timezone_decorator():
 
 
 def test_prefer_native_timezone_decorator():
-    """Test prefer_native_timezone adds local timezone when missing."""
-    from opendate import LCL
+    """Test prefer_native_timezone adds local timezone when missing.
 
+    Mutation: stamping LCL on an aware result too, as force=True does.
+    Oracle: the UTC zone the aware result carried in.
+    """
     @prefer_native_timezone
     def get_datetime():
         return DateTime(2022, 1, 1, 12, 0, 0)
@@ -87,9 +104,12 @@ def test_prefer_native_timezone_decorator():
 
 
 def test_expect_utc_timezone_decorator():
-    """Test expect_utc_timezone forces UTC timezone."""
-    from opendate import LCL
+    """Test expect_utc_timezone forces UTC timezone.
 
+    Mutation: expect_utc_timezone built without force=True, which
+        leaves the aware LCL result alone.
+    Oracle: the UTC singleton opendate exports.
+    """
     @expect_utc_timezone
     def get_datetime():
         return DateTime(2022, 1, 1, 12, 0, 0, tzinfo=LCL)
@@ -99,9 +119,12 @@ def test_expect_utc_timezone_decorator():
 
 
 def test_expect_native_timezone_decorator():
-    """Test expect_native_timezone forces local timezone."""
-    from opendate import LCL
+    """Test expect_native_timezone forces local timezone.
 
+    Mutation: expect_native_timezone built without force=True, which
+        leaves the aware UTC result alone.
+    Oracle: the LCL zone opendate exports.
+    """
     @expect_native_timezone
     def get_datetime():
         return DateTime(2022, 1, 1, 12, 0, 0, tzinfo=UTC)
@@ -111,7 +134,12 @@ def test_expect_native_timezone_decorator():
 
 
 def test_decorator_handles_none():
-    """Test decorators handle None values gracefully."""
+    """Test decorators handle None values gracefully.
+
+    Mutation: expect_date converting None with raise_err=True, or
+        prefer_utc_timezone calling replace on a None result.
+    Oracle: None in, None out.
+    """
     @expect_date
     def func(d):
         return d
@@ -128,22 +156,19 @@ def test_decorator_handles_none():
 def test_normalize_timezone_does_not_rebuild_what_pendulum_owns(monkeypatch):
     """Verify a timezone pendulum already owns is handed straight back.
 
-    Identity is no oracle here: zoneinfo interns by key and
-    `fixed_timezone` is cached, so a needless rebuild hands back the
-    very same object and `is` still holds. Two things can tell the
-    difference - a spy over both rebuild routes, and a fixed zone whose
-    name a rebuild would regenerate.
-
     Mutation: dropping the `isinstance(tz, PENDULUM_TIMEZONES)` test, so
         every construction rebuilds a zone pendulum already owns.
     Oracle: a spy over `Timezone` and `fixed_timezone`, which must
         record no call, plus a FixedTimezone named 'deskclock', which a
-        rebuild renames to '-04:00'.
+        rebuild renames to '-04:00'. Identity alone cannot tell: zoneinfo
+        and `fixed_timezone` cache, so a rebuild returns the same object.
     """
     calls = []
     monkeypatch.setattr(constants, 'Timezone', lambda name: calls.append(name))
-    monkeypatch.setattr(pendulum.tz, 'fixed_timezone',
-                        lambda seconds: calls.append(seconds))
+    monkeypatch.setattr(
+        pendulum.tz,
+        'fixed_timezone',
+        lambda seconds: calls.append(seconds))
 
     assert normalize_timezone(UTC) is UTC
     assert normalize_timezone(EST) is EST
@@ -177,12 +202,6 @@ def test_normalize_timezone_keeps_a_named_zone_by_name():
 def test_normalize_timezone_names_a_dateutil_zone_rather_than_freezing_it():
     """Verify a dateutil zone is rebuilt by name, so it still tracks DST.
 
-    A dateutil tzfile carries no key and no zone, and answers
-    `utcoffset(None)` with None. Its name lives only in the path it
-    loaded from, and reading that back is what keeps it a real zone -
-    settling it on the offset it happens to report would answer
-    plausibly and wrongly six months later.
-
     Mutation: dropping the `_filename` lookup from zone_name, which
         sends the zone to the offset branch and freezes one season onto
         it - or, with the vary guard in place, hands it back unrebuilt.
@@ -205,12 +224,6 @@ def test_normalize_timezone_names_a_dateutil_zone_rather_than_freezing_it():
 
 def test_normalize_timezone_refuses_to_freeze_a_zone_whose_offset_moves():
     """Verify a nameless daylight-saving zone is handed back, not frozen.
-
-    Settling such a zone on the offset it reports at one instant turns a
-    loud failure - a naive value that raises on comparison - into a
-    quiet wrong number the moment the value crosses a transition. There
-    is no pendulum type that can carry an anonymous daylight-saving
-    rule, so the honest answer is to leave it alone.
 
     Mutation: dropping the January-against-July guard, which freezes the
         zone and makes a July value out of a January one report -05:00
@@ -244,9 +257,6 @@ def test_normalize_timezone_refuses_to_freeze_a_zone_whose_offset_moves():
 def test_normalize_timezone_reads_a_pytz_zone_by_its_zone_attribute():
     """Verify a pytz zone is rebuilt by name, through `.zone`.
 
-    pytz names itself under `zone` where zoneinfo uses `key`, and pandas
-    hands back pytz, so `pd.Timestamp(tz=...)` reaches this branch.
-
     Mutation: dropping the `getattr(tz, 'zone', None)` half of the name
         lookup, which sends every pytz zone to the offset branch and
         freezes one season's offset onto it.
@@ -264,15 +274,14 @@ def test_normalize_timezone_reads_a_pytz_zone_by_its_zone_attribute():
     assert july.utcoffset() == datetime.timedelta(hours=-4)
 
 
-@pytest.mark.parametrize(('offset_hours', 'expected_seconds'), [
-    (-4, -14400),
-    (5.5, 19800),
-    ])
+@pytest.mark.parametrize(
+    ('offset_hours', 'expected_seconds'),
+    [
+        (-4, -14400),
+        (5.5, 19800),
+        ])
 def test_normalize_timezone_settles_a_fixed_offset(offset_hours, expected_seconds):
     """Verify a zone naming nothing settles on the offset it reports.
-
-    A fixed `datetime.timezone` is what psycopg2 attaches, and it names
-    no zone, so the offset is all there is to keep.
 
     Mutation: reading the offset as whole hours, or dropping the sign,
         either of which the half-hour row catches.

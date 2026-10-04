@@ -13,8 +13,24 @@ from opendate.helpers import isdateish
 
 
 def parse_arg(typ: type | str, arg: Any) -> Any:
-    """Parse argument to specified type or 'smart' to preserve Date/DateTime.
+    """arg as an opendate type chosen by typ, or unchanged if not date-like.
+
+    Parameters
+    ----------
+    typ : type or str
+        datetime.datetime, datetime.date or datetime.time converts arg to
+        DateTime, Date or Time. 'smart' picks by arg's own kind and keeps
+        an opendate Date or DateTime as it is. Any other value returns arg.
+    arg : Any
+        Value to convert.
+
+    Returns
+    -------
+    Any
+        The converted value. In 'smart' mode a NaT pandas Timestamp or
+        numpy datetime64 gives None.
     """
+    # Circular import: opendate imports this module.
     import opendate
 
     if not isdateish(arg):
@@ -49,7 +65,20 @@ def parse_arg(typ: type | str, arg: Any) -> Any:
 
 
 def parse_args(typ: type | str, *args: Any) -> list[Any]:
-    """Parse args to specified type or 'smart' mode.
+    """Each of args converted by parse_arg, recursing into sequences.
+
+    Parameters
+    ----------
+    typ : type or str
+        As in parse_arg.
+    *args : Any
+        Values to convert. A non-str sequence comes back as a list of its
+        converted items.
+
+    Returns
+    -------
+    list
+        Converted args, in order.
     """
     this = []
     for a in args:
@@ -60,10 +89,29 @@ def parse_args(typ: type | str, *args: Any) -> list[Any]:
     return this
 
 
-def expect(func=None, *, typ: type[_datetime.date] | str = None, exclkw: bool = False) -> Callable:
-    """Decorator to force input type of date/datetime inputs.
+def expect(
+    func: Callable[..., Any] | None = None,
+    *,
+    typ: type[_datetime.date] | str | None = None,
+    exclkw: bool = False,
+) -> Callable:
+    """Decorate func so its date-like arguments arrive as opendate types.
 
-    typ can be _datetime.date, _datetime.datetime, _datetime.time, or 'smart'
+    Parameters
+    ----------
+    func : Callable or None, default None
+        Function to wrap. None returns a decorator that takes it.
+    typ : type, str or None, default None
+        datetime.date, datetime.datetime or datetime.time converts every
+        date-like argument to Date, DateTime or Time. 'smart' keeps each
+        argument's own kind, as parse_arg describes.
+    exclkw : bool, default False
+        True leaves keyword arguments unconverted.
+
+    Returns
+    -------
+    Callable
+        Wrapped function, or the decorator where func is None.
     """
     def decorator(func):
         @wraps(func)
@@ -87,8 +135,29 @@ expect_time = partial(expect, typ=_datetime.time)
 expect_date_or_datetime = partial(expect, typ='smart')
 
 
-def type_class(typ, obj):
-    """Get the appropriate class for the type/object combination."""
+def type_class(typ: type | str | None, obj: Any) -> type:
+    """Class a store_calendar result is rebuilt as.
+
+    Parameters
+    ----------
+    typ : type, str or None
+        A class, or 'Date', 'DateTime' or 'Interval' naming one. Any other
+        truthy value comes back as it is. None picks the class from obj.
+    obj : Any
+        Value whose class picks the result where typ is None.
+
+    Returns
+    -------
+    type
+        opendate Date, DateTime or Interval, or typ itself.
+
+    Raises
+    ------
+    ValueError
+        typ is None and obj is no stdlib, pendulum or opendate date,
+        datetime or Interval.
+    """
+    # Circular import: opendate imports this module.
     import opendate
 
     if isinstance(typ, str):
@@ -102,14 +171,36 @@ def type_class(typ, obj):
         return typ
     if obj.__class__.__name__ == 'Interval':
         return opendate.Interval
-    if obj.__class__ in {_datetime.datetime, _pendulum.DateTime} or obj.__class__.__name__ == 'DateTime':
+    if (obj.__class__ in {_datetime.datetime, _pendulum.DateTime}
+        or obj.__class__.__name__ == 'DateTime'):
         return opendate.DateTime
-    if obj.__class__ in {_datetime.date, _pendulum.Date} or obj.__class__.__name__ == 'Date':
+    if (obj.__class__ in {_datetime.date, _pendulum.Date}
+        or obj.__class__.__name__ == 'Date'):
         return opendate.Date
     raise ValueError(f'Unknown type {typ}')
 
 
-def store_calendar(func=None, *, typ=None):
+def store_calendar(
+    func: Callable[..., Any] | None = None,
+    *,
+    typ: type | str | None = None,
+) -> Callable:
+    """Decorate a method so its result keeps self's _calendar.
+
+    Parameters
+    ----------
+    func : Callable or None, default None
+        Method to wrap. None returns a decorator that takes it, for the
+        `@store_calendar(typ=...)` form.
+    typ : type, str or None, default None
+        Class the result is rebuilt as, resolved by type_class. None takes
+        the class from self.
+
+    Returns
+    -------
+    Callable
+        Wrapped method, or the decorator where func is None.
+    """
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         _calendar = self._calendar
@@ -122,7 +213,7 @@ def store_calendar(func=None, *, typ=None):
     return wrapper
 
 
-def reset_business(func):
+def reset_business(func: Callable[..., Any]) -> Callable:
     """Decorator to reset business mode after function execution.
     """
     @wraps(func)
@@ -136,11 +227,24 @@ def reset_business(func):
     return wrapper
 
 
-def normalize_date_datetime_pairs(func):
-    """Decorator to normalize mixed Date/DateTime pairs to DateTime.
+def normalize_date_datetime_pairs(func: Callable[..., Any]) -> Callable:
+    """Decorate func so a mixed Date/DateTime pair arrives as two DateTimes.
+
+    Parameters
+    ----------
+    func : Callable
+        Function or method whose second and third positional arguments are
+        the pair. A pair passed by keyword is left as it is.
+
+    Returns
+    -------
+    Callable
+        Wrapper that lifts the Date of a mixed pair to a DateTime at
+        midnight in the other's zone, or in UTC where that one is naive.
     """
     @wraps(func)
     def wrapper(*args, **kwargs):
+        # Circular import: opendate imports this module.
         import opendate
 
         if len(args) >= 3:
@@ -153,12 +257,22 @@ def normalize_date_datetime_pairs(func):
             elif isinstance(enddate, opendate.DateTime) and enddate.tzinfo:
                 tz = enddate.tzinfo
 
-            if isinstance(begdate, opendate.Date) and not isinstance(begdate, opendate.DateTime):
+            if (isinstance(begdate, opendate.Date)
+                and not isinstance(begdate, opendate.DateTime)):
                 if isinstance(enddate, opendate.DateTime):
-                    begdate = opendate.DateTime(begdate.year, begdate.month, begdate.day, tzinfo=tz)
-            elif isinstance(enddate, opendate.Date) and not isinstance(enddate, opendate.DateTime):
+                    begdate = opendate.DateTime(
+                        begdate.year,
+                        begdate.month,
+                        begdate.day,
+                        tzinfo=tz)
+            elif (isinstance(enddate, opendate.Date)
+                and not isinstance(enddate, opendate.DateTime)):
                 if isinstance(begdate, opendate.DateTime):
-                    enddate = opendate.DateTime(enddate.year, enddate.month, enddate.day, tzinfo=tz)
+                    enddate = opendate.DateTime(
+                        enddate.year,
+                        enddate.month,
+                        enddate.day,
+                        tzinfo=tz)
 
             args = (cls_or_self, begdate, enddate) + rest_args
 
@@ -166,8 +280,22 @@ def normalize_date_datetime_pairs(func):
     return wrapper
 
 
-def prefer_utc_timezone(func, force: bool = False) -> Callable:
-    """Return datetime as UTC.
+def prefer_utc_timezone(func: Callable[..., Any], force: bool = False) -> Callable:
+    """Decorate func so a naive result comes back stamped UTC.
+
+    Parameters
+    ----------
+    func : Callable
+        Function returning a datetime-like value or None.
+    force : bool, default False
+        True stamps UTC on an aware result too, replacing its zone without
+        converting the wall time.
+
+    Returns
+    -------
+    Callable
+        Wrapper returning None for a falsy result, else the result with
+        its tzinfo replaced by UTC where it was naive or force is True.
     """
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -180,8 +308,22 @@ def prefer_utc_timezone(func, force: bool = False) -> Callable:
     return wrapper
 
 
-def prefer_native_timezone(func, force: bool = False) -> Callable:
-    """Return datetime as native.
+def prefer_native_timezone(func: Callable[..., Any], force: bool = False) -> Callable:
+    """Decorate func so a naive result comes back stamped with the local zone.
+
+    Parameters
+    ----------
+    func : Callable
+        Function returning a datetime-like value or None.
+    force : bool, default False
+        True stamps the local zone on an aware result too, replacing its
+        zone without converting the wall time.
+
+    Returns
+    -------
+    Callable
+        Wrapper returning None for a falsy result, else the result with
+        its tzinfo replaced by LCL where it was naive or force is True.
     """
     @wraps(func)
     def wrapper(*args, **kwargs):

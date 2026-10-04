@@ -4,21 +4,30 @@ import zoneinfo
 import pendulum
 import pytest
 
-from opendate import UTC, Date, DateTime, Time
+from opendate import EST, UTC, Date, DateTime, Time, Timezone
 
 
 def test_time_constructor():
-    """None or empty constructor returns current time
+    """Verify an empty constructor gives midnight, as an opendate Time.
+
+    Mutation: the no-argument path in Time.__new__ building a
+        pendulum.Time rather than cls.
+    Oracle: pendulum.Time(), which is midnight, and isinstance.
     """
-    T = Time()
-    assert T == pendulum.Time()
-    assert isinstance(T, Time)
+    value = Time()
+    assert value == pendulum.Time()
+    assert isinstance(value, Time)
 
 
 def test_datetime_to_time():
+    """Verify Time.instance stamps UTC on a naive time.
 
-    D = pendulum.DateTime(2022, 1, 1, 12, 30)
-    assert Time.instance(D.time()) == Time(12, 30, tzinfo=UTC)
+    Mutation: instance leaving a naive time naive, which never equals
+        an aware one.
+    Oracle: Time(12, 30) built directly in UTC.
+    """
+    value = pendulum.DateTime(2022, 1, 1, 12, 30)
+    assert Time.instance(value.time()) == Time(12, 30, tzinfo=UTC)
 
 
 @pytest.mark.parametrize(('input_str', 'expected'), [
@@ -33,38 +42,50 @@ def test_datetime_to_time():
     ('0930', Time(9, 30, 0, tzinfo=UTC)),
     ('093015', Time(9, 30, 15, tzinfo=UTC)),
     ('093015,751', Time(9, 30, 15, 751000, tzinfo=UTC)),
-    ('093015.751', Time(9, 30, 15, 751000, tzinfo=UTC)),  # dot fraction
+    ('093015.751', Time(9, 30, 15, 751000, tzinfo=UTC)),
     ('0930 pm', Time(21, 30, 0, tzinfo=UTC)),
     ('093015,751 PM', Time(21, 30, 15, 751000, tzinfo=UTC)),
     # Dot-separated formats
     ('9.30', Time(9, 30, 0, tzinfo=UTC)),
     ('9.30.15', Time(9, 30, 15, tzinfo=UTC)),
     # Midnight and noon edge cases
-    ('1200 AM', Time(0, 0, 0, tzinfo=UTC)),   # 12 AM = midnight
-    ('12:00 PM', Time(12, 0, 0, tzinfo=UTC)),  # 12 PM = noon
-    ('12:00 AM', Time(0, 0, 0, tzinfo=UTC)),  # 12 AM = midnight (colon format)
+    ('1200 AM', Time(0, 0, 0, tzinfo=UTC)),
+    ('12:00 PM', Time(12, 0, 0, tzinfo=UTC)),
+    ('12:00 AM', Time(0, 0, 0, tzinfo=UTC)),
 ])
 def test_time_parse_formats(input_str, expected):
-    """Test Time.parse with various format strings."""
+    """Test Time.parse with various format strings.
+
+    Mutation: the AM/PM rule leaving 12 AM at hour 12, or reading ',751'
+        as 751 microseconds.
+    Oracle: hand-computed times for each string.
+    """
     assert Time.parse(input_str) == expected
 
 
 @pytest.mark.parametrize('input_str', [
-    '9930',   # invalid hour (99)
-    '0970',   # invalid minute (70)
-    '930',    # 3 digits (invalid)
-    '09301',  # 5 digits (invalid)
+    '9930',
+    '0970',
+    '930',
+    '09301',
 ])
 def test_time_parse_invalid(input_str):
-    """Test Time.parse returns None for invalid inputs."""
+    """Test Time.parse returns None for invalid inputs.
+
+    Mutation: accepting an hour above 23, a minute above 59, or a
+        compact form of 3 or 5 digits.
+    Oracle: None for each out-of-range or wrong-length input.
+    """
     assert Time.parse(input_str) is None
 
 
 def test_time_instance_basic():
     """Test Time.instance with various input types.
-    """
-    import datetime
 
+    Mutation: instance stamping UTC on a value that is already a Time.
+    Oracle: the input's own None tzinfo, and UTC on the naive stdlib and
+        pendulum times.
+    """
     assert Time.instance(datetime.time(12, 30, 1)) == Time(12, 30, 1, tzinfo=UTC)
     assert Time.instance(pendulum.Time(12, 30, 1)) == Time(12, 30, 1, tzinfo=UTC)
     assert Time.instance(None) is None
@@ -76,58 +97,51 @@ def test_time_instance_basic():
 
 def test_time_in_timezone():
     """Test timezone conversion for Time objects.
-    """
-    from opendate import Timezone
 
+    Mutation: in_timezone setting tz on the wall clock rather than
+        converting, or reading a naive time as local.
+    Oracle: hand-computed - Sao Paulo is UTC-3 and Moscow UTC+3, and
+        neither observes daylight saving.
+    """
     result = Time(12, 0).in_timezone(Timezone('America/Sao_Paulo'))
     assert result.hour == 9
     assert result.minute == 0
     assert result.second == 0
 
-    result = Time(12, 0, tzinfo=Timezone('Europe/Moscow')).in_timezone(Timezone('America/Sao_Paulo'))
+    moscow_noon = Time(12, 0, tzinfo=Timezone('Europe/Moscow'))
+    result = moscow_noon.in_timezone(Timezone('America/Sao_Paulo'))
     assert result.hour == 6
     assert result.minute == 0
     assert result.second == 0
 
 
 def test_combine():
-    """Test DateTime.combine with different timezones"""
+    """Test DateTime.combine with different timezones
 
-    D = Date(2022, 1, 1)
-    T = Time(12, 30)
+    Mutation: combine ignoring tzinfo, which leaves the naive time on
+        UTC.
+    Oracle: DateTime built directly at 12:30 in each zone.
+    """
+    day = Date(2022, 1, 1)
+    time_of_day = Time(12, 30)
 
     # Use EST instead of LCL to ensure timezone differs from UTC in CI
-    from opendate import EST
-
     _ = DateTime(2022, 1, 1, 12, 30, tzinfo=EST)
     assert _.tzinfo == EST
 
-    comb = DateTime.combine(D, T, tzinfo=EST)
+    comb = DateTime.combine(day, time_of_day, tzinfo=EST)
     assert comb == _
 
-    comb = DateTime.combine(D, T, tzinfo=UTC)
+    comb = DateTime.combine(day, time_of_day, tzinfo=UTC)
     assert comb != _
-
-    # ==
-
-    _ = DateTime(2022, 1, 1, 12, 30, tzinfo=EST)
-    assert _.tzinfo == EST
-
-    comb = DateTime.combine(D, T, tzinfo=EST)
-    assert comb == _
-
-    comb = DateTime.combine(D, T, tzinfo=UTC)
-    assert comb != _
-
-    # ==
 
     _ = DateTime(2022, 1, 1, 12, 30, tzinfo=UTC)
     assert _.tzinfo == UTC
 
-    comb = DateTime.combine(D, T, tzinfo=UTC)
+    comb = DateTime.combine(day, time_of_day, tzinfo=UTC)
     assert comb == _
 
-    comb = DateTime.combine(D, T, tzinfo=EST)
+    comb = DateTime.combine(day, time_of_day, tzinfo=EST)
     assert comb != _
 
 
@@ -162,15 +176,10 @@ def test_a_driver_offset_survives_construction():
 def test_parse_keeps_an_offset_the_string_spells_out(text, offset_hours):
     """Verify a parsed time keeps its own offset instead of UTC.
 
-    The general parser answers hour, minute, second and microsecond
-    only, so an offset in the string was dropped and the UTC-preferring
-    decorator stamped UTC over the gap - moving the instant four hours
-    rather than merely relabeling it. A csv column of offset-bearing
-    times reached this with no database involved.
-
-    Mutation: dropping the offset split, so every row lands on UTC;
-        or reading the minutes off the wrong end, which the half-hour
-        rows catch.
+    Mutation: dropping the offset split, so the general parser, which
+        reads no offset, leaves prefer_utc_timezone to stamp UTC on
+        every row; or reading the minutes off the wrong end, which the
+        half-hour rows catch.
     Oracle: the offset each string spells out, against a bare time that
         must still default to UTC.
     """
@@ -185,8 +194,7 @@ def test_parse_does_not_read_a_dash_inside_a_time_as_an_offset():
 
     Mutation: accepting a two-digit offset form, which reads the '45' of
         '14-30-45' as a timezone and answers a time built from '14-30'.
-    Oracle: None, the same answer the format got before - it is not a
-        supported spelling either way.
+    Oracle: None, since a dashed time is not a supported spelling.
     """
     assert Time.parse('14-30-45') is None
     assert Time.parse('14-30-45', fmt='%H-%M-%S') == Time(14, 30, 45, tzinfo=UTC)
@@ -199,12 +207,6 @@ def test_parse_does_not_read_a_dash_inside_a_time_as_an_offset():
     ])
 def test_a_driver_zone_becomes_a_pendulum_one(driver_tz, positional):
     """Verify a time settles its timezone class like a datetime does.
-
-    Nothing a Time reports changes when its zone is settled - offset,
-    isoformat, equality and in_timezone all agree either way - so the
-    tzinfo class is the only thing that can tell the two apart, and the
-    only thing worth asserting. Settling it is what keeps one class of
-    timezone across the library rather than a bug fix in itself.
 
     Mutation: dropping normalize_timezone from Time.__new__, or the
         off-by-one `len(args) > 5` that skips a positional tzinfo.

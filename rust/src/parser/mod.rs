@@ -1,7 +1,8 @@
 //! Datetime parser module - port of dateutil.parser.
 //!
 //! This module provides a high-performance datetime parser that matches
-//! dateutil's behavior exactly, supporting a wide variety of date/time formats.
+//! dateutil's behavior exactly, supporting a wide variety of date/time
+//! formats.
 
 mod core;
 mod errors;

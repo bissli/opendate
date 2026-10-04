@@ -1,4 +1,3 @@
-// Allow simple, readable code patterns over idiomatic Rust
 #![allow(clippy::manual_range_contains)]
 #![allow(clippy::len_zero)]
 #![allow(clippy::redundant_pattern_matching)]

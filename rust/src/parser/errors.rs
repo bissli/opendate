@@ -70,6 +70,11 @@ impl From<ParserError> for PyErr {
 mod tests {
     use super::*;
 
+    /// Verify the ValueError text for sample variants.
+    ///
+    /// Mutation: the `{:02}` month pad dropped from DayOutOfRange, or the
+    ///   InvalidValue field and value swapped.
+    /// Oracle: hand-written expected messages.
     #[test]
     fn test_error_display() {
         assert_eq!(ParserError::EmptyString.to_string(), "Empty string");

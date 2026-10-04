@@ -6,10 +6,9 @@ use pyo3::prelude::*;
 use crate::calendar;
 use crate::parser::{IsoParser, Parser, PyParseResult};
 
-/// Static default parser instance - avoids recreating HashMaps on every parse() call.
+/// Built once, so a `parse()` call does not rebuild the lookup HashMaps.
 static DEFAULT_PARSER: Lazy<Parser> = Lazy::new(Parser::default);
 
-/// Static ISO parser instance.
 static DEFAULT_ISO_PARSER: Lazy<IsoParser> = Lazy::new(IsoParser::new);
 
 #[pyclass(name = "BusinessCalendar")]
@@ -107,7 +106,6 @@ impl PyIsoParser {
 /// Parse an ISO-8601 datetime string (convenience function).
 #[pyfunction]
 fn isoparse(dt_str: &str) -> PyResult<PyParseResult> {
-    // Use static ISO parser instance
     let result = DEFAULT_ISO_PARSER.isoparse(dt_str)?;
     Ok(result.into())
 }
@@ -134,8 +132,16 @@ impl PyParser {
     /// * `timestr` - The datetime string to parse
     /// * `dayfirst` - Override dayfirst setting (None = use default)
     /// * `yearfirst` - Override yearfirst setting (None = use default)
-    /// * `fuzzy` - Whether to allow fuzzy parsing
-    /// * `fuzzy_with_tokens` - If true, return skipped tokens tuple
+    /// * `fuzzy` - Skip a token that fits no field instead of failing
+    /// * `fuzzy_with_tokens` - If true, return skipped tokens tuple.
+    ///   Implies `fuzzy`.
+    ///
+    /// # Returns
+    /// The `ParseResult`, or a `(ParseResult, list[str])` tuple of the
+    /// result and the skipped tokens when `fuzzy_with_tokens` is true.
+    ///
+    /// # Errors
+    /// ValueError when `timestr` does not parse.
     #[pyo3(signature = (timestr, dayfirst=None, yearfirst=None, fuzzy=false, fuzzy_with_tokens=false))]
     fn parse(
         &self,
@@ -176,6 +182,21 @@ impl IntoPy<PyObject> for PyParseResultOrTuple {
 }
 
 /// Parse a datetime string (convenience function).
+///
+/// # Arguments
+/// * `timestr` - The datetime string to parse
+/// * `dayfirst` - Override dayfirst setting (None = false)
+/// * `yearfirst` - Override yearfirst setting (None = false)
+/// * `fuzzy` - Skip a token that fits no field instead of failing
+/// * `fuzzy_with_tokens` - If true, return skipped tokens tuple.
+///   Implies `fuzzy`.
+///
+/// # Returns
+/// The `ParseResult`, or a `(ParseResult, list[str])` tuple of the
+/// result and the skipped tokens when `fuzzy_with_tokens` is true.
+///
+/// # Errors
+/// ValueError when `timestr` does not parse.
 #[pyfunction]
 #[pyo3(signature = (timestr, dayfirst=None, yearfirst=None, fuzzy=false, fuzzy_with_tokens=false))]
 fn parse(
@@ -185,7 +206,6 @@ fn parse(
     fuzzy: bool,
     fuzzy_with_tokens: bool,
 ) -> PyResult<PyParseResultOrTuple> {
-    // Use static default parser to avoid HashMap recreation on every call
     let (result, tokens) =
         DEFAULT_PARSER.parse(timestr, dayfirst, yearfirst, fuzzy, fuzzy_with_tokens)?;
 
@@ -200,9 +220,6 @@ fn parse(
 }
 
 /// Python wrapper for standalone time parsing.
-///
-/// Provides a class-based interface for parsing time strings,
-/// consistent with Parser and IsoParser patterns.
 #[pyclass(name = "TimeParser")]
 pub struct PyTimeParser {
     inner: Parser,
@@ -220,13 +237,14 @@ impl PyTimeParser {
     /// Parse a time-only string.
     ///
     /// Handles formats:
-    /// - HHMM: "0930" → 09:30
-    /// - HHMMSS: "093015" → 09:30:15
+    /// - HHMM: "0930" -> 09:30
+    /// - HHMMSS: "093015" -> 09:30:15
     /// - HHMMSS with fraction: "093015.751" or "093015,751"
     /// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
     /// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
     ///
-    /// Raises ValueError for invalid inputs.
+    /// # Errors
+    /// ValueError for invalid inputs.
     fn parse(&self, timestr: &str) -> PyResult<PyParseResult> {
         let result = self.inner.parse_time_only(timestr)?;
         Ok(result.into())

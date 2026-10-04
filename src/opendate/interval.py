@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 import opendate as _date
 import pendulum as _pendulum
+from opendate.calendars import get_calendar, get_default_calendar
 from opendate.decorators import expect_date_or_datetime
 from opendate.decorators import normalize_date_datetime_pairs, reset_business
 
@@ -23,17 +24,22 @@ if TYPE_CHECKING:
 
 
 class Interval(_pendulum.Interval):
-    """Interval class extending pendulum.Interval with business day awareness.
+    """Span between two dates or datetimes, with business-day counting.
 
-    This class represents the difference between two dates or datetimes with
-    additional support for business day calculations, calendar awareness, and
-    financial period calculations.
+    Parameters
+    ----------
+    begdate : Date | DateTime
+        First endpoint. A datetime.date, datetime.datetime,
+        pandas.Timestamp or numpy.datetime64 becomes a Date or DateTime,
+        and a Date paired with a DateTime becomes a DateTime.
+    enddate : Date | DateTime
+        Second endpoint. An enddate before begdate makes the interval
+        reversed, and its counts negative.
 
-    Unlike pendulum.Interval:
-    - Has business day mode that only counts business days
-    - Preserves calendar association (e.g., NYSE, LSE)
-    - Additional financial methods like yearfrac()
-    - Support for range operations that respect business days
+    Raises
+    ------
+    AssertionError
+        Either endpoint is None or NaT.
     """
 
     _business: bool = False
@@ -73,41 +79,55 @@ class Interval(_pendulum.Interval):
         return date.replace(month=quarter_month).end_of('month')
 
     def _get_unit_handlers(self, unit: str) -> dict:
-        """Get handlers for the specified time unit.
+        """Period functions for unit, keyed get_start, get_end and advance.
 
-        Returns a dict with:
-            get_start: Function to get start of period containing date
-            get_end: Function to get end of period containing date
-            advance: Function to advance to next period start
+        Parameters
+        ----------
+        unit : str
+            Pendulum unit name, or 'quarter', 'decade' or 'century'.
+
+        Returns
+        -------
+        dict
+            get_start and get_end map a date to the start or end of its
+            period. advance maps a period start to the next period start.
         """
         if unit == 'quarter':
             return {
                 'get_start': self._get_quarter_start,
                 'get_end': self._get_quarter_end,
                 'advance': lambda date: self._get_quarter_start(date.add(months=3)),
-            }
+                }
 
         if unit == 'decade':
             return {
                 'get_start': lambda date: date.start_of('decade'),
                 'get_end': lambda date: date.end_of('decade'),
                 'advance': lambda date: date.add(years=10).start_of('decade'),
-            }
+                }
 
         if unit == 'century':
             return {
                 'get_start': lambda date: date.start_of('century'),
                 'get_end': lambda date: date.end_of('century'),
                 'advance': lambda date: date.add(years=100).start_of('century'),
-            }
+                }
 
         return {
             'get_start': lambda date: date.start_of(unit),
             'get_end': lambda date: date.end_of(unit),
             'advance': lambda date: date.add(**{f'{unit}s': 1}).start_of(unit),
-        }
+            }
 
     def business(self) -> Self:
+        """Business-day mode on this interval and both endpoints, in place.
+
+        Returns
+        -------
+        Self
+            This interval. range, days, start_of and end_of turn the mode
+            off when they return.
+        """
         self._business = True
         self._start.business()
         self._end.business()
@@ -115,16 +135,24 @@ class Interval(_pendulum.Interval):
 
     @property
     def b(self) -> Self:
+        """Shorthand for business().
+        """
         return self.business()
 
     def calendar(self, cal: str | Calendar | None = None) -> Self:
-        """Set the calendar for business day calculations.
+        """Set the business-day calendar on the interval and both endpoints.
 
         Parameters
-            cal: Calendar name (str), Calendar instance, or None for default
-        """
-        from opendate.calendars import get_calendar, get_default_calendar
+        ----------
+        cal : str | Calendar | None, default None
+            Calendar name, Calendar instance, or None for the default
+            calendar.
 
+        Returns
+        -------
+        Self
+            This interval, changed in place.
+        """
         if cal is None:
             cal = get_default_calendar()
         if isinstance(cal, str):
@@ -137,7 +165,7 @@ class Interval(_pendulum.Interval):
         return self
 
     def is_business_day_range(self) -> Iterator[bool]:
-        """Generate boolean values indicating whether each day in the range is a business day.
+        """Business-day flag for each calendar day from begdate to enddate.
         """
         self._business = False
         for thedate in self.range('days'):
@@ -145,20 +173,28 @@ class Interval(_pendulum.Interval):
 
     @reset_business
     def range(self, unit: str = 'days', amount: int = 1) -> Iterator[DateTime | Date]:
-        """Generate dates/datetimes over the interval.
+        """Dates or datetimes stepping from begdate to enddate, inclusive.
 
         Parameters
-            unit: Time unit ('days', 'weeks', 'months', 'years')
-            amount: Step size (e.g., every N units)
+        ----------
+        unit : str, default 'days'
+            Pendulum unit name: 'days', 'weeks', 'months' or 'years'.
+        amount : int, default 1
+            Step size, in units.
 
-        In business mode (for 'days' only), skips non-business days.
+        Returns
+        -------
+        Iterator[DateTime | Date]
+            For 'days' only, a reversed interval steps backward and business
+            mode skips non-business days.
         """
         _business = self._business
         parent_range = _pendulum.Interval.range
 
-        def _range_generator():
+        def _range_generator() -> Iterator[DateTime | Date]:
             if unit != 'days':
-                yield from (type(d).instance(d) for d in parent_range(self, unit, amount))
+                yield from (
+                    type(d).instance(d) for d in parent_range(self, unit, amount))
                 return
 
             if self._direction == 1:
@@ -183,7 +219,10 @@ class Interval(_pendulum.Interval):
     @property
     @reset_business
     def days(self) -> int:
-        """Get number of days in the interval (respects business mode and sign).
+        """Signed count of days from begdate to enddate.
+
+        In business mode, the count is of business days from the earlier
+        endpoint up to and excluding the later one.
         """
         if not self._business:
             # Use toordinal to avoid recursion with wrapped __sub__
@@ -193,10 +232,15 @@ class Interval(_pendulum.Interval):
 
     @property
     def months(self) -> float:
-        """Get number of months in the interval including fractional parts.
+        """Signed month count, with the partial month as a fraction.
 
-        Overrides pendulum's months property to return a float instead of an integer.
-        Calculates fractional months based on actual day counts within partial months.
+        Notes
+        -----
+        - whole = 12 * (end.year - start.year) + (end.month - start.month)
+        - end.day >= start.day: whole + (end.day - start.day) / L
+        - end.day < start.day: whole - 1 + (L - start.day + end.day) / L
+        - start is the earlier endpoint and L the length of its month. A
+          reversed interval negates the result.
         """
         year_diff = self._end.year - self._start.year
         month_diff = self._end.month - self._start.month
@@ -208,7 +252,8 @@ class Interval(_pendulum.Interval):
             fraction = day_diff / days_in_month
         else:
             total_months -= 1
-            days_in_start_month = calendar.monthrange(self._start.year, self._start.month)[1]
+            days_in_start_month = calendar.monthrange(
+                self._start.year, self._start.month)[1]
             day_diff = (days_in_start_month - self._start.day) + self._end.day
             fraction = day_diff / days_in_start_month
 
@@ -216,15 +261,13 @@ class Interval(_pendulum.Interval):
 
     @property
     def quarters(self) -> float:
-        """Get approximate number of quarters in the interval.
-
-        Note: This is an approximation using day count / 365 * 4.
+        """Approximate quarter count, as 4 * days / 365.
         """
         return self._direction * 4 * self.days / 365.0
 
     @property
     def years(self) -> int:
-        """Get number of complete years in the interval (always floors).
+        """Signed count of whole years, truncated toward zero.
         """
         year_diff = self._end.year - self._start.year
         if self._end.month < self._start.month or \
@@ -273,9 +316,13 @@ class Interval(_pendulum.Interval):
             return date.month == 2 \
                 and date.day == calendar.monthrange(date.year, 2)[1]
 
+        def serial_360(date: Date | DateTime, day: int) -> int:
+            """Day number on a 30/360 calendar, with day in place of date.day.
+            """
+            return day + date.month * 30 + date.year * 360
+
         def basis0(date1: Date | DateTime, date2: Date | DateTime) -> float:
             date1day, date2day = date1.day, date2.day
-            # SIA order: a later rule reads the day an earlier rule set.
             if is_end_of_feb(date1):
                 if is_end_of_feb(date2):
                     date2day = 30
@@ -284,12 +331,12 @@ class Interval(_pendulum.Interval):
                 date2day = 30
             if date1day == 31:
                 date1day = 30
-            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
-                - (date1day + date1.month * 30 + date1.year * 360)
-            return daydiff360 / 360
+            return (serial_360(date2, date2day) - serial_360(date1, date1day)) / 360
 
-        def _days_between(date1, date2):
-            """Compute days between dates using ordinal to avoid recursion."""
+        def _days_between(date1: Date | DateTime, date2: Date | DateTime) -> int:
+            """Signed day count from date1 to date2, by ordinal to avoid
+            recursion through the wrapped __sub__.
+            """
             return date2.toordinal() - date1.toordinal()
 
         def basis1(date1: Date | DateTime, date2: Date | DateTime) -> float:
@@ -297,32 +344,25 @@ class Interval(_pendulum.Interval):
             year2_length = 366.0 if calendar.isleap(date2.year) else 365.0
             year1_days = _days_between(date1, _date.Date(date1.year + 1, 1, 1))
             year2_days = _days_between(_date.Date(date2.year, 1, 1), date2)
-            # QuantLib sums the three terms even within one year. A single
-            # days / length rounds differently in the last bit.
             return (float(date2.year - date1.year - 1)
                     + year1_days / year1_length
                     + year2_days / year2_length)
 
-        def basis2(date1, date2):
+        def basis2(date1: Date | DateTime, date2: Date | DateTime) -> float:
             return _days_between(date1, date2) / 360.0
 
-        def basis3(date1, date2):
+        def basis3(date1: Date | DateTime, date2: Date | DateTime) -> float:
             return _days_between(date1, date2) / 365.0
 
-        def basis4(date1, date2):
-            # change day-of-month for purposes of calculation.
-            date1day, date1month, date1year = date1.day, date1.month, date1.year
-            date2day, date2month, date2year = date2.day, date2.month, date2.year
+        def basis4(date1: Date | DateTime, date2: Date | DateTime) -> float:
+            date1day, date2day = date1.day, date2.day
             if date1day == 31:
                 date1day = 30
             if date2day == 31:
                 date2day = 30
-            # Remarkably, do NOT change Feb. 28 or 29 at ALL.
-            daydiff360 = (date2day + date2month * 30 + date2year * 360) - \
-                (date1day + date1month * 30 + date1year * 360)
-            return daydiff360 / 360
+            return (serial_360(date2, date2day) - serial_360(date1, date1day)) / 360
 
-        def basis5(date1, date2):
+        def basis5(date1: Date | DateTime, date2: Date | DateTime) -> float:
             return _days_between(date1, date2) / 365.25
 
         def basis6(date1: Date | DateTime, date2: Date | DateTime) -> float:
@@ -331,9 +371,7 @@ class Interval(_pendulum.Interval):
                 date1day = 30
             if date2day == 31 and date1day == 30:
                 date2day = 30
-            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
-                - (date1day + date1.month * 30 + date1.year * 360)
-            return daydiff360 / 360
+            return (serial_360(date2, date2day) - serial_360(date1, date1day)) / 360
 
         def basis7(date1: Date | DateTime, date2: Date | DateTime) -> float:
             date1day, date2day = date1.day, date2.day
@@ -341,9 +379,7 @@ class Interval(_pendulum.Interval):
                 date1day = 30
             if date2day == 31 or is_end_of_feb(date2):
                 date2day = 30
-            daydiff360 = (date2day + date2.month * 30 + date2.year * 360) \
-                - (date1day + date1.month * 30 + date1.year * 360)
-            return daydiff360 / 360
+            return (serial_360(date2, date2day) - serial_360(date1, date1day)) / 360
 
         def no_leap_index(date: Date | DateTime) -> int:
             """Day index on a calendar with no February 29.
@@ -385,16 +421,20 @@ class Interval(_pendulum.Interval):
 
     @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:
-        """Return the start of each unit within the interval.
+        """Start of each unit period that overlaps the interval, ascending.
 
         Parameters
-            unit: Time unit ('month', 'week', 'year', 'quarter')
+        ----------
+        unit : str, default 'month'
+            Pendulum unit name ('day', 'week', 'month', 'year'), or
+            'quarter', 'decade' or 'century'.
 
         Returns
-            List of Date or DateTime objects representing start of each unit
-
-        In business mode, each start date is adjusted to the next business day
-        if it falls on a non-business day.
+        -------
+        list[Date | DateTime]
+            One start per period. The first can fall before the interval
+            start. In business mode, a start on a non-business day moves
+            to the next business day.
         """
         handlers = self._get_unit_handlers(unit)
         result = []
@@ -414,16 +454,20 @@ class Interval(_pendulum.Interval):
 
     @reset_business
     def end_of(self, unit: str = 'month') -> list[Date | DateTime]:
-        """Return the end of each unit within the interval.
+        """End of each unit period that overlaps the interval, ascending.
 
         Parameters
-            unit: Time unit ('month', 'week', 'year', 'quarter')
+        ----------
+        unit : str, default 'month'
+            Pendulum unit name ('day', 'week', 'month', 'year'), or
+            'quarter', 'decade' or 'century'.
 
         Returns
-            List of Date or DateTime objects representing end of each unit
-
-        In business mode, each end date is adjusted to the previous business day
-        if it falls on a non-business day.
+        -------
+        list[Date | DateTime]
+            One end per period. The last can fall after the interval end.
+            In business mode, an end on a non-business day moves to the
+            previous business day.
         """
         handlers = self._get_unit_handlers(unit)
         result = []

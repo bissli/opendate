@@ -1,14 +1,12 @@
 //! Parse result structures for datetime parsing.
 //!
-//! This module defines the `ParseResult` struct that holds parsed datetime components.
-//! It mirrors dateutil's internal result structure but uses Rust types.
+//! This module defines the `ParseResult` struct that holds parsed datetime
+//! components. It mirrors dateutil's internal result structure but uses Rust
+//! types.
 
 use pyo3::prelude::*;
 
 /// Result of parsing a datetime string.
-///
-/// All fields are optional since different input strings may only specify
-/// some components (e.g., "14:30" only has hour and minute).
 #[derive(Debug, Clone, Default)]
 pub struct ParseResult {
     /// Year (e.g., 2024)
@@ -116,6 +114,11 @@ impl From<ParseResult> for PyParseResult {
 mod tests {
     use super::*;
 
+    /// Verify an empty result reports no date, time or timezone.
+    ///
+    /// Mutation: has_date, has_time or has_tz built from is_none() in
+    ///   place of is_some().
+    /// Oracle: an empty result sets no field.
     #[test]
     fn test_parse_result_default() {
         let r = ParseResult::new();
@@ -126,6 +129,10 @@ mod tests {
         assert!(!r.has_tz());
     }
 
+    /// Verify date fields alone set has_date and leave has_time false.
+    ///
+    /// Mutation: has_time reading a date field such as day.
+    /// Oracle: hand-set year, month and day only.
     #[test]
     fn test_parse_result_with_date() {
         let mut r = ParseResult::new();
@@ -136,6 +143,10 @@ mod tests {
         assert!(!r.has_time());
     }
 
+    /// Verify time fields alone set has_time and leave has_date false.
+    ///
+    /// Mutation: has_date reading a time field such as hour.
+    /// Oracle: hand-set hour and minute only.
     #[test]
     fn test_parse_result_with_time() {
         let mut r = ParseResult::new();

@@ -54,7 +54,8 @@ impl Ymd {
         self.dstridx.is_some()
     }
 
-    /// Check if a value could be a valid day.
+    /// Check if a value could be a valid day. With the month known and the
+    /// year unknown, February allows 29.
     pub fn could_be_day(&self, value: i32) -> bool {
         if self.has_day() {
             return false;
@@ -76,7 +77,7 @@ impl Ymd {
             };
             self.values[year_idx]
         } else {
-            2000 // Assume leap year if year unknown
+            2000
         };
 
         let max_day = days_in_month(year, month);
@@ -85,9 +86,20 @@ impl Ymd {
 
     /// Append a value with an optional label.
     ///
-    /// Label can be 'Y' (year), 'M' (month), or 'D' (day).
+    /// # Arguments
+    ///
+    /// * `value` - A value above 100 takes the year slot and marks the
+    ///   century as specified.
+    /// * `label` - 'Y' (year), 'M' (month), 'D' (day), or `None` for an
+    ///   unknown slot.
+    ///
+    /// # Errors
+    ///
+    /// `ParserError::ParseError` when a value above 100 carries a label
+    /// other than 'Y', when the label's slot is already set, or for any
+    /// other label. A duplicate or unknown label leaves the value
+    /// appended.
     pub fn append(&mut self, value: i32, label: Option<char>) -> Result<(), ParserError> {
-        // Check for century specification (4+ digit number)
         let mut actual_label = label;
 
         if value > 100 {
@@ -133,13 +145,23 @@ impl Ymd {
         Ok(())
     }
 
-    /// Append a value that is known to be a string token (for century detection).
+    /// Append a value that is known to be a string token (for century
+    /// detection).
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - A token of three or more unsigned digits marks the century
+    ///   as specified, so `"0024"` counts as a four-digit year.
+    /// * `label` - As for `append`.
+    ///
+    /// # Errors
+    ///
+    /// `ParserError::ParseError` when `s` is not an optionally signed
+    /// decimal integer, or on any error `append` gives.
     pub fn append_str(&mut self, s: &str, label: Option<char>) -> Result<(), ParserError> {
         let value: i32 = parse_i32(s)?;
 
-        // Check for century specification based on string length
-        let slen = str_len(s);
-        if slen > 2 && all_ascii_digits(s) {
+        if s.len() > 2 && s.bytes().all(|c| c.is_ascii_digit()) {
             self.century_specified = true;
         }
 
@@ -158,7 +180,13 @@ impl Ymd {
 
     /// Resolve the Y/M/D values based on yearfirst and dayfirst settings.
     ///
-    /// Returns (year, month, day) where any may be None if not determined.
+    /// # Returns
+    ///
+    /// (year, month, day), each `None` where undetermined.
+    ///
+    /// # Errors
+    ///
+    /// `ParserError::ParseError` when more than three values are stored.
     pub fn resolve(&self, yearfirst: bool, dayfirst: bool) -> YmdResult {
         let len_ymd = self.len();
 
@@ -172,7 +200,6 @@ impl Ymd {
             ));
         }
 
-        // If we have enough stride indices, use them
         let mut strids_count = 0usize;
         if self.ystridx.is_some() {
             strids_count += 1;
@@ -190,13 +217,10 @@ impl Ymd {
 
         match len_ymd {
             1 => {
-                // One value
                 if let Some(idx) = self.mstridx {
-                    // Single month value
                     let month = self.values[idx];
                     Ok((None, Some(month), None))
                 } else {
-                    // Ambiguous single value - could be year or day
                     let val = self.values[0];
                     if val > 31 {
                         Ok((Some(val), None, None))
@@ -207,7 +231,6 @@ impl Ymd {
             }
             2 => {
                 if self.mstridx.is_some() {
-                    // Two values with month string
                     let m_idx = match self.mstridx {
                         Some(idx) => idx,
                         None => return Err(ParserError::ParseError("No month index".to_string())),
@@ -222,86 +245,64 @@ impl Ymd {
                         Ok((None, Some(month), Some(other)))
                     }
                 } else {
-                    // Two numeric values
                     let v0 = self.values[0];
                     let v1 = self.values[1];
 
                     if v0 > 31 {
-                        // 99-01: year-month
                         Ok((Some(v0), Some(v1), None))
                     } else if v1 > 31 {
-                        // 01-99: month-year
                         Ok((Some(v1), Some(v0), None))
                     } else if dayfirst && v1 <= 12 {
-                        // 13-01: day-month
                         Ok((None, Some(v1), Some(v0)))
                     } else {
-                        // 01-13: month-day
                         Ok((None, Some(v0), Some(v1)))
                     }
                 }
             }
             3 => {
-                // Three values
                 let v0 = self.values[0];
                 let v1 = self.values[1];
                 let v2 = self.values[2];
 
                 if let Some(midx) = self.mstridx {
-                    // Month is known
                     match midx {
                         0 => {
-                            // Month first: M-?-?
                             if v1 > 31 {
-                                // Apr-2003-25: month-year-day
                                 Ok((Some(v1), Some(v0), Some(v2)))
                             } else {
-                                // Apr-25-2003: month-day-year
                                 Ok((Some(v2), Some(v0), Some(v1)))
                             }
                         }
                         1 => {
-                            // Month second: ?-M-?
                             if v0 > 31 || (yearfirst && v2 <= 31) {
-                                // 99-Jan-01: year-month-day
                                 Ok((Some(v0), Some(v1), Some(v2)))
                             } else {
-                                // 01-Jan-01: day-month-year
                                 Ok((Some(v2), Some(v1), Some(v0)))
                             }
                         }
                         2 => {
-                            // Month third: ?-?-M (unusual!)
                             if v1 > 31 {
-                                // 01-99-Jan: day-year-month
                                 Ok((Some(v1), Some(v2), Some(v0)))
                             } else {
-                                // 99-01-Jan: year-day-month
                                 Ok((Some(v0), Some(v2), Some(v1)))
                             }
                         }
                         _ => Err(ParserError::ParseError("Invalid month index".to_string())),
                     }
                 } else {
-                    // No month identified - pure numeric disambiguation
                     let ystridx_is_zero = match self.ystridx {
                         Some(idx) => idx == 0,
                         None => false,
                     };
                     if v0 > 31 || ystridx_is_zero || (yearfirst && v1 <= 12 && v2 <= 31) {
-                        // Year first: 99-01-01
                         if dayfirst && v2 <= 12 {
-                            // 99-31-01: year-day-month
                             Ok((Some(v0), Some(v2), Some(v1)))
                         } else {
-                            // 99-01-31: year-month-day
                             Ok((Some(v0), Some(v1), Some(v2)))
                         }
                     } else if v0 > 12 || (dayfirst && v1 <= 12) {
-                        // Day first: 13-01-01
                         Ok((Some(v2), Some(v1), Some(v0)))
                     } else {
-                        // Month first: 01-13-01
                         Ok((Some(v2), Some(v0), Some(v1)))
                     }
                 }
@@ -324,7 +325,6 @@ impl Ymd {
             strids.insert('d', idx);
         }
 
-        // If we have 3 values and 2 known strides, we can infer the third
         if self.len() == 3 && strids.len() == 2 {
             let mut used: HashSet<usize> = HashSet::new();
             if let Some(&v) = strids.get(&'y') {
@@ -377,7 +377,7 @@ impl Ymd {
     }
 }
 
-/// Get number of days in a month.
+/// Days in `month` of `year`. An out-of-range month gives 31.
 fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -389,7 +389,7 @@ fn days_in_month(year: i32, month: u32) -> u32 {
                 28
             }
         }
-        _ => 31, // Default fallback
+        _ => 31,
     }
 }
 
@@ -429,30 +429,15 @@ fn parse_i32(s: &str) -> Result<i32, ParserError> {
     Ok(result)
 }
 
-/// Get string length.
-fn str_len(s: &str) -> usize {
-    s.as_bytes().len()
-}
-
-/// Check if all characters are ASCII digits.
-fn all_ascii_digits(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    let n = bytes.len();
-    let mut i = 0usize;
-    while i < n {
-        let c = bytes[i];
-        if c < b'0' || c > b'9' {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    /// Verify resolve() gives no fields when nothing was appended.
+    ///
+    /// Mutation: dropping the empty early return, which reaches
+    /// `unreachable!()`.
+    /// Oracle: no values means no year, month or day.
     #[test]
     fn test_ymd_empty() {
         let ymd = Ymd::new();
@@ -460,6 +445,10 @@ mod tests {
         assert_eq!((y, m, d), (None, None, None));
     }
 
+    /// Verify a lone value of 31 or less resolves as the day.
+    ///
+    /// Mutation: a lone-value year threshold of `> 12` for `> 31`.
+    /// Oracle: 15 is a valid day and is read as no year.
     #[test]
     fn test_ymd_single_day() {
         let mut ymd = Ymd::new();
@@ -468,6 +457,11 @@ mod tests {
         assert_eq!((y, m, d), (None, None, Some(15)));
     }
 
+    /// Verify a lone value above 31 resolves as the year.
+    ///
+    /// Mutation: swapping the year and day outputs of the lone-value
+    /// branch.
+    /// Oracle: no month has 2024 days.
     #[test]
     fn test_ymd_single_year() {
         let mut ymd = Ymd::new();
@@ -476,6 +470,10 @@ mod tests {
         assert_eq!((y, m, d), (Some(2024), None, None));
     }
 
+    /// Verify a month token plus a value of 31 or less gives month-day.
+    ///
+    /// Mutation: taking the month's own index as the other value.
+    /// Oracle: hand-read Jan 15.
     #[test]
     fn test_ymd_month_day() {
         let mut ymd = Ymd::new();
@@ -485,9 +483,12 @@ mod tests {
         assert_eq!((y, m, d), (None, Some(1), Some(15)));
     }
 
+    /// Verify MM/DD/YYYY resolves month first by default.
+    ///
+    /// Mutation: returning day-month-year from the month-first branch.
+    /// Oracle: hand-read 01/15/2024 = Jan 15, 2024.
     #[test]
     fn test_ymd_us_format() {
-        // MM/DD/YYYY (US format, default)
         let mut ymd = Ymd::new();
         ymd.append(1, None).unwrap();
         ymd.append(15, None).unwrap();
@@ -496,9 +497,12 @@ mod tests {
         assert_eq!((y, m, d), (Some(2024), Some(1), Some(15)));
     }
 
+    /// Verify DD/MM/YYYY resolves day first with dayfirst set.
+    ///
+    /// Mutation: returning month-day-year from the day-first branch.
+    /// Oracle: hand-read 15/01/2024 = Jan 15, 2024.
     #[test]
     fn test_ymd_european_format() {
-        // DD/MM/YYYY (European format, dayfirst=true)
         let mut ymd = Ymd::new();
         ymd.append(15, None).unwrap();
         ymd.append(1, None).unwrap();
@@ -507,9 +511,13 @@ mod tests {
         assert_eq!((y, m, d), (Some(2024), Some(1), Some(15)));
     }
 
+    /// Verify YYYY/MM/DD resolves year-month-day with yearfirst set.
+    ///
+    /// Mutation: returning year-day-month from the year-first branch
+    /// without dayfirst.
+    /// Oracle: hand-read 2024/01/15 = Jan 15, 2024.
     #[test]
     fn test_ymd_iso_format() {
-        // YYYY/MM/DD (ISO format, yearfirst=true)
         let mut ymd = Ymd::new();
         ymd.append(2024, None).unwrap();
         ymd.append(1, None).unwrap();
@@ -518,48 +526,78 @@ mod tests {
         assert_eq!((y, m, d), (Some(2024), Some(1), Some(15)));
     }
 
+    /// Verify Jan 15, 2024 fills the day from the two known slots.
+    ///
+    /// Mutation: taking the first used index as the missing slot in
+    /// resolve_from_stridxs.
+    /// Oracle: hand-read Jan 15, 2024.
     #[test]
     fn test_ymd_named_month() {
-        // Jan 15, 2024
         let mut ymd = Ymd::new();
-        ymd.append(1, Some('M')).unwrap(); // January
+        ymd.append(1, Some('M')).unwrap();
         ymd.append(15, None).unwrap();
         ymd.append(2024, None).unwrap();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
         assert_eq!((y, m, d), (Some(2024), Some(1), Some(15)));
     }
 
+    /// Verify 15 Jan 2024 fills the day from the two known slots.
+    ///
+    /// Mutation: assigning the missing slot to 'y' whichever key is
+    /// absent.
+    /// Oracle: hand-read Jan 15, 2024.
     #[test]
     fn test_ymd_day_month_year() {
-        // 15 Jan 2024
         let mut ymd = Ymd::new();
         ymd.append(15, None).unwrap();
-        ymd.append(1, Some('M')).unwrap(); // January
+        ymd.append(1, Some('M')).unwrap();
         ymd.append(2024, None).unwrap();
         let (y, m, d) = ymd.resolve(false, false).unwrap();
         assert_eq!((y, m, d), (Some(2024), Some(1), Some(15)));
     }
 
+    /// Verify 01/15/24 keeps the century unset and resolves month first.
+    ///
+    /// Mutation: a century threshold in append below 24.
+    /// Oracle: hand-read 01/15/24 = Jan 15, year 24.
     #[test]
     fn test_ymd_two_digit_year() {
-        // 01/15/24 with month/day inference
         let mut ymd = Ymd::new();
         ymd.append(1, None).unwrap();
         ymd.append(15, None).unwrap();
         ymd.append(24, None).unwrap();
         assert!(!ymd.century_specified);
         let (y, m, d) = ymd.resolve(false, false).unwrap();
-        // 24 is not > 31, so it goes to year position by process of elimination
         assert_eq!((y, m, d), (Some(24), Some(1), Some(15)));
     }
 
+    /// Verify append_str() flags the century by token length and digits.
+    ///
+    /// Mutation: `> 3` for `> 2` in the length test, or `any` for `all`
+    /// in the digit test.
+    /// Oracle: "024" and "0024" hold three or more digits, "24" holds
+    /// two, and "-24" holds a sign.
     #[test]
-    fn test_ymd_century_specified() {
-        let mut ymd = Ymd::new();
-        ymd.append_str("2024", None).unwrap();
-        assert!(ymd.century_specified);
+    fn test_ymd_century_from_token() {
+        let cases = [
+            ("2024", true),
+            ("0024", true),
+            ("024", true),
+            ("24", false),
+            ("-24", false),
+        ];
+        for (token, expected) in cases {
+            let mut ymd = Ymd::new();
+            ymd.append_str(token, None).unwrap();
+            assert_eq!(ymd.century_specified, expected, "{token}");
+        }
     }
 
+    /// Verify resolve() rejects a fourth value.
+    ///
+    /// Mutation: dropping the more-than-three check, which reaches
+    /// `unreachable!()`.
+    /// Oracle: a date holds at most year, month and day.
     #[test]
     fn test_ymd_too_many_values() {
         let mut ymd = Ymd::new();
@@ -571,6 +609,11 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// Verify could_be_day() bounds, and Feb 29 with the year unknown.
+    ///
+    /// Mutation: `<` for `<=` at the day bound, or a non-leap stand-in
+    /// year for an unknown year.
+    /// Oracle: days run 1-31, and February has 29 days in a leap year.
     #[test]
     fn test_could_be_day() {
         let mut ymd = Ymd::new();
@@ -579,10 +622,9 @@ mod tests {
         assert!(!ymd.could_be_day(32));
         assert!(!ymd.could_be_day(0));
 
-        // With February month
         ymd.append(2, Some('M')).unwrap();
         assert!(ymd.could_be_day(28));
-        assert!(ymd.could_be_day(29)); // Assume leap year
+        assert!(ymd.could_be_day(29));
         assert!(!ymd.could_be_day(30));
     }
 }

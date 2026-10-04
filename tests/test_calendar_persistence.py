@@ -1,14 +1,10 @@
 """Test calendar context preservation across all Date/DateTime methods.
-
-This test matrix ensures that _calendar context is preserved when calling
-any pendulum method that returns a new Date or DateTime object.
 """
 import pendulum
 import pytest
 
 from opendate import Date, DateTime
 
-# Date methods that return a new Date and should preserve calendar
 DATE_INSTANCE_METHODS = [
     ('add', {'days': 1}),
     ('subtract', {'days': 1}),
@@ -21,10 +17,9 @@ DATE_INSTANCE_METHODS = [
     ('replace', {'day': 15}),
     ('nth_of', {'unit': 'month', 'nth': 2, 'day_of_week': 0}),
     ('set', {'day': 15}),
-]
+    ]
 
-# DateTime-specific methods (in addition to Date methods)
-# Note: nth_of is excluded for DateTime since it returns Date, not DateTime
+# nth_of is left out because on a DateTime it returns a Date.
 DATETIME_INSTANCE_METHODS = [
     ('add', {'days': 1}),
     ('subtract', {'days': 1}),
@@ -42,7 +37,7 @@ DATETIME_INSTANCE_METHODS = [
     ('on', {'year': 2024, 'month': 6, 'day': 20}),
     ('naive', {}),
     ('set', {'hour': 14}),
-]
+    ]
 
 
 class TestDateCalendarPersistence:
@@ -53,33 +48,29 @@ class TestDateCalendarPersistence:
         """Create a Date with NYSE calendar set."""
         return Date(2024, 6, 15).calendar('NYSE')
 
-    @pytest.fixture
-    def date_with_lse(self):
-        """Create a Date with LSE calendar set."""
-        return Date(2024, 6, 15).calendar('LSE')
-
+    @pytest.mark.parametrize('cal_name', ['NYSE', 'LSE'])
     @pytest.mark.parametrize(('method', 'kwargs'), DATE_INSTANCE_METHODS)
-    def test_method_preserves_nyse_calendar(self, date_with_nyse, method, kwargs):
-        """Each method should preserve NYSE calendar context."""
-        d = date_with_nyse
+    def test_method_preserves_calendar(self, method, kwargs, cal_name):
+        """Each method should preserve the calendar context.
+
+        Mutation: a method returning a Date with no _calendar, or with the
+            default NYSE in place of LSE.
+        Oracle: the calendar name set on the input.
+        """
+        d = Date(2024, 6, 15).calendar(cal_name)
         result = getattr(d, method)(**kwargs)
 
         assert isinstance(result, Date), f'{method} should return Date'
         assert result._calendar is not None, f'{method} lost _calendar'
-        assert result._calendar.name == 'NYSE', f'{method} changed calendar from NYSE'
-
-    @pytest.mark.parametrize(('method', 'kwargs'), DATE_INSTANCE_METHODS)
-    def test_method_preserves_lse_calendar(self, date_with_lse, method, kwargs):
-        """Each method should preserve LSE (non-default) calendar context."""
-        d = date_with_lse
-        result = getattr(d, method)(**kwargs)
-
-        assert isinstance(result, Date), f'{method} should return Date'
-        assert result._calendar is not None, f'{method} lost _calendar'
-        assert result._calendar.name == 'LSE', f'{method} changed calendar from LSE'
+        assert result._calendar.name == cal_name, (
+            f'{method} changed calendar from {cal_name}')
 
     def test_chained_operations_preserve_calendar(self, date_with_nyse):
-        """Chained operations should all preserve calendar."""
+        """Chained operations should all preserve calendar.
+
+        Mutation: one link of the chain dropping _calendar.
+        Oracle: NYSE set on the input.
+        """
         result = (date_with_nyse
                   .add(days=1)
                   .start_of('month')
@@ -89,7 +80,12 @@ class TestDateCalendarPersistence:
         assert result._calendar.name == 'NYSE'
 
     def test_closest_preserves_calendar(self):
-        """Test closest() preserves calendar."""
+        """Test closest() preserves calendar.
+
+        Mutation: closest() returning the bare argument, which has no
+            calendar.
+        Oracle: NYSE set on the receiver.
+        """
         d = Date(2024, 6, 15).calendar('NYSE')
         d1 = Date(2024, 6, 10)
         d2 = Date(2024, 6, 20)
@@ -99,7 +95,12 @@ class TestDateCalendarPersistence:
         assert result._calendar.name == 'NYSE'
 
     def test_farthest_preserves_calendar(self):
-        """Test farthest() preserves calendar."""
+        """Test farthest() preserves calendar.
+
+        Mutation: farthest() returning the bare argument, which has no
+            calendar.
+        Oracle: NYSE set on the receiver.
+        """
         d = Date(2024, 6, 15).calendar('NYSE')
         d1 = Date(2024, 6, 10)
         d2 = Date(2024, 6, 20)
@@ -109,7 +110,12 @@ class TestDateCalendarPersistence:
         assert result._calendar.name == 'NYSE'
 
     def test_average_preserves_calendar(self):
-        """Test average() preserves calendar."""
+        """Test average() preserves calendar.
+
+        Mutation: average() building its result without the receiver's
+            calendar.
+        Oracle: NYSE set on the receiver.
+        """
         d = Date(2024, 6, 15).calendar('NYSE')
         d2 = Date(2024, 6, 20)
         result = d.average(d2)
@@ -121,46 +127,34 @@ class TestDateCalendarPersistence:
 class TestDateTimeCalendarPersistence:
     """Test that DateTime methods preserve _calendar context."""
 
-    @pytest.fixture
-    def datetime_with_nyse(self):
-        """Create a DateTime with NYSE calendar set."""
-        return DateTime(2024, 6, 15, 12, 0, 0).calendar('NYSE')
-
-    @pytest.fixture
-    def datetime_with_lse(self):
-        """Create a DateTime with LSE calendar set."""
-        return DateTime(2024, 6, 15, 12, 0, 0).calendar('LSE')
-
+    @pytest.mark.parametrize('cal_name', ['NYSE', 'LSE'])
     @pytest.mark.parametrize(('method', 'kwargs'), DATETIME_INSTANCE_METHODS)
-    def test_method_preserves_nyse_calendar(self, datetime_with_nyse, method, kwargs):
-        """Each DateTime method should preserve NYSE calendar context."""
-        d = datetime_with_nyse
+    def test_method_preserves_calendar(self, method, kwargs, cal_name):
+        """Each DateTime method should preserve the calendar context.
+
+        Mutation: a method returning a DateTime with no _calendar, or with
+            the default NYSE in place of LSE.
+        Oracle: the calendar name set on the input.
+        """
+        d = DateTime(2024, 6, 15, 12, 0, 0).calendar(cal_name)
         result = getattr(d, method)(**kwargs)
 
         assert isinstance(result, DateTime), f'{method} should return DateTime'
         assert result._calendar is not None, f'{method} lost _calendar'
-        assert result._calendar.name == 'NYSE', f'{method} changed calendar from NYSE'
-
-    @pytest.mark.parametrize(('method', 'kwargs'), DATETIME_INSTANCE_METHODS)
-    def test_method_preserves_lse_calendar(self, datetime_with_lse, method, kwargs):
-        """Each DateTime method should preserve LSE (non-default) calendar context."""
-        d = datetime_with_lse
-        result = getattr(d, method)(**kwargs)
-
-        assert isinstance(result, DateTime), f'{method} should return DateTime'
-        assert result._calendar is not None, f'{method} lost _calendar'
-        assert result._calendar.name == 'LSE', f'{method} changed calendar from LSE'
+        assert result._calendar.name == cal_name, (
+            f'{method} changed calendar from {cal_name}')
 
 
 class TestMetaclassWrappedMethods:
     """Tests for methods wrapped by DateContextMeta metaclass.
-
-    These methods are automatically wrapped to preserve _calendar context
-    when they return new Date/DateTime instances.
     """
 
     def test_date_set_preserves_calendar(self):
-        """Date.set() should preserve calendar."""
+        """Date.set() should preserve calendar.
+
+        Mutation: DateContextMeta leaving Date.set unwrapped.
+        Oracle: NYSE set on the input.
+        """
         d = Date(2024, 6, 15).calendar('NYSE')
         result = d.set(day=20)
 
@@ -168,7 +162,11 @@ class TestMetaclassWrappedMethods:
         assert result._calendar.name == 'NYSE'
 
     def test_datetime_set_preserves_calendar(self):
-        """DateTime.set() should preserve calendar."""
+        """DateTime.set() should preserve calendar.
+
+        Mutation: DateContextMeta leaving DateTime.set unwrapped.
+        Oracle: NYSE set on the input.
+        """
         d = DateTime(2024, 6, 15, 12, 0, 0).calendar('NYSE')
         result = d.set(hour=14)
 
@@ -176,7 +174,12 @@ class TestMetaclassWrappedMethods:
         assert result._calendar.name == 'NYSE'
 
     def test_datetime_at_preserves_calendar(self):
-        """DateTime.at() should preserve calendar."""
+        """DateTime.at() should preserve calendar.
+
+        Mutation: the at() wrapper dropping positional arguments or
+            _calendar.
+        Oracle: NYSE set on the input.
+        """
         d = DateTime(2024, 6, 15, 12, 0, 0).calendar('NYSE')
         result = d.at(14, 30, 0)
 
@@ -184,7 +187,12 @@ class TestMetaclassWrappedMethods:
         assert result._calendar.name == 'NYSE'
 
     def test_datetime_on_preserves_calendar(self):
-        """DateTime.on() should preserve calendar."""
+        """DateTime.on() should preserve calendar.
+
+        Mutation: the on() wrapper dropping positional arguments or
+            _calendar.
+        Oracle: NYSE set on the input.
+        """
         d = DateTime(2024, 6, 15, 12, 0, 0).calendar('NYSE')
         result = d.on(2024, 7, 1)
 
@@ -192,9 +200,13 @@ class TestMetaclassWrappedMethods:
         assert result._calendar.name == 'NYSE'
 
     def test_datetime_naive_preserves_calendar(self):
-        """DateTime.naive() should preserve calendar."""
-        import pendulum
-        d = DateTime(2024, 6, 15, 12, 0, 0, tzinfo=pendulum.timezone('US/Eastern')).calendar('NYSE')
+        """DateTime.naive() should preserve calendar.
+
+        Mutation: naive() on an aware DateTime dropping _calendar.
+        Oracle: NYSE set on the input.
+        """
+        tz = pendulum.timezone('US/Eastern')
+        d = DateTime(2024, 6, 15, 12, 0, 0, tzinfo=tz).calendar('NYSE')
         result = d.naive()
 
         assert result._calendar is not None

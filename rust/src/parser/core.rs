@@ -1,7 +1,4 @@
 //! Core datetime parser - port of dateutil.parser.parser.
-//!
-//! This module provides the main parsing logic that tokenizes input strings
-//! and extracts datetime components.
 
 use super::errors::ParserError;
 use super::parserinfo::ParserInfo;
@@ -21,16 +18,12 @@ impl Default for Parser {
     }
 }
 
-/// Check if character is ASCII digit.
-fn is_ascii_digit(c: u8) -> bool {
-    c >= b'0' && c <= b'9'
-}
-
-/// Check if all bytes in slice are ASCII digits.
+/// True when every byte in `bytes[start..end]` is an ASCII digit, and for an
+/// empty range.
 fn all_ascii_digits(bytes: &[u8], start: usize, end: usize) -> bool {
     let mut i = start;
     while i < end {
-        if !is_ascii_digit(bytes[i]) {
+        if !(bytes[i] >= b'0' && bytes[i] <= b'9') {
             return false;
         }
         i += 1;
@@ -38,14 +31,15 @@ fn all_ascii_digits(bytes: &[u8], start: usize, end: usize) -> bool {
     true
 }
 
-/// Check if string contains only ASCII digits.
+/// True when every byte of `s` is an ASCII digit, and for an empty string.
 fn str_all_digits(s: &str) -> bool {
     let bytes = s.as_bytes();
     let n = bytes.len();
     all_ascii_digits(bytes, 0, n)
 }
 
-/// Check if all chars are ASCII uppercase letters.
+/// True when `s` holds at least one ASCII uppercase letter and no ASCII
+/// lowercase letter. Other bytes are ignored, so "GMT3" is true.
 fn all_ascii_uppercase(s: &str) -> bool {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -59,21 +53,23 @@ fn all_ascii_uppercase(s: &str) -> bool {
         if c >= b'A' && c <= b'Z' {
             has_letter = true;
         } else if c >= b'a' && c <= b'z' {
-            // Lowercase letter - not all uppercase
             return false;
         }
-        // Skip non-letter characters (digits, symbols, etc.)
         i += 1;
     }
-    // Must have at least one uppercase letter
     has_letter
 }
 
-/// Parse a slice of bytes as u32.
-fn parse_u32_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, ParserError> {
+/// Decimal value of `s`, which holds only ASCII digits. An empty string
+/// gives 0.
+///
+/// # Errors
+/// `ParserError::ParseError` when `s` holds any other byte, a sign included.
+fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
+    let bytes = s.as_bytes();
     let mut result = 0u32;
-    let mut i = start;
-    while i < end {
+    let mut i = 0usize;
+    while i < bytes.len() {
         let c = bytes[i];
         if c >= b'0' && c <= b'9' {
             result = result * 10 + (c - b'0') as u32;
@@ -85,13 +81,12 @@ fn parse_u32_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, Parser
     Ok(result)
 }
 
-/// Parse string as u32.
-fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
-    let bytes = s.as_bytes();
-    parse_u32_slice(bytes, 0, bytes.len())
-}
-
-/// Parse string as i32.
+/// Decimal value of `s` after one optional leading '+' or '-'. A lone sign
+/// gives 0.
+///
+/// # Errors
+/// `ParserError::ParseError` when `s` is empty or holds a non-digit after
+/// the sign.
 fn parse_str_i32(s: &str) -> Result<i32, ParserError> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -123,14 +118,18 @@ fn parse_str_i32(s: &str) -> Result<i32, ParserError> {
     Ok(result)
 }
 
-/// Parse string as f64.
+/// Value of `s` as `str::parse::<f64>` reads it, so "inf", "NaN" and "1e3"
+/// count as numbers too.
+///
+/// # Errors
+/// `ParserError::ParseError` when `s` is not a float literal.
 fn parse_str_f64(s: &str) -> Result<f64, ParserError> {
-    // Use standard library for floating point (complex to implement manually)
     s.parse::<f64>()
         .map_err(|_| ParserError::ParseError(format!("Invalid number: {}", s)))
 }
 
-/// Find character position in string.
+/// Byte index of the first `c` in `s`, or None. `c` must be ASCII, since
+/// the match uses only its low byte.
 fn find_char(s: &str, c: char) -> Option<usize> {
     let bytes = s.as_bytes();
     let target = c as u8;
@@ -145,7 +144,8 @@ fn find_char(s: &str, c: char) -> Option<usize> {
     None
 }
 
-/// Find any of multiple characters.
+/// Byte index of the first byte of `s` that equals any of `chars`, or None.
+/// Each of `chars` must be ASCII.
 fn find_any_char(s: &str, chars: &[char]) -> Option<usize> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -164,18 +164,12 @@ fn find_any_char(s: &str, chars: &[char]) -> Option<usize> {
     None
 }
 
-/// Check if string contains character.
+/// True when `s` holds the ASCII char `c`.
 fn contains_char(s: &str, c: char) -> bool {
     find_char(s, c).is_some()
 }
 
-/// Check if string starts with character.
-fn starts_with_char(s: &str, c: char) -> bool {
-    let bytes = s.as_bytes();
-    bytes.len() > 0 && bytes[0] == c as u8
-}
-
-/// Check if string ends with substring.
+/// True when the last bytes of `s` equal `suffix`.
 fn ends_with_str(s: &str, suffix: &str) -> bool {
     let s_bytes = s.as_bytes();
     let suffix_bytes = suffix.as_bytes();
@@ -195,7 +189,7 @@ fn ends_with_str(s: &str, suffix: &str) -> bool {
     true
 }
 
-/// Check if string starts with prefix.
+/// True when the first bytes of `s` equal `prefix`.
 fn starts_with_str(s: &str, prefix: &str) -> bool {
     let s_bytes = s.as_bytes();
     let prefix_bytes = prefix.as_bytes();
@@ -214,7 +208,8 @@ fn starts_with_str(s: &str, prefix: &str) -> bool {
     true
 }
 
-/// Convert string to uppercase.
+/// Copy of `s` with ASCII a-z mapped to A-Z. Every other byte becomes the
+/// char of that code point, so a non-ASCII `s` changes byte length.
 fn to_uppercase(s: &str) -> String {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -232,7 +227,9 @@ fn to_uppercase(s: &str) -> String {
     result
 }
 
-/// Substring from start to end.
+/// `s[start..end]` by byte offset, with `end` clamped to `s.len()` and
+/// `start` to `end`. The slice skips the UTF-8 check, so an offset inside a
+/// multibyte char yields an invalid `&str`.
 fn substr_range(s: &str, start: usize, end: usize) -> &str {
     let bytes = s.as_bytes();
     let actual_end = if end > bytes.len() { bytes.len() } else { end };
@@ -244,7 +241,7 @@ fn substr_range(s: &str, start: usize, end: usize) -> &str {
     unsafe { std::str::from_utf8_unchecked(&bytes[actual_start..actual_end]) }
 }
 
-/// Split string by character.
+/// Fields of `s` between each `delim`, empty fields kept, so "" gives [""].
 fn split_char(s: &str, delim: char) -> Vec<&str> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -265,7 +262,6 @@ fn split_char(s: &str, delim: char) -> Vec<&str> {
         i += 1;
     }
 
-    // Add remaining part
     if start <= n {
         result.push(substr_range(s, start, n));
     }
@@ -273,7 +269,7 @@ fn split_char(s: &str, delim: char) -> Vec<&str> {
     result
 }
 
-/// Split string by whitespace.
+/// Runs of `s` between space, tab, CR and LF bytes, empty runs dropped.
 fn split_whitespace_vec(s: &str) -> Vec<&str> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -307,7 +303,7 @@ fn split_whitespace_vec(s: &str) -> Vec<&str> {
     result
 }
 
-/// Trim whitespace from string.
+/// `s` without leading and trailing space, tab, CR and LF bytes.
 fn trim_str(s: &str) -> &str {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -315,7 +311,6 @@ fn trim_str(s: &str) -> &str {
         return s;
     }
 
-    // Find start (skip leading whitespace)
     let mut start = 0usize;
     while start < n {
         let c = bytes[start];
@@ -325,7 +320,6 @@ fn trim_str(s: &str) -> &str {
         start += 1;
     }
 
-    // Find end (skip trailing whitespace)
     let mut end = n;
     while end > start {
         let c = bytes[end - 1];
@@ -338,7 +332,8 @@ fn trim_str(s: &str) -> &str {
     substr_range(s, start, end)
 }
 
-/// Pad string with zeros on right.
+/// The first `target_len` bytes of `s`, right-padded with '0' to that
+/// length.
 fn pad_right_zeros(s: &str, target_len: usize) -> String {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -359,7 +354,7 @@ fn pad_right_zeros(s: &str, target_len: usize) -> String {
 }
 
 impl Parser {
-    /// Create a new parser with the given settings.
+    /// Parser whose `dayfirst` and `yearfirst` apply when `parse` gets None.
     pub fn new(dayfirst: bool, yearfirst: bool) -> Self {
         Parser {
             info: ParserInfo::new(dayfirst, yearfirst),
@@ -375,28 +370,30 @@ impl Parser {
     /// Parse a standalone time string.
     ///
     /// Handles formats:
-    /// - HHMM: "0930" → 09:30
-    /// - HHMMSS: "093015" → 09:30:15
-    /// - HHMMSS with fraction: "093015.751" or "093015,751" → 09:30:15.751
+    /// - HHMM: "0930" -> 09:30
+    /// - HHMMSS: "093015" -> 09:30:15
+    /// - HHMMSS with fraction: "093015.751" or "093015,751" -> 09:30:15.751
     /// - Separated: "9:30", "9.30", "9:30:15", "9.30.15"
     /// - With AM/PM: "0930 PM", "9:30 AM", "12:00 PM"
     ///
-    /// Returns None for invalid inputs (e.g., hour > 23, minute > 59).
+    /// # Returns
+    /// Hour, minute, second and microsecond set, and the date fields None.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` for an empty or unknown format, an hour past
+    /// 23 (12 with AM/PM), or a minute or second past 59.
     pub fn parse_time_only(&self, timestr: &str) -> Result<ParseResult, ParserError> {
         let s = trim_str(timestr);
         if s.len() == 0 {
             return Err(ParserError::ParseError("Empty time string".to_string()));
         }
 
-        // Extract optional AM/PM suffix
         let (time_part, ampm) = self.extract_ampm_suffix(s);
 
-        // Try compact format first (HHMM, HHMMSS)
         if let Some(result) = self.try_parse_compact_time(time_part, ampm)? {
             return Ok(result);
         }
 
-        // Try separated format (H:MM, HH:MM, H.MM, HH.MM, with optional seconds)
         if let Some(result) = self.try_parse_separated_time(time_part, ampm)? {
             return Ok(result);
         }
@@ -407,7 +404,8 @@ impl Parser {
         )))
     }
 
-    /// Extract AM/PM suffix from time string.
+    /// `s` without a trailing " AM" or " PM" in any case, and Some(0) for AM,
+    /// Some(1) for PM, or None when neither ends `s`.
     fn extract_ampm_suffix<'a>(&self, s: &'a str) -> (&'a str, Option<u32>) {
         let s_upper = to_uppercase(s);
         if ends_with_str(&s_upper, " AM") {
@@ -421,13 +419,24 @@ impl Parser {
         }
     }
 
-    /// Try to parse compact time format (HHMM or HHMMSS with optional fraction).
+    /// Read HHMM or HHMMSS, with an optional '.' or ',' fraction of a second.
+    ///
+    /// # Arguments
+    /// * `s` - Time text without its AM/PM suffix
+    /// * `ampm` - Some(0) for AM, Some(1) for PM. Either caps the hour at 12.
+    ///
+    /// # Returns
+    /// `Ok(None)` when `s` is not 4 or 6 digits before the fraction. A
+    /// fraction that is not all digits gives 0 microseconds.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` when the hour is past 23 (12 with `ampm`),
+    /// or the minute or second past 59.
     fn try_parse_compact_time(
         &self,
         s: &str,
         ampm: Option<u32>,
     ) -> Result<Option<ParseResult>, ParserError> {
-        // Find fraction separator position (. or ,)
         let delims: [char; 2] = ['.', ','];
         let (digits_part, frac_part) = if let Some(pos) = find_any_char(s, &delims) {
             (
@@ -438,7 +447,6 @@ impl Parser {
             (s, None)
         };
 
-        // Must be exactly 4 or 6 digits
         if !str_all_digits(digits_part) {
             return Ok(None);
         }
@@ -448,7 +456,6 @@ impl Parser {
             return Ok(None);
         }
 
-        // Parse components
         let hour: u32 = parse_str_u32(substr_range(digits_part, 0, 2))
             .map_err(|_| ParserError::ParseError("Invalid hour".to_string()))?;
         let minute: u32 = parse_str_u32(substr_range(digits_part, 2, 4))
@@ -460,7 +467,6 @@ impl Parser {
             0
         };
 
-        // Validate ranges (before AM/PM adjustment)
         let max_hour = if ampm.is_some() { 12 } else { 23 };
         if hour > max_hour || minute > 59 || second > 59 {
             return Err(ParserError::ParseError(format!(
@@ -469,7 +475,6 @@ impl Parser {
             )));
         }
 
-        // Parse microseconds
         let microsecond = if let Some(frac) = frac_part {
             let frac_len = frac.len();
             let take_len = if frac_len < 6 { frac_len } else { 6 };
@@ -479,7 +484,6 @@ impl Parser {
             0
         };
 
-        // Build result
         let result = ParseResult {
             hour: Some(if let Some(ampm_val) = ampm {
                 self.adjust_ampm(hour, ampm_val)
@@ -496,14 +500,24 @@ impl Parser {
         Ok(Some(result))
     }
 
-    /// Try to parse separated time format (H:MM, HH:MM, H.MM, HH.MM with optional seconds).
+    /// Read H:MM or H.MM, with a one- or two-digit hour, an optional :SS or
+    /// .SS, and a fraction of a second.
+    ///
+    /// # Arguments
+    /// * `s` - Time text without its AM/PM suffix
+    /// * `ampm` - Some(0) for AM, Some(1) for PM. Either caps the hour at 12.
+    ///
+    /// # Returns
+    /// `Ok(None)` when `s` does not have that shape.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` when the hour is past 23 (12 with `ampm`),
+    /// or the minute or second past 59.
     fn try_parse_separated_time(
         &self,
         s: &str,
         ampm: Option<u32>,
     ) -> Result<Option<ParseResult>, ParserError> {
-        // Pattern: H:MM or HH:MM or H.MM or HH.MM, optionally with :SS or .SS and fraction
-        // Use tokenizer to split
         let tokens: Vec<String> = Tokenizer::split(s);
 
         let tokens_len = tokens.len();
@@ -516,8 +530,8 @@ impl Parser {
         let mut second: u32 = 0;
         let mut microsecond: u32 = 0;
 
-        // Check if first token is a decimal like "9.30" (tokenizer keeps H.MM as one token)
-        if contains_char(&tokens[0], '.') && !starts_with_char(&tokens[0], '.') {
+        // The tokenizer keeps H.MM, such as "9.30", as one token.
+        if contains_char(&tokens[0], '.') && tokens[0].as_bytes()[0] != b'.' {
             let parts: Vec<&str> = split_char(&tokens[0], '.');
             let parts_len = parts.len();
             if parts_len >= 2 {
@@ -535,14 +549,12 @@ impl Parser {
                     hour = parse_str_u32(hour_str).unwrap_or(0);
                     minute = parse_str_u32(min_str).unwrap_or(0);
 
-                    // Check for seconds in parts[2] if present
                     if parts_len >= 3 {
                         let (sec, micro) = self.parsems(parts[2]);
                         second = sec;
                         microsecond = micro;
                     }
 
-                    // Validate ranges
                     let max_hour = if ampm.is_some() { 12 } else { 23 };
                     if hour > max_hour || minute > 59 || second > 59 {
                         return Err(ParserError::ParseError(format!(
@@ -551,7 +563,6 @@ impl Parser {
                         )));
                     }
 
-                    // Build result
                     let result = ParseResult {
                         hour: Some(if let Some(ampm_val) = ampm {
                             self.adjust_ampm(hour, ampm_val)
@@ -570,25 +581,21 @@ impl Parser {
             }
         }
 
-        // Standard token-based parsing (H:MM, etc.)
         if tokens_len < 3 {
             return Ok(None);
         }
 
-        // First token should be hour (1-2 digits)
         let hour_str = &tokens[0];
         let hour_str_len = hour_str.len();
         if !str_all_digits(hour_str) || hour_str_len > 2 {
             return Ok(None);
         }
 
-        // Second token should be separator (: or .)
         let sep = &tokens[1];
         if sep != ":" && sep != "." {
             return Ok(None);
         }
 
-        // Third token should be minute (2 digits)
         let min_str = &tokens[2];
         let min_str_len = min_str.len();
         if !str_all_digits(min_str) || min_str_len != 2 {
@@ -598,16 +605,13 @@ impl Parser {
         hour = parse_str_u32(hour_str).unwrap_or(0);
         minute = parse_str_u32(min_str).unwrap_or(0);
 
-        // Check for seconds: :SS or .SS
         if tokens_len >= 5 && (tokens[3] == ":" || tokens[3] == ".") {
-            // Parse seconds (may include fraction like "45.123")
             let sec_str = &tokens[4];
             let (sec, micro) = self.parsems(sec_str);
             second = sec;
             microsecond = micro;
         }
 
-        // Validate ranges
         let max_hour = if ampm.is_some() { 12 } else { 23 };
         if hour > max_hour || minute > 59 || second > 59 {
             return Err(ParserError::ParseError(format!(
@@ -616,7 +620,6 @@ impl Parser {
             )));
         }
 
-        // Build result
         let result = ParseResult {
             hour: Some(if let Some(ampm_val) = ampm {
                 self.adjust_ampm(hour, ampm_val)
@@ -639,8 +642,17 @@ impl Parser {
     /// * `timestr` - The datetime string to parse
     /// * `dayfirst` - Override dayfirst setting (None = use default)
     /// * `yearfirst` - Override yearfirst setting (None = use default)
-    /// * `fuzzy` - Whether to allow fuzzy parsing
-    /// * `fuzzy_with_tokens` - If true, return skipped tokens
+    /// * `fuzzy` - Skip a token that fits no field instead of failing
+    /// * `fuzzy_with_tokens` - If true, return skipped tokens. Implies
+    ///   `fuzzy`.
+    ///
+    /// # Returns
+    /// The parsed fields, and the skipped tokens when `fuzzy_with_tokens` is
+    /// true, else None.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` for a token that fits no field outside fuzzy
+    /// mode, a bad timezone offset, or a date that does not resolve.
     pub fn parse(
         &self,
         timestr: &str,
@@ -669,7 +681,11 @@ impl Parser {
         }
     }
 
-    /// Internal parse implementation.
+    /// Fields of `timestr` and the tokens fuzzy mode skipped, with the
+    /// `parse` overrides already resolved.
+    ///
+    /// # Errors
+    /// As `parse`.
     fn parse_inner(
         &self,
         timestr: &str,
@@ -677,11 +693,8 @@ impl Parser {
         yearfirst: bool,
         fuzzy: bool,
     ) -> Result<(ParseResult, Vec<String>), ParserError> {
-        // Try ISO format first if the string looks like ISO (starts with YYYY- or is YYYYMMDD format)
         if Self::looks_like_iso(timestr) {
             if let Ok(mut result) = super::IsoParser::new().isoparse(timestr) {
-                // Check for trailing timezone name that ISO parser might have missed
-                // This handles cases like "2024-01-15 10:30:00 UTC" or "2024-01-15T10:30:00 GMT+3"
                 if result.tzoffset.is_none() && result.hour.is_some() {
                     result = self.extract_trailing_timezone(timestr, result);
                 }
@@ -693,7 +706,7 @@ impl Parser {
         let tokens: Vec<String> = Tokenizer::split(timestr);
         let mut skipped_idxs: Vec<usize> = Vec::new();
         let mut ymd = Ymd::new();
-        let mut flip_next_sign = false; // For GMT+3 style parsing
+        let mut flip_next_sign = false;
 
         let len_l = tokens.len();
         let mut i = 0usize;
@@ -701,16 +714,11 @@ impl Parser {
         while i < len_l {
             let token = &tokens[i];
 
-            // Try to parse as a number
             if parse_str_f64(token).is_ok() {
                 i = self.parse_numeric_token(&tokens, i, &mut ymd, &mut res, fuzzy)?;
-            }
-            // Check weekday
-            else if let Some(weekday) = self.info.weekday(token) {
+            } else if let Some(weekday) = self.info.weekday(token) {
                 res.weekday = Some(weekday);
-            }
-            // Check month name
-            else if let Some(month) = self.info.month(token) {
+            } else if let Some(month) = self.info.month(token) {
                 ymd.append(month as i32, Some('M'))?;
 
                 if i + 1 < len_l {
@@ -743,9 +751,7 @@ impl Parser {
                         }
                     }
                 }
-            }
-            // Check am/pm
-            else if let Some(ampm_val) = self.info.ampm(token) {
+            } else if let Some(ampm_val) = self.info.ampm(token) {
                 let val_is_ampm = self.ampm_valid(res.hour, res.ampm, fuzzy);
 
                 if val_is_ampm {
@@ -756,26 +762,21 @@ impl Parser {
                 } else if fuzzy {
                     skipped_idxs.push(i);
                 }
-            }
-            // Check for a timezone name
-            else if self.could_be_tzname(res.hour, &res.tzname, res.tzoffset, token) {
+            } else if self.could_be_tzname(res.hour, &res.tzname, res.tzoffset, token) {
                 res.tzname = Some(token.clone());
                 res.tzoffset = self.info.tzoffset(token);
 
-                // Check for something like GMT+3 or BRST+3
-                // "GMT+3" means "my time +3 is GMT", so we need to reverse the sign
+                // "GMT+3" means "my time +3 is GMT", so the sign of
+                // the offset that follows is reversed.
                 if i + 1 < len_l && (tokens[i + 1] == "+" || tokens[i + 1] == "-") {
                     flip_next_sign = true;
                     res.tzoffset = None;
                     if self.info.utczone(token) {
-                        // With something like GMT+3, the timezone is *not* GMT
+                        // In GMT+3 the zone itself is not GMT.
                         res.tzname = None;
                     }
                 }
-            }
-            // Check for a numbered timezone
-            else if res.hour.is_some() && (token == "+" || token == "-") {
-                // Apply sign flip if needed (for GMT+3 style)
+            } else if res.hour.is_some() && (token == "+" || token == "-") {
                 let mut signal: i32 = if token == "+" { 1 } else { -1 };
                 if flip_next_sign {
                     signal = -signal;
@@ -812,7 +813,7 @@ impl Parser {
 
                     res.tzoffset = Some(signal * (hour_offset * 3600 + min_offset * 60));
 
-                    // Look for a timezone name between parenthesis
+                    // -0300 (BRST)
                     let base = i + 2 + skip;
                     if base + 3 < len_l
                         && self.info.jump(&tokens[base])
@@ -827,9 +828,7 @@ impl Parser {
 
                     i += 1 + skip;
                 }
-            }
-            // Check jumps or fuzzy mode
-            else if self.info.jump(token) || fuzzy {
+            } else if self.info.jump(token) || fuzzy {
                 skipped_idxs.push(i);
             } else {
                 return Err(ParserError::ParseError(format!(
@@ -841,7 +840,6 @@ impl Parser {
             i += 1;
         }
 
-        // Process year/month/day
         let (year, month, day) = ymd.resolve(yearfirst, dayfirst)?;
 
         res.century_specified = ymd.century_specified;
@@ -855,12 +853,10 @@ impl Parser {
             None => None,
         };
 
-        // Validate and convert year
         if let Some(y) = res.year {
             res.year = Some(self.info.convertyear(y, res.century_specified));
         }
 
-        // Normalize timezone info
         let tz_is_z = match &res.tzname {
             Some(name) => name == "Z" || name == "z",
             None => false,
@@ -877,59 +873,64 @@ impl Parser {
             res.tzoffset = Some(0);
         }
 
-        // Build skipped tokens
         let skipped_tokens = self.recombine_skipped(&tokens, &skipped_idxs);
 
         Ok((res, skipped_tokens))
     }
 
-    /// Check if a string looks like ISO 8601 format.
-    /// ISO format: YYYY-MM-DD, YYYYMMDD, YYYY-MM-DDTHH:MM:SS, etc.
+    /// True for the unambiguous ISO 8601 shapes the ISO parser tries first:
+    /// - YYYY-...
+    /// - YYYYMMDD exactly
+    /// - YYYYMMDDT...
     ///
-    /// Be conservative - only use ISO parser for unambiguous ISO formats:
-    /// - YYYY-... (hyphenated ISO)
-    /// - YYYYMMDD exactly (8 digits)
-    /// - YYYYMMDDT... (8 digits + T separator)
-    ///
-    /// Do NOT use ISO for:
+    /// False for:
     /// - YYYY alone (needs default filling from general parser)
     /// - 12/14 digit compact formats without T (general parser handles these)
     fn looks_like_iso(s: &str) -> bool {
         let bytes = s.as_bytes();
         let n = bytes.len();
 
-        // Need at least 5 chars for meaningful ISO (YYYY- minimum)
         if n < 5 {
             return false;
         }
 
-        // Must start with 4 digits (year)
         if !all_ascii_digits(bytes, 0, 4) {
             return false;
         }
 
-        // Check for ISO separator pattern: YYYY-...
         if bytes[4] == b'-' {
             return true;
         }
 
-        // YYYYMMDD format (exactly 8 digits, or 8 digits + T separator)
         if n >= 8 && all_ascii_digits(bytes, 0, 8) {
-            // Exactly 8 digits (YYYYMMDD) - use ISO
             if n == 8 {
                 return true;
             }
-            // 8 digits + T separator (YYYYMMDDT...) - use ISO
             if n > 8 && bytes[8] == b'T' {
                 return true;
             }
-            // Other cases (e.g., 12/14 digit compact) - let general parser handle
         }
 
         false
     }
 
-    /// Parse a numeric token.
+    /// Place the number at `tokens[idx]` in a date or time field, reading
+    /// the separators and labels that follow it.
+    ///
+    /// # Arguments
+    /// * `tokens` - All tokens of the input
+    /// * `idx` - Index of the numeric token
+    /// * `ymd` - Date members found so far, appended to
+    /// * `res` - Time fields found so far, set in place
+    /// * `fuzzy` - Skip a number that fits no field instead of failing
+    ///
+    /// # Returns
+    /// Index of the last token consumed. The caller resumes one past it.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` for a number that fits no field outside
+    /// fuzzy mode, a word after a date separator that is not a month name,
+    /// or a date member `ymd` rejects.
     fn parse_numeric_token(
         &self,
         tokens: &[String],
@@ -1039,7 +1040,6 @@ impl Parser {
                 }
 
                 if idx + 3 < len_l && &tokens[idx + 3] == sep {
-                    // We have three members
                     if idx + 4 < len_l {
                         if let Some(month) = self.info.month(&tokens[idx + 4]) {
                             ymd.append(month as i32, Some('M'))?;
@@ -1060,12 +1060,11 @@ impl Parser {
                 res.hour = Some(self.adjust_ampm(hour, self.info.ampm(&tokens[idx + 2]).unwrap()));
                 idx += 1;
             } else {
-                // Year, month or day - but only if it looks valid
                 let int_val = value as i32;
-                let could_be_date_component = (int_val >= 1 && int_val <= 31)  // day
-                    || (int_val >= 1 && int_val <= 12)  // month
-                    || (int_val >= 0 && int_val <= 99)  // 2-digit year
-                    || (int_val >= 1000 && int_val <= 9999); // 4-digit year
+                let could_be_date_component = (int_val >= 1 && int_val <= 31)
+                    || (int_val >= 1 && int_val <= 12)
+                    || (int_val >= 0 && int_val <= 99)
+                    || (int_val >= 1000 && int_val <= 9999);
 
                 if could_be_date_component {
                     ymd.append(value as i32, None)?;
@@ -1075,7 +1074,6 @@ impl Parser {
                         value_repr
                     )));
                 }
-                // In fuzzy mode with invalid date component, just skip it
             }
             idx += 1;
         } else if self.info.ampm(&tokens[idx + 1]).is_some() && value >= 0.0 && value < 24.0 {
@@ -1095,7 +1093,8 @@ impl Parser {
         Ok(idx)
     }
 
-    /// Find HMS label index.
+    /// Index of the h/m/s label beside the number at `idx`, or None.
+    /// `allow_jump` also accepts a label one space after the number.
     fn find_hms_idx(&self, idx: usize, tokens: &[String], allow_jump: bool) -> Option<usize> {
         let len_l = tokens.len();
 
@@ -1117,19 +1116,19 @@ impl Parser {
             && tokens[idx - 1] == " "
             && self.info.hms(&tokens[idx - 2]).is_some()
         {
-            // Final token with space before HMS
             Some(idx - 2)
         } else {
             None
         }
     }
 
-    /// Parse HMS from tokens.
+    /// Index of the last token consumed, and the field code of the number
+    /// at `idx`: 0 hour, 1 minute, 2 second. A code of 3 names no field.
     fn parse_hms(&self, idx: usize, tokens: &[String], hms_idx: usize) -> (usize, Option<u32>) {
         let hms = self.info.hms(&tokens[hms_idx]);
         let new_idx = if hms_idx > idx { hms_idx } else { idx };
 
-        // If looking backwards, increment by one (for the next component)
+        // A label behind idx names the number before, so step up one.
         let hms = if hms_idx < idx {
             match hms {
                 Some(h) => Some(h + 1),
@@ -1142,7 +1141,9 @@ impl Parser {
         (new_idx, hms)
     }
 
-    /// Assign HMS value to result.
+    /// Set the field `hms` names (0 hour, 1 minute, 2 second) from
+    /// `value_repr`, its fraction going to the next smaller field. Any
+    /// other code changes nothing. Never returns an error.
     fn assign_hms(
         &self,
         res: &mut ParseResult,
@@ -1153,7 +1154,6 @@ impl Parser {
 
         match hms {
             0 => {
-                // Hour
                 res.hour = Some(value as u32);
                 let fract = value - (value as u32) as f64;
                 if fract != 0.0 {
@@ -1161,7 +1161,6 @@ impl Parser {
                 }
             }
             1 => {
-                // Minute
                 let (minute, second) = self.parse_min_sec(value);
                 res.minute = Some(minute);
                 if let Some(s) = second {
@@ -1169,7 +1168,6 @@ impl Parser {
                 }
             }
             2 => {
-                // Second
                 let (sec, micro) = self.parsems(value_repr);
                 res.second = Some(sec);
                 res.microsecond = Some(micro);
@@ -1180,7 +1178,9 @@ impl Parser {
         Ok(())
     }
 
-    /// Check if a token could be a timezone name.
+    /// True when `token` can name the zone of a time with no zone yet: an
+    /// hour is set, no name or offset is set, and `token` is at most 5
+    /// bytes and either uppercase or a UTC alias.
     fn could_be_tzname(
         &self,
         hour: Option<u32>,
@@ -1195,20 +1195,21 @@ impl Parser {
             && (all_ascii_uppercase(token) || self.info.utczone(token))
     }
 
-    /// Check if AM/PM is valid.
+    /// True when an AM/PM token can apply: an hour of 0 to 12 is set, and
+    /// in fuzzy mode no AM/PM is set yet.
+    ///
+    /// Outside fuzzy mode a missing hour or one past 12 gives false where
+    /// dateutil raises, so the token is dropped without an error.
     fn ampm_valid(&self, hour: Option<u32>, ampm: Option<u32>, fuzzy: bool) -> bool {
-        // If there's already an AM/PM flag, this one isn't one
         if fuzzy && ampm.is_some() {
             return false;
         }
 
-        // If AM/PM is found and hour is not, it's not valid in fuzzy mode
         match hour {
             None => {
                 if fuzzy {
                     return false;
                 }
-                // In non-fuzzy mode, we'd raise an error but we'll just return false here
                 false
             }
             Some(h) => {
@@ -1224,7 +1225,8 @@ impl Parser {
         }
     }
 
-    /// Adjust hour for AM/PM.
+    /// 24-hour value of `hour`, with `ampm` 0 for AM and 1 for PM. 12 AM
+    /// gives 0, and an hour past 12 passes through.
     fn adjust_ampm(&self, hour: u32, ampm: u32) -> u32 {
         if hour < 12 && ampm == 1 {
             hour + 12
@@ -1235,7 +1237,8 @@ impl Parser {
         }
     }
 
-    /// Parse minute/second from fractional value.
+    /// Whole minutes of `value`, and its fraction as whole seconds
+    /// (truncated), or None when it has no fraction.
     fn parse_min_sec(&self, value: f64) -> (u32, Option<u32>) {
         let minute = value as u32;
         let sec_remainder = value - (minute as f64);
@@ -1247,7 +1250,8 @@ impl Parser {
         (minute, second)
     }
 
-    /// Parse seconds with microseconds.
+    /// Seconds and microseconds of "SS[.ffffff]". The fraction is cut or
+    /// zero-padded to 6 digits, and a part that is not all digits reads 0.
     fn parsems(&self, value: &str) -> (u32, u32) {
         if !contains_char(value, '.') {
             (parse_str_u32(value).unwrap_or(0), 0)
@@ -1256,44 +1260,41 @@ impl Parser {
             let parts_len = parts.len();
             let seconds: u32 = parse_str_u32(parts[0]).unwrap_or(0);
             let frac = if parts_len > 1 { parts[1] } else { "0" };
-            // Pad to 6 digits and take first 6
             let padded = pad_right_zeros(frac, 6);
             let microseconds: u32 = parse_str_u32(substr_range(&padded, 0, 6)).unwrap_or(0);
             (seconds, microseconds)
         }
     }
 
-    /// Extract trailing timezone name from a string after ISO parsing.
-    ///
-    /// Handles cases like "2024-01-15 10:30:00 UTC" or "2024-01-15T10:30:00 GMT+3"
-    /// where the ISO parser parsed the datetime but not the timezone.
+    /// `result` with the zone read from the last whitespace-separated word
+    /// of `timestr`, by the first rule that matches:
+    /// - a UTC alias such as "utc" sets the name upper-cased and offset 0
+    /// - a word of at most 5 bytes with an uppercase letter and no
+    ///   lowercase one, such as "EST" or "GMT+3", sets the name only, and
+    ///   the caller resolves its offset through tzinfos
+    /// - "GMT+N" or "UTC+N" in any case sets offset -N hours and no name
+    /// - any other word, or a one-word `timestr`, leaves `result` as is
     fn extract_trailing_timezone(&self, timestr: &str, mut result: ParseResult) -> ParseResult {
-        // Find the last space-separated token(s) that could be timezone info
         let parts: Vec<&str> = split_whitespace_vec(timestr);
         let parts_len = parts.len();
         if parts_len < 2 {
             return result;
         }
 
-        // Check the last part for timezone name
         let last_part = parts[parts_len - 1];
 
-        // Handle "UTC", "GMT", etc. (pure timezone name)
         if self.info.utczone(last_part) {
             result.tzname = Some(to_uppercase(last_part));
             result.tzoffset = Some(0);
             return result;
         }
 
-        // Handle "EST", "PST", etc. (timezone abbreviation without defined offset)
         let last_part_len = last_part.len();
         if last_part_len <= 5 && all_ascii_uppercase(last_part) {
             result.tzname = Some(last_part.to_string());
-            // No offset - user needs tzinfos to resolve
             return result;
         }
 
-        // Handle "GMT+3", "GMT-5", etc.
         if last_part_len >= 4 {
             let upper = to_uppercase(last_part);
             if starts_with_str(&upper, "GMT") || starts_with_str(&upper, "UTC") {
@@ -1304,13 +1305,11 @@ impl Parser {
                 if rest_len > 0 {
                     let first_char = rest_bytes[0];
                     if first_char == b'+' || first_char == b'-' {
-                        // GMT+N means "my time + N = GMT", so offset is -N
-                        // GMT-N means "my time - N = GMT", so offset is +N
+                        // GMT+N means my time + N = GMT, so offset -N.
                         let sign: i32 = if first_char == b'+' { -1 } else { 1 };
                         let offset_str = substr_range(rest, 1, rest_len);
                         if let Ok(hours) = parse_str_i32(offset_str) {
                             result.tzoffset = Some(sign * hours * 3600);
-                            // Don't set tzname for GMT+N since it's not actually GMT
                             return result;
                         }
                     }
@@ -1321,12 +1320,12 @@ impl Parser {
         result
     }
 
-    /// Recombine skipped tokens.
+    /// Skipped tokens in input order, each run of adjacent indices joined
+    /// into one string.
     fn recombine_skipped(&self, tokens: &[String], skipped_idxs: &[usize]) -> Vec<String> {
         let mut skipped_tokens: Vec<String> = Vec::new();
         let mut sorted_idxs: Vec<usize> = Vec::with_capacity(skipped_idxs.len());
 
-        // Copy indices
         let n = skipped_idxs.len();
         let mut i = 0usize;
         while i < n {
@@ -1334,7 +1333,6 @@ impl Parser {
             i += 1;
         }
 
-        // Sort indices (simple bubble sort for small arrays)
         let m = sorted_idxs.len();
         let mut i = 0usize;
         while i < m {
@@ -1354,7 +1352,6 @@ impl Parser {
         while i < m {
             let idx = sorted_idxs[i];
             if i > 0 && idx == sorted_idxs[i - 1] + 1 {
-                // Adjacent to previous
                 let last_idx = skipped_tokens.len() - 1;
                 let token_str = &tokens[idx];
                 skipped_tokens[last_idx].push_str(token_str);
@@ -1372,6 +1369,10 @@ impl Parser {
 mod tests {
     use super::*;
 
+    /// Verify a hyphenated ISO date yields its year, month and day.
+    ///
+    /// Mutation: month and day swapped in the ISO result.
+    /// Oracle: hand-read fields of "2024-01-15".
     #[test]
     fn test_parse_iso_date() {
         let parser = Parser::default();
@@ -1383,6 +1384,10 @@ mod tests {
         assert_eq!(res.day, Some(15));
     }
 
+    /// Verify a slash date reads month first by default.
+    ///
+    /// Mutation: '/' dropped from the date separators in parse_numeric_token.
+    /// Oracle: hand-read US order of "01/15/2024".
     #[test]
     fn test_parse_us_date() {
         let parser = Parser::default();
@@ -1394,9 +1399,13 @@ mod tests {
         assert_eq!(res.day, Some(15));
     }
 
+    /// Verify a slash date with a day past 12 parses under dayfirst.
+    ///
+    /// Mutation: the member after the second '/' dropped, leaving no year.
+    /// Oracle: hand-read fields of "15/01/2024".
     #[test]
     fn test_parse_european_date() {
-        let parser = Parser::new(true, false); // dayfirst=true
+        let parser = Parser::new(true, false);
         let (res, _) = parser
             .parse("15/01/2024", None, None, false, false)
             .unwrap();
@@ -1405,6 +1414,11 @@ mod tests {
         assert_eq!(res.day, Some(15));
     }
 
+    /// Verify a month name fills the month and the numbers fill day and year.
+    ///
+    /// Mutation: the month name appended without its 'M' label, so the
+    ///   resolver misplaces it.
+    /// Oracle: hand-read fields of "Jan 15, 2024".
     #[test]
     fn test_parse_named_month() {
         let parser = Parser::default();
@@ -1416,6 +1430,10 @@ mod tests {
         assert_eq!(res.day, Some(15));
     }
 
+    /// Verify a space-separated ISO datetime keeps its time fields.
+    ///
+    /// Mutation: seconds dropped from the ISO result.
+    /// Oracle: hand-read fields of "2024-01-15 10:30:45".
     #[test]
     fn test_parse_datetime() {
         let parser = Parser::default();
@@ -1430,6 +1448,10 @@ mod tests {
         assert_eq!(res.second, Some(45));
     }
 
+    /// Verify PM moves an hour before noon into the afternoon.
+    ///
+    /// Mutation: adjust_ampm adding 12 for AM in place of PM.
+    /// Oracle: 10:30 PM is 22:30.
     #[test]
     fn test_parse_time_with_ampm() {
         let parser = Parser::default();
@@ -1438,6 +1460,10 @@ mod tests {
         assert_eq!(res.minute, Some(30));
     }
 
+    /// Verify a trailing UTC name sets the name and a zero offset.
+    ///
+    /// Mutation: a UTC alias left with no offset.
+    /// Oracle: UTC is offset 0 by definition.
     #[test]
     fn test_parse_timezone() {
         let parser = Parser::default();
@@ -1449,6 +1475,10 @@ mod tests {
         assert_eq!(res.tzoffset, Some(0));
     }
 
+    /// Verify a -05:00 suffix gives a negative offset in seconds.
+    ///
+    /// Mutation: the offset sign flipped, or minutes read as hours.
+    /// Oracle: hand-computed -5 * 3600.
     #[test]
     fn test_parse_timezone_offset() {
         let parser = Parser::default();
@@ -1459,6 +1489,10 @@ mod tests {
         assert_eq!(res.tzoffset, Some(-5 * 3600));
     }
 
+    /// Verify an 8-digit compact date splits into year, month and day.
+    ///
+    /// Mutation: month and day byte slices swapped.
+    /// Oracle: hand-read fields of "20240115".
     #[test]
     fn test_parse_yyyymmdd() {
         let parser = Parser::default();
@@ -1468,6 +1502,11 @@ mod tests {
         assert_eq!(res.day, Some(15));
     }
 
+    /// Verify a six-digit fraction of a second becomes microseconds.
+    ///
+    /// Mutation: parsems cutting the fraction short or padding it to the
+    ///   wrong width.
+    /// Oracle: 0.123456 s is 123456 microseconds.
     #[test]
     fn test_parse_microseconds() {
         let parser = Parser::default();
@@ -1480,18 +1519,27 @@ mod tests {
         assert_eq!(res.microsecond, Some(123456));
     }
 
+    /// Verify a weekday name sets the weekday next to the date fields.
+    ///
+    /// Mutation: weekday index off by one, Monday read as 1.
+    /// Oracle: Python weekday numbering, where Monday is 0.
     #[test]
     fn test_parse_weekday() {
         let parser = Parser::default();
         let (res, _) = parser
             .parse("Monday Jan 15, 2024", None, None, false, false)
             .unwrap();
-        assert_eq!(res.weekday, Some(0)); // Monday = 0
+        assert_eq!(res.weekday, Some(0));
         assert_eq!(res.month, Some(1));
         assert_eq!(res.day, Some(15));
         assert_eq!(res.year, Some(2024));
     }
 
+    /// Verify fuzzy mode skips words and still reads the date and time.
+    ///
+    /// Mutation: a skipped word raising in fuzzy mode, or fuzzy_with_tokens
+    ///   returning no tokens.
+    /// Oracle: hand-read fields of the sentence.
     #[test]
     fn test_fuzzy_parse() {
         let parser = Parser::default();
@@ -1506,16 +1554,23 @@ mod tests {
         assert!(tokens.is_some());
     }
 
+    /// Verify a two-digit year lands in the current century window.
+    ///
+    /// Mutation: convertyear skipped, leaving the year at 24.
+    /// Oracle: the window places 24 at 2024, so any year at or past 2000.
     #[test]
     fn test_two_digit_year() {
         let parser = Parser::default();
         let (res, _) = parser.parse("01/15/24", None, None, false, false).unwrap();
         assert_eq!(res.month, Some(1));
         assert_eq!(res.day, Some(15));
-        // Year should be converted to 2024
         assert!(res.year.unwrap() >= 2000);
     }
 
+    /// Verify h, m and s labels fill hour, minute and second.
+    ///
+    /// Mutation: the minute and second field codes swapped in assign_hms.
+    /// Oracle: hand-read fields of "2h30m45s".
     #[test]
     fn test_parse_hms_format() {
         let parser = Parser::default();
@@ -1527,6 +1582,10 @@ mod tests {
 
     // Tests for parse_time_only()
 
+    /// Verify HHMM splits into hour and minute with second 0.
+    ///
+    /// Mutation: minute sliced from bytes 0..2 in place of 2..4.
+    /// Oracle: hand-read fields of "0930".
     #[test]
     fn test_time_only_compact_hhmm() {
         let parser = Parser::default();
@@ -1536,6 +1595,10 @@ mod tests {
         assert_eq!(res.second, Some(0));
     }
 
+    /// Verify HHMMSS reads the last two digits as seconds.
+    ///
+    /// Mutation: seconds read from the wrong byte slice.
+    /// Oracle: hand-read fields of "093015".
     #[test]
     fn test_time_only_compact_hhmmss() {
         let parser = Parser::default();
@@ -1545,6 +1608,10 @@ mod tests {
         assert_eq!(res.second, Some(15));
     }
 
+    /// Verify a '.' fraction on HHMMSS is right-padded to microseconds.
+    ///
+    /// Mutation: the fraction not padded to 6 digits, giving 751.
+    /// Oracle: 0.751 s is 751000 microseconds.
     #[test]
     fn test_time_only_compact_with_dot_fraction() {
         let parser = Parser::default();
@@ -1555,6 +1622,10 @@ mod tests {
         assert_eq!(res.microsecond, Some(751000));
     }
 
+    /// Verify a ',' fraction on HHMMSS reads the same as a '.' fraction.
+    ///
+    /// Mutation: ',' dropped from the fraction delimiters.
+    /// Oracle: 0.751 s is 751000 microseconds.
     #[test]
     fn test_time_only_compact_with_comma_fraction() {
         let parser = Parser::default();
@@ -1565,6 +1636,10 @@ mod tests {
         assert_eq!(res.microsecond, Some(751000));
     }
 
+    /// Verify PM applies to a compact HHMM time.
+    ///
+    /// Mutation: the compact path ignoring its ampm argument.
+    /// Oracle: 9:30 PM is 21:30.
     #[test]
     fn test_time_only_compact_pm() {
         let parser = Parser::default();
@@ -1573,6 +1648,10 @@ mod tests {
         assert_eq!(res.minute, Some(30));
     }
 
+    /// Verify the PM suffix comes off before the fraction is read.
+    ///
+    /// Mutation: " PM" left on the fraction, so microseconds read 0.
+    /// Oracle: 9:30:15.751 PM is 21:30:15.751000.
     #[test]
     fn test_time_only_compact_with_fraction_pm() {
         let parser = Parser::default();
@@ -1583,22 +1662,34 @@ mod tests {
         assert_eq!(res.microsecond, Some(751000));
     }
 
+    /// Verify 12 AM maps to hour 0.
+    ///
+    /// Mutation: the 12 AM to 0 rule dropped from adjust_ampm.
+    /// Oracle: 12 AM is midnight, hour 0.
     #[test]
     fn test_time_only_12am_midnight() {
         let parser = Parser::default();
         let res = parser.parse_time_only("1200 AM").unwrap();
-        assert_eq!(res.hour, Some(0)); // 12 AM = midnight
+        assert_eq!(res.hour, Some(0));
         assert_eq!(res.minute, Some(0));
     }
 
+    /// Verify 12 PM stays at hour 12.
+    ///
+    /// Mutation: adjust_ampm adding 12 to hour 12, giving 24.
+    /// Oracle: 12 PM is noon, hour 12.
     #[test]
     fn test_time_only_12pm_noon() {
         let parser = Parser::default();
         let res = parser.parse_time_only("1200 PM").unwrap();
-        assert_eq!(res.hour, Some(12)); // 12 PM = noon
+        assert_eq!(res.hour, Some(12));
         assert_eq!(res.minute, Some(0));
     }
 
+    /// Verify H:MM accepts a one-digit hour.
+    ///
+    /// Mutation: the hour length check written as != 2.
+    /// Oracle: hand-read fields of "9:30".
     #[test]
     fn test_time_only_separated_colon() {
         let parser = Parser::default();
@@ -1607,6 +1698,10 @@ mod tests {
         assert_eq!(res.minute, Some(30));
     }
 
+    /// Verify H.MM, kept as one token, reads as hour and minute.
+    ///
+    /// Mutation: the single-token H.MM branch dropped.
+    /// Oracle: hand-read fields of "9.30".
     #[test]
     fn test_time_only_separated_dot() {
         let parser = Parser::default();
@@ -1615,6 +1710,10 @@ mod tests {
         assert_eq!(res.minute, Some(30));
     }
 
+    /// Verify H:MM:SS reads the seconds.
+    ///
+    /// Mutation: the seconds check requiring more than 5 tokens.
+    /// Oracle: hand-read fields of "9:30:15".
     #[test]
     fn test_time_only_separated_with_seconds() {
         let parser = Parser::default();
@@ -1624,6 +1723,10 @@ mod tests {
         assert_eq!(res.second, Some(15));
     }
 
+    /// Verify H.MM.SS reads the third dotted part as seconds.
+    ///
+    /// Mutation: parts[2] ignored in the H.MM branch.
+    /// Oracle: hand-read fields of "9.30.15".
     #[test]
     fn test_time_only_separated_dot_seconds() {
         let parser = Parser::default();
@@ -1633,6 +1736,10 @@ mod tests {
         assert_eq!(res.second, Some(15));
     }
 
+    /// Verify a fraction on H:MM:SS becomes microseconds.
+    ///
+    /// Mutation: parsems not padding the fraction to 6 digits.
+    /// Oracle: 0.751 s is 751000 microseconds.
     #[test]
     fn test_time_only_separated_with_microseconds() {
         let parser = Parser::default();
@@ -1643,6 +1750,10 @@ mod tests {
         assert_eq!(res.microsecond, Some(751000));
     }
 
+    /// Verify PM applies to a separated H:MM time.
+    ///
+    /// Mutation: the separated path ignoring its ampm argument.
+    /// Oracle: 9:30 PM is 21:30.
     #[test]
     fn test_time_only_separated_pm() {
         let parser = Parser::default();
@@ -1651,32 +1762,52 @@ mod tests {
         assert_eq!(res.minute, Some(30));
     }
 
+    /// Verify 12:00 PM passes the 12-hour cap and stays at 12.
+    ///
+    /// Mutation: the AM/PM hour cap set to 11, or 12 PM turned into 24.
+    /// Oracle: 12 PM is noon, at the cap of 12.
     #[test]
     fn test_time_only_separated_12pm() {
         let parser = Parser::default();
         let res = parser.parse_time_only("12:00 PM").unwrap();
-        assert_eq!(res.hour, Some(12)); // 12 PM = noon
+        assert_eq!(res.hour, Some(12));
         assert_eq!(res.minute, Some(0));
     }
 
+    /// Verify a compact hour past 23 raises.
+    ///
+    /// Mutation: the hour range check dropped.
+    /// Oracle: hour 99 is past the 23 limit.
     #[test]
     fn test_time_only_invalid_hour() {
         let parser = Parser::default();
         assert!(parser.parse_time_only("9930").is_err());
     }
 
+    /// Verify a compact minute past 59 raises.
+    ///
+    /// Mutation: the minute range check dropped.
+    /// Oracle: minute 70 is past the 59 limit.
     #[test]
     fn test_time_only_invalid_minute() {
         let parser = Parser::default();
         assert!(parser.parse_time_only("0970").is_err());
     }
 
+    /// Verify a 3-digit string is not a compact time.
+    ///
+    /// Mutation: the compact length check accepting 3 digits.
+    /// Oracle: only 4 or 6 digits form HHMM or HHMMSS.
     #[test]
     fn test_time_only_invalid_3_digits() {
         let parser = Parser::default();
         assert!(parser.parse_time_only("930").is_err());
     }
 
+    /// Verify a 5-digit string is not a compact time.
+    ///
+    /// Mutation: the compact length check written as len < 4.
+    /// Oracle: only 4 or 6 digits form HHMM or HHMMSS.
     #[test]
     fn test_time_only_invalid_5_digits() {
         let parser = Parser::default();

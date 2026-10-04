@@ -36,12 +36,8 @@ def test_usa_rule_order():
 def test_end_of_february_is_leap_aware():
     """Verify February 28 counts as month-end only in a common year.
 
-    Mutation: the end-of-February test reduced to month 2 and day >= 28,
-        which mis-accrues 3 days on a 30/360 US period starting
-        2024-02-28 and 2 days on a 30E/360 ISDA period ending there.
-    Oracle: hand-computed numerators. Each leap case sits beside the
-        February 29 and common-year February 28 cases that must still
-        clamp, so the test fails in both directions.
+    Mutation: the end-of-February test reduced to month 2 and day >= 28.
+    Oracle: hand-computed numerators.
     """
     assert yearfrac(Date(2024, 2, 28), Date(2024, 8, 31), 0) == 183 / 360
     assert yearfrac(Date(2024, 2, 29), Date(2024, 8, 31), 0) == 180 / 360
@@ -56,8 +52,8 @@ def test_thirty_360_family_divergence():
     """Pin the pairs where the four 30/360 bases differ.
 
     Mutation: Bond Basis (6) gaining the February rule, 30/360 US (0)
-        losing it, or 30E/360 ISDA (7) losing its end-of-February clamp
-        and collapsing into 30E/360 (4).
+        losing it, 30E/360 (4) gaining the end-of-February clamp, or
+        30E/360 ISDA (7) losing it and collapsing into 30E/360 (4).
     Oracle: hand-computed numerators.
     """
     cases = [
@@ -94,8 +90,7 @@ def test_act_act_isda_split():
 
     Mutation: one denominator for the whole span, such as the average
         year length across the span, or 366 whenever a February 29 lies
-        inside it. Both agree within one calendar year and diverge
-        across a year end.
+        inside it.
     Oracle: hand-computed per-year sums.
     """
     assert yearfrac(Date(2023, 1, 1), Date(2025, 1, 1), 1) == 2.0
@@ -124,8 +119,7 @@ def test_same_day_datetimes_are_zero():
     """Verify endpoints on one day at different times give exactly 0.0.
 
     Mutation: the zero shortcut comparing full datetimes, so a same-day
-        pair reaches the ACT/ACT ISDA three-term sum, which rounds to
-        about 1e-17 in place of zero.
+        pair reaches the ACT/ACT ISDA three-term sum and misses zero.
     Oracle: QuantLib returns 0.0 for equal dates, and yearfrac reads only
         the date.
     """

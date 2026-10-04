@@ -63,9 +63,9 @@ def test_basis_range_matches_twins():
 def test_month_end_pairs_bitwise():
     """Verify month-end pairs across leap and century windows bitwise.
 
-    Mutation: any divergence from a twin's day rules. Month ends are
-        where every 30/360 rule and the ACT/ACT leap split apply, and
-        the 2100 window catches a century year taken as a leap year.
+    Mutation: a twin's 30/360 month-end rule or ACT/ACT leap split
+        dropped, 2100 taken as a leap year, or ACT/ACT ISDA dividing a
+        same-year span once in place of QuantLib's three-term sum.
     Oracle: QuantLib day counters, IEEE 754 bit equality.
     """
     for window in ((1999, 2000, 2001), (2023, 2024, 2025), (2099, 2100, 2101)):
@@ -81,10 +81,9 @@ def test_seeded_sweep_bitwise():
     Mutation: a divergence the month-end grid misses - mid-month pairs,
         spans over a century, or a float operation reordered so the
         last bit differs.
-    Oracle: QuantLib day counters, IEEE 754 bit equality. Pairs run
-        ascending, because QuantLib's 30/360 counters re-run the day
-        rules on a reversed pair where yearfrac negates the ascending
-        value. test_yearfrac.py pins the reversed contract.
+    Oracle: QuantLib day counters, IEEE 754 bit equality, on ascending
+        pairs: QuantLib's 30/360 counters re-run the day rules on a
+        reversed pair, where yearfrac negates the ascending value.
     """
     rng = random.Random(20260807)
     lo = datetime.date(1901, 1, 1).toordinal()

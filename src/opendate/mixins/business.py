@@ -23,34 +23,30 @@ class DateBusinessMixin:
     This mixin adds business day awareness to Date and DateTime classes,
     allowing date operations to account for weekends and holidays according
     to a specified calendar.
-
-    Features not available in pendulum:
-    - Business day mode toggle
-    - Calendar-specific rules (exchanges, custom)
-    - Business-aware date arithmetic
     """
 
     _calendar: Calendar | None = None
     _business: bool = False
 
     def business(self) -> Self:
-        """Switch to business day mode for date calculations.
+        """Switch to business day mode for the next date calculation.
 
         In business day mode, date arithmetic only counts business days
         as defined by the associated calendar (default NYSE).
 
         Returns
-            Self instance for method chaining
+        -------
+        Self
+            This instance, flagged in place. The next add, subtract,
+            first_of, last_of, start_of, end_of, previous or next call
+            clears the flag.
         """
         self._business = True
         return self
 
     @property
     def b(self) -> Self:
-        """Shorthand property for business() method.
-
-        Returns
-            Self instance for method chaining
+        """Same as business().
         """
         return self.business()
 
@@ -58,15 +54,25 @@ class DateBusinessMixin:
         """Set the calendar for business day calculations.
 
         Parameters
-            cal: Calendar name (str), Calendar instance, or None for default
+        ----------
+        cal : str or Calendar, optional
+            Calendar name or instance. None means get_default_calendar().
 
         Returns
-            Self instance for method chaining
+        -------
+        Self
+            This instance, changed in place.
+
+        Raises
+        ------
+        ValueError
+            cal is a name that get_calendar does not recognize.
 
         Examples
-            d.calendar('NYSE').b.add(days=1)
-            d.calendar('LSE').b.subtract(days=5)
-            d.calendar(my_custom_calendar).is_business_day()
+        --------
+        >>> d.calendar('NYSE').b.add(days=1)
+        >>> d.calendar('LSE').b.subtract(days=5)
+        >>> d.calendar(my_custom_calendar).is_business_day()
         """
         if cal is None:
             cal = get_default_calendar()
@@ -85,25 +91,43 @@ class DateBusinessMixin:
         return self._calendar
 
     def _is_out_of_range(self) -> bool:
-        """Check if date is outside valid calendar range (1900-2100)."""
+        """True when the year lies outside MIN_YEAR..MAX_YEAR.
+        """
         return self.year < MIN_YEAR or self.year > MAX_YEAR
 
     @store_calendar
-    def add(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
+    def add(
+        self,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+        **kwargs) -> Self:
         """Add time periods to the current date or datetime.
 
-        Extends pendulum's add method with business day awareness. When in business mode,
-        only counts business days for the 'days' parameter.
+        Extends pendulum's add with business day awareness.
 
         Parameters
-            years: Number of years to add
-            months: Number of months to add
-            weeks: Number of weeks to add
-            days: Number of days to add (business days if in business mode)
-            **kwargs: Additional time units to add
+        ----------
+        years : int, default 0
+            Ignored in business mode.
+        months : int, default 0
+            Ignored in business mode.
+        weeks : int, default 0
+            Ignored in business mode.
+        days : int, default 0
+            In business mode, a count of business days. There, 0 moves
+            forward to a business day when off one, and a negative count
+            subtracts.
+        **kwargs
+            Further pendulum units such as hours, applied after the
+            business-day move.
 
         Returns
-            New instance with added time
+        -------
+        Self
+            A new instance. In business mode, a date outside
+            MIN_YEAR..MAX_YEAR comes back unchanged.
         """
         _business = self._business
         self._business = False
@@ -124,10 +148,35 @@ class DateBusinessMixin:
         return super().add(years, months, weeks, days, **kwargs)
 
     @store_calendar
-    def subtract(self, years: int = 0, months: int = 0, weeks: int = 0, days: int = 0, **kwargs) -> Self:
-        """Subtract wrapper
-        If not business use Pendulum
-        If business assume only days (for now) and use local logic
+    def subtract(
+        self,
+        years: int = 0,
+        months: int = 0,
+        weeks: int = 0,
+        days: int = 0,
+        **kwargs) -> Self:
+        """Subtract time periods from the current date or datetime.
+
+        Parameters
+        ----------
+        years : int, default 0
+            Ignored in business mode.
+        months : int, default 0
+            Ignored in business mode.
+        weeks : int, default 0
+            Ignored in business mode.
+        days : int, default 0
+            In business mode, a count of business days. There, 0 moves
+            back to a business day when off one, and a negative count adds.
+        **kwargs
+            Further pendulum units such as hours, applied after the
+            business-day move.
+
+        Returns
+        -------
+        Self
+            A new instance. In business mode, a date outside
+            MIN_YEAR..MAX_YEAR comes back unchanged.
         """
         _business = self._business
         self._business = False
@@ -145,13 +194,24 @@ class DateBusinessMixin:
             if kwargs:
                 return result.subtract(**kwargs)
             return result
-        kwargs = {k: -1*v for k, v in kwargs.items()}
+        kwargs = {k: -1 * v for k, v in kwargs.items()}
         return super().add(-years, -months, -weeks, -days, **kwargs)
 
     @store_calendar
     def first_of(self, unit: str, day_of_week: WeekDay | None = None) -> Self:
-        """Returns an instance set to the first occurrence
-        of a given day of the week in the current unit.
+        """First occurrence of a weekday in the current unit.
+
+        Parameters
+        ----------
+        unit : str
+            'month', 'quarter' or 'year'.
+        day_of_week : WeekDay, optional
+            None means the unit's first day.
+
+        Returns
+        -------
+        Self
+            In business mode, moved forward to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -162,8 +222,19 @@ class DateBusinessMixin:
 
     @store_calendar
     def last_of(self, unit: str, day_of_week: WeekDay | None = None) -> Self:
-        """Returns an instance set to the last occurrence
-        of a given day of the week in the current unit.
+        """Last occurrence of a weekday in the current unit.
+
+        Parameters
+        ----------
+        unit : str
+            'month', 'quarter' or 'year'.
+        day_of_week : WeekDay, optional
+            None means the unit's last day.
+
+        Returns
+        -------
+        Self
+            In business mode, moved back to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -174,7 +245,17 @@ class DateBusinessMixin:
 
     @store_calendar
     def start_of(self, unit: str) -> Self:
-        """Returns a copy of the instance with the time reset
+        """Start of the current unit.
+
+        Parameters
+        ----------
+        unit : str
+            A pendulum unit such as 'week', 'month' or 'year'.
+
+        Returns
+        -------
+        Self
+            In business mode, moved forward to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -185,7 +266,17 @@ class DateBusinessMixin:
 
     @store_calendar
     def end_of(self, unit: str) -> Self:
-        """Returns a copy of the instance with the time reset
+        """End of the current unit.
+
+        Parameters
+        ----------
+        unit : str
+            A pendulum unit such as 'week', 'month' or 'year'.
+
+        Returns
+        -------
+        Self
+            In business mode, moved back to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -196,9 +287,17 @@ class DateBusinessMixin:
 
     @store_calendar
     def previous(self, day_of_week: WeekDay | None = None) -> Self:
-        """Modify to the previous occurrence of a given day of the week.
+        """Previous occurrence of a weekday, before this date.
 
-        In business mode, snaps BACKWARD to maintain 'previous' semantics.
+        Parameters
+        ----------
+        day_of_week : WeekDay, optional
+            None means this date's own weekday.
+
+        Returns
+        -------
+        Self
+            In business mode, moved back to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -209,9 +308,17 @@ class DateBusinessMixin:
 
     @store_calendar
     def next(self, day_of_week: WeekDay | None = None) -> Self:
-        """Modify to the next occurrence of a given day of the week.
+        """Next occurrence of a weekday, after this date.
 
-        In business mode, snaps FORWARD to maintain 'next' semantics.
+        Parameters
+        ----------
+        day_of_week : WeekDay, optional
+            None means this date's own weekday.
+
+        Returns
+        -------
+        Self
+            In business mode, moved forward to a business day when off one.
         """
         _business = self._business
         self._business = False
@@ -223,8 +330,13 @@ class DateBusinessMixin:
     def is_business_day(self) -> bool:
         """Check if the date is a business day according to the calendar.
 
-        Returns False for dates outside valid calendar range (1900-2100).
+        Returns
+        -------
+        bool
+            False outside MIN_YEAR..MAX_YEAR. A DateTime is judged by its
+            wall-clock date, without conversion to the calendar's tz.
         """
+        # Deferred: opendate imports this mixin, a circular import.
         import opendate
         obj = self
         if isinstance(self, opendate.DateTime):
@@ -242,8 +354,13 @@ class DateBusinessMixin:
     def business_hours(self) -> tuple[DateTime, DateTime]:
         """Get market open and close times for this date.
 
-        Returns (None, None) if not a business day.
+        Returns
+        -------
+        tuple of DateTime
+            (open, close) in the calendar's tz, or (None, None) when this
+            date is not a business day.
         """
+        # Deferred: opendate imports this mixin, a circular import.
         import opendate
         obj = self
         if isinstance(self, opendate.DateTime):
@@ -255,7 +372,16 @@ class DateBusinessMixin:
     def _add_business_days(self, days: int) -> Self | None:
         """Add business days using Rust calendar.
 
-        Returns self unchanged for dates outside valid range (1900-2100).
+        Parameters
+        ----------
+        days : int
+            Nonzero business-day count; its sign sets the direction.
+
+        Returns
+        -------
+        Self or None
+            Self unchanged outside MIN_YEAR..MAX_YEAR. None when no calendar
+            covers this date or the count runs past the calendar's range.
         """
         if self._is_out_of_range():
             return self
@@ -265,7 +391,8 @@ class DateBusinessMixin:
         start_ord = self.toordinal()
         forward = days > 0
         offset = 1 if forward else -1
-        first_bd = (cal.next_business_day if forward else cal.prev_business_day)(start_ord + offset)
+        find_business_day = cal.next_business_day if forward else cal.prev_business_day
+        first_bd = find_business_day(start_ord + offset)
         if first_bd is None:
             return None
         result_ord = cal.add_business_days(first_bd, (abs(days) - 1) * offset)
@@ -275,11 +402,20 @@ class DateBusinessMixin:
 
     @store_calendar
     def _snap_to_business_day(self, forward: bool = True) -> Self:
-        """Snap to nearest business day if not already on one.
+        """Snap to a business day if not already on one.
 
-        Dates outside valid range (1900-2100) are sentinel values and return
-        unchanged. Use in-range boundary dates (e.g., Date(2100, 12, 31)) if
-        you need the last/first valid business day.
+        Parameters
+        ----------
+        forward : bool, default True
+            True moves to the next business day, False to the previous.
+
+        Returns
+        -------
+        Self
+            Unchanged on a business day. A date outside MIN_YEAR..MAX_YEAR
+            is a sentinel and also comes back unchanged, so a caller after
+            the last or first valid business day must start from an
+            in-range date such as Date(2100, 12, 31).
         """
         self._business = False
         if self._is_out_of_range():
@@ -290,7 +426,10 @@ class DateBusinessMixin:
         if self.is_business_day():
             return self
         ordinal = self.toordinal()
-        target = cal.next_business_day(ordinal) if forward else cal.prev_business_day(ordinal)
+        if forward:
+            target = cal.next_business_day(ordinal)
+        else:
+            target = cal.prev_business_day(ordinal)
         if target is None:
             return self
         return super().add(days=target - ordinal)

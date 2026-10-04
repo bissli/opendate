@@ -16,83 +16,88 @@ if TYPE_CHECKING:
 
 
 class DateExtrasMixin:
-    """Extended date functionality not provided by Pendulum.
+    """Date helpers pendulum lacks, kept for legacy callers.
 
-    .. note::
-        This mixin exists primarily for legacy backward compatibility.
-        New code should prefer using built-in methods where possible.
-
-    This mixin provides additional date utilities primarily focused on:
-    - Financial date calculations (nearest month start/end)
-    - Weekday-oriented date navigation
-    - Relative date lookups
-
-    These methods extend OpenDate functionality with features commonly
-    needed in financial applications and reporting scenarios.
+    New code should prefer the built-in methods where one exists.
     """
 
     @store_calendar
     def nearest_start_of_month(self) -> Self:
-        """Get the nearest start of month.
+        """First of the month nearest this date.
 
-        If day <= 15, returns start of current month.
-        If day > 15, returns start of next month.
-        In business mode, snaps to next business day if needed.
+        Returns
+        -------
+        Self
+            The first of this month on day 15 or earlier, else the first
+            of next month. In business mode, the business day on or after
+            it.
         """
         _business = self._business
         self._business = False
         if self.day > 15:
-            d = self.end_of('month').add(days=1)  # First of next month
+            d = self.end_of('month').add(days=1)
         else:
-            d = self.start_of('month')  # First of current month
+            d = self.start_of('month')
         if _business:
             d = d._business_or_next()
         return d
 
     @store_calendar
     def nearest_end_of_month(self) -> Self:
-        """Get the nearest end of month.
+        """Last day of the month nearest this date.
 
-        If day <= 15, returns end of previous month.
-        If day > 15, returns end of current month.
-        In business mode, snaps to previous business day if needed.
+        Returns
+        -------
+        Self
+            The last day of last month on day 15 or earlier, else the last
+            day of this month. In business mode, the business day on or
+            before it.
         """
         _business = self._business
         self._business = False
         if self.day <= 15:
-            d = self.start_of('month').subtract(days=1)  # End of previous month
+            d = self.start_of('month').subtract(days=1)
         else:
-            d = self.end_of('month')  # End of current month
+            d = self.end_of('month')
         if _business:
             d = d._business_or_previous()
         return d
 
-    def next_relative_date_of_week_by_day(self, day='MO') -> Self:
-        """Get next occurrence of the specified weekday (or current date if already that day).
+    def next_relative_date_of_week_by_day(self, day: str = 'MO') -> Self:
+        """This date where it falls on day, else the next date that does.
+
+        Parameters
+        ----------
+        day : str, default 'MO'
+            Weekday code, 'MO' through 'SU'.
         """
         if self.weekday() == WEEKDAY_SHORTNAME.get(day):
             return self
         return self.next(WEEKDAY_SHORTNAME.get(day))
 
     def weekday_or_previous_friday(self) -> Self:
-        """Return the date if it is a weekday, otherwise return the previous Friday.
+        """This date on a weekday, else the Friday before it.
         """
         if self.weekday() in {WeekDay.SATURDAY, WeekDay.SUNDAY}:
             return self.previous(WeekDay.FRIDAY)
         return self
 
     @classmethod
-    def third_wednesday(cls, year, month) -> Self:
-        """Calculate the date of the third Wednesday in a given month/year.
+    def third_wednesday(cls, year: int, month: int) -> Self:
+        """Third Wednesday of a month.
 
         .. deprecated::
-            Use Date(year, month, 1).nth_of('month', 3, WeekDay.WEDNESDAY) instead.
+            Use Date(year, month, 1).nth_of('month', 3, WeekDay.WEDNESDAY).
 
         Parameters
-            year: The year to use
-            month: The month to use (1-12)
+        ----------
+        year : int
+            Calendar year.
+        month : int
+            1-12.
 
         Returns
-            A Date object representing the third Wednesday of the specified month
+        -------
+        Self
         """
         return cls(year, month, 1).nth_of('month', 3, WeekDay.WEDNESDAY)

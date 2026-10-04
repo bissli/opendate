@@ -1,15 +1,9 @@
-from __future__ import annotations
-
 """Legacy compatibility functions for OpenDate.
 
-This module contains functions that exist primarily for backward compatibility
-with older codebases. These functions provide alternative interfaces to
-functionality that may be available through other means in the core Date,
-DateTime, and Interval classes.
-
-New code should prefer using the built-in methods on Date, DateTime, and
-Interval objects where applicable.
+New code should prefer the methods on Date, DateTime and Interval where
+one exists.
 """
+from __future__ import annotations
 
 from opendate.calendars import Calendar, get_calendar, get_default_calendar
 from opendate.date_ import Date
@@ -25,7 +19,18 @@ __all__ = [
 
 
 def is_within_business_hours(calendar: str | Calendar | None = None) -> bool:
-    """Return whether the current native datetime is between open and close of business hours.
+    """True where now falls within the calendar's business hours today.
+
+    Parameters
+    ----------
+    calendar : str, Calendar or None, default None
+        Calendar, or its name, whose zone and hours apply. None takes the
+        default calendar.
+
+    Returns
+    -------
+    bool
+        False on a day the calendar is closed, whatever the hour.
     """
     if calendar is None:
         calendar = get_default_calendar()
@@ -34,7 +39,8 @@ def is_within_business_hours(calendar: str | Calendar | None = None) -> bool:
     this = DateTime.now()
     this_cal = this.in_tz(calendar.tz).calendar(calendar)
     bounds = this_cal.business_hours()
-    return this_cal.business_open() and (bounds[0] <= this.astimezone(calendar.tz) <= bounds[1])
+    return this_cal.business_open() and (
+        bounds[0] <= this.astimezone(calendar.tz) <= bounds[1])
 
 
 def is_business_day(calendar: str | Calendar | None = None) -> bool:
@@ -52,12 +58,30 @@ def overlap_days(
     interval_two: Interval | tuple[Date | DateTime, Date | DateTime],
     days: bool = False,
 ) -> bool | int:
-    """Calculate how much two date intervals overlap.
+    """Whether, or by how many days, two date intervals overlap.
 
-    When days=False, returns True/False indicating whether intervals overlap.
-    When days=True, returns the actual day count (negative if non-overlapping).
+    Parameters
+    ----------
+    interval_one : Interval or tuple of (start, end)
+        First interval. A tuple is read as Interval(start, end).
+    interval_two : Interval or tuple of (start, end)
+        Second interval, read the same way.
+    days : bool, default False
+        True returns the day count, False whether the count is >= 0.
 
-    Algorithm adapted from Raymond Hettinger: http://stackoverflow.com/a/9044111
+    Returns
+    -------
+    bool or int
+        With both endpoints counted::
+
+            overlap = (min(end_1, end_2) - max(start_1, start_2)).days + 1
+
+        Negative where the intervals are apart. Zero, and so True, where
+        one ends the day before the other starts.
+
+    References
+    ----------
+    - Raymond Hettinger, http://stackoverflow.com/a/9044111
     """
     if not isinstance(interval_one, Interval):
         interval_one = Interval(*interval_one)
@@ -72,9 +96,32 @@ def overlap_days(
     return overlap >= 0
 
 
-def create_ics(begdate: Date | DateTime, enddate: Date | DateTime, summary: str, location: str) -> str:
-    """Create a simple .ics file per RFC 5545 guidelines."""
+def create_ics(
+    begdate: Date | DateTime,
+    enddate: Date | DateTime,
+    summary: str,
+    location: str,
+) -> str:
+    """Text of a one-event iCalendar file per RFC 5545.
 
+    Parameters
+    ----------
+    begdate : Date or DateTime
+        Event start. Its wall time is written under
+        TZID=America/New_York whatever its own zone, and a Date is
+        written as midnight.
+    enddate : Date or DateTime
+        Event end, written the same way.
+    summary : str
+        SUMMARY line text, written unescaped.
+    location : str
+        LOCATION line text, written unescaped.
+
+    Returns
+    -------
+    str
+        The VCALENDAR text. Nothing is written to disk.
+    """
     return f"""BEGIN:VCALENDAR
 VERSION:2.0
 PRODID:-//hacksw/handcal//NONSGML v1.0//EN

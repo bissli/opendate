@@ -4,6 +4,7 @@ import datetime as _datetime
 import sys
 import time
 import zoneinfo as _zoneinfo
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,7 @@ import pendulum as _pendulum
 
 from opendate.constants import PENDULUM_TIMEZONES, TIMEOFFSET, UTC
 from opendate.constants import normalize_timezone
+from opendate.date_ import Date
 from opendate.decorators import prefer_utc_timezone
 from opendate.helpers import _rust_parse_time
 
@@ -21,41 +23,32 @@ else:
 
 
 class Time(_pendulum.Time):
-    """Time class extending pendulum.Time with additional functionality.
-
-    This class inherits all pendulum.Time functionality while adding:
-    - Enhanced parsing for various time formats
-    - Default UTC timezone when created
-    - Simple timezone conversion utilities
-
-    Unlike pendulum.Time, this class has more lenient parsing capabilities
-    and different timezone defaults.
+    """pendulum.Time with lenient string parsing.
     """
 
-    def __new__(cls, *args, **kwargs) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         """Build the instance, rebuilding a tzinfo pendulum cannot read.
+
+        Parameters
+        ----------
+        *args : Any
+            The datetime.time fields in order, tzinfo fifth. A str tzinfo,
+            here or by keyword, is read as a zone name, which the stdlib
+            rejects.
+        **kwargs : Any
+            The same fields by keyword, plus fold.
 
         Returns
         -------
         Time
             The new instance, carrying a pendulum timezone wherever the
-            caller supplied any timezone at all.
+            caller supplied any timezone at all. A named zone answers None
+            from utcoffset(), as a time has no date to read it at, so
+            comparing such a time with an aware one raises TypeError.
 
         See Also
         --------
         opendate.constants.normalize_timezone : the rebuild itself
-
-        Notes
-        -----
-        - Every construction path lands here, so one timezone class
-          serves the whole type. A `timetz` column read back through a
-          database driver is the shape this catches.
-        - No reference instant is passed, and none could be: a time
-          carries no date to read a zone at. A named zone therefore
-          still answers None from `utcoffset()`, exactly as it did
-          before - a time is only comparable where its zone is fixed.
-        - A str is taken as a zone name, which the stdlib rejects, and
-          lands in that same named-zone case.
         """
         if len(args) > 4:
             tzinfo = args[4]
@@ -75,47 +68,47 @@ class Time(_pendulum.Time):
 
     @classmethod
     @prefer_utc_timezone
-    def parse(cls, s: str | None, fmt: str | None = None, raise_err: bool = False) -> Self | None:
-        """Parse time string in various formats.
-
-        Supported formats:
-        - hh:mm or hh.mm
-        - hh:mm:ss or hh.mm.ss
-        - hh:mm:ss.microseconds
-        - Any of above with AM/PM
-        - Compact: hhmmss or hhmmss.microseconds
-
-        Returns Time with UTC timezone by default.
+    def parse(
+        cls,
+        s: str | None,
+        fmt: str | None = None,
+        raise_err: bool = False
+        ) -> Self | None:
+        """Time from a string, keeping any offset the string spells out.
 
         Parameters
-            s: String to parse or None
-            fmt: Optional strftime format string for custom parsing
-            raise_err: If True, raises ValueError on parse failure instead of returning None
+        ----------
+        s : str | None
+            hh:mm, hh.mm, hh:mm:ss or hh.mm.ss, or compact hhmm or hhmmss.
+            Seconds may carry a fraction after '.' or ','. A string may end
+            in AM/PM, or else in Z or a signed hh:mm or hhmm offset.
+        fmt : str | None, default None
+            strptime format, used in place of the formats above. Only its
+            hour, minute and second reach the result.
+        raise_err : bool, default False
+            Raise ValueError on an empty or unreadable s instead of
+            returning None.
 
         Returns
-            Time instance with UTC timezone or None if parsing fails and raise_err is False
+        -------
+        Time | None
+            UTC where s spells no offset. None where s is empty or
+            unreadable and raise_err is False.
+
+        Raises
+        ------
+        TypeError
+            s is not a str.
+        ValueError
+            s is empty or unreadable and raise_err is True.
 
         Examples
-            Basic time formats:
-            Time.parse('14:30') → Time(14, 30, 0, 0, tzinfo=UTC)
-            Time.parse('14.30') → Time(14, 30, 0, 0, tzinfo=UTC)
-            Time.parse('14:30:45') → Time(14, 30, 45, 0, tzinfo=UTC)
-
-            With microseconds:
-            Time.parse('14:30:45.123456') → Time(14, 30, 45, 123456000, tzinfo=UTC)
-            Time.parse('14:30:45,500000') → Time(14, 30, 45, 500000000, tzinfo=UTC)
-
-            AM/PM formats:
-            Time.parse('2:30 PM') → Time(14, 30, 0, 0, tzinfo=UTC)
-            Time.parse('11:30 AM') → Time(11, 30, 0, 0, tzinfo=UTC)
-            Time.parse('12:30 PM') → Time(12, 30, 0, 0, tzinfo=UTC)
-
-            Compact formats:
-            Time.parse('143045') → Time(14, 30, 45, 0, tzinfo=UTC)
-            Time.parse('1430') → Time(14, 30, 0, 0, tzinfo=UTC)
-
-            Custom format:
-            Time.parse('14-30-45', fmt='%H-%M-%S') → Time(14, 30, 45, 0, tzinfo=UTC)
+        --------
+        Time.parse('14:30') -> Time(14, 30, 0, tzinfo=UTC)
+        Time.parse('14:30:45.123456') -> Time(14, 30, 45, 123456, tzinfo=UTC)
+        Time.parse('2:30 PM') -> Time(14, 30, 0, tzinfo=UTC)
+        Time.parse('143045') -> Time(14, 30, 45, tzinfo=UTC)
+        Time.parse('14-30-45', fmt='%H-%M-%S') -> Time(14, 30, 45, tzinfo=UTC)
         """
         if not s:
             if raise_err:
@@ -133,10 +126,6 @@ class Time(_pendulum.Time):
                     raise ValueError(f'Unable to parse {s} using fmt {fmt}')
                 return
 
-        # The general parser answers hour, minute, second and microsecond
-        # only, so an offset spelled in the string would be dropped and
-        # `prefer_utc_timezone` would stamp UTC over it - moving the
-        # instant rather than merely relabeling it. Split it off first.
         tzinfo = None
         if match := TIMEOFFSET.match(s):
             s, offset = match.group('time'), match.group('offset')
@@ -164,9 +153,28 @@ class Time(_pendulum.Time):
         tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
-        """Create Time instance from time-like object.
+        """Time from the time of day of a time-like value.
 
-        Adds UTC timezone by default unless obj is already a Time instance.
+        Parameters
+        ----------
+        obj : time | datetime | pd.Timestamp | np.datetime64 | Time | None
+            Value to read. A Time comes back as the same object where tz
+            is None, naive or not.
+        tz : str | ZoneInfo | tzinfo | None, default None
+            Zone set on the wall-clock time, with no conversion. None
+            keeps obj's own zone, or gives UTC where obj has none.
+        raise_err : bool, default False
+            Raise ValueError on a None or NA obj instead of returning None.
+
+        Returns
+        -------
+        Time | None
+            None where obj is None or NA and raise_err is False.
+
+        Raises
+        ------
+        ValueError
+            obj is None or NA and raise_err is True.
         """
         if pd.isna(obj):
             if raise_err:
@@ -181,9 +189,20 @@ class Time(_pendulum.Time):
         return cls(obj.hour, obj.minute, obj.second, obj.microsecond, tzinfo=tz)
 
     def in_timezone(self, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo) -> Self:
-        """Convert time to a different timezone.
+        """The same instant as a time of day in tz.
+
+        Parameters
+        ----------
+        tz : str | ZoneInfo | tzinfo
+            Target zone.
+
+        Returns
+        -------
+        Time
+            Converted on today's date, so a daylight-saving zone answers
+            by today's offset. A naive time is read as UTC.
         """
-        from opendate.date_ import Date
+        # Circular import: opendate.datetime_ imports this module.
         from opendate.datetime_ import DateTime
 
         _dt = DateTime.combine(Date.today(), self, tzinfo=self.tzinfo or UTC)

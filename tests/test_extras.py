@@ -1,3 +1,4 @@
+import inspect
 from unittest.mock import patch
 
 import pytest
@@ -8,6 +9,10 @@ from opendate.extras import is_within_business_hours, overlap_days
 
 def test_is_within_business_hours():
     """Test is_within_business_hours with various scenarios.
+
+    Mutation: dropping the business_open() test, or the hours bounds.
+    Oracle: NYSE 09:30-16:00 hours on Monday 2000-05-01 at 12:30,
+        Sunday 2000-07-02 at 12:15 and Wednesday 2000-11-01 at 01:15.
     """
     tz = get_calendar('NYSE').tz
 
@@ -26,6 +31,9 @@ def test_is_within_business_hours():
 
 def test_overlap_days_boolean():
     """Test overlap_days with boolean return (days=False).
+
+    Mutation: min and max swapped in latest_start and earliest_end.
+    Oracle: hand-picked March 2016 ranges, disjoint, crossed and nested.
     """
     date1 = Date(2016, 3, 1)
     date2 = Date(2016, 3, 2)
@@ -42,6 +50,9 @@ def test_overlap_days_boolean():
 
 def test_overlap_days_count():
     """Test overlap_days with day count return (days=True).
+
+    Mutation: dropping the + 1 that counts both endpoints.
+    Oracle: hand-counted days, 30 for March 1-30 inclusive.
     """
     date1 = Date(2016, 3, 1)
     date2 = Date(2016, 3, 2)
@@ -55,6 +66,10 @@ def test_overlap_days_count():
 
 def test_is_business_day():
     """Test is_business_day with various scenarios.
+
+    Mutation: ignoring the NYSE holiday list, or the weekend test.
+    Oracle: Monday 2018-11-19, the weekend 2018-11-24/25, and Monday
+        2021-07-05, the NYSE Independence Day holiday.
     """
     tz = get_calendar('NYSE').tz
 
@@ -77,6 +92,10 @@ def test_is_business_day():
 
 def test_create_ics_with_datetime():
     """Test create_ics with DateTime objects generates valid iCalendar format.
+
+    Mutation: begdate and enddate swapped, or seconds dropped from the
+        DTSTART/DTEND format.
+    Oracle: hand-written RFC 5545 lines for 09:30-16:00 on 2024-01-15.
     """
     begdate = DateTime(2024, 1, 15, 9, 30, 0, tzinfo=EST)
     enddate = DateTime(2024, 1, 15, 16, 0, 0, tzinfo=EST)
@@ -98,6 +117,9 @@ def test_create_ics_with_datetime():
 
 def test_create_ics_with_date():
     """Test create_ics with Date objects generates valid iCalendar format.
+
+    Mutation: a Date written without its T000000 time part.
+    Oracle: hand-written RFC 5545 midnight lines for 2024-01-15.
     """
 
     begdate = Date(2024, 1, 15)
@@ -119,8 +141,11 @@ def test_create_ics_with_date():
 
 
 def test_is_within_business_hours_has_no_datetime_param():
-    """is_within_business_hours accepts only calendar, no datetime parameter."""
-    import inspect
+    """is_within_business_hours takes calendar as its only parameter.
+
+    Mutation: a datetime parameter added back to is_within_business_hours.
+    Oracle: the parameter list ['calendar'].
+    """
     sig = inspect.signature(is_within_business_hours)
     assert list(sig.parameters.keys()) == ['calendar']
 

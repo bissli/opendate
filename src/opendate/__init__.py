@@ -26,7 +26,7 @@ timezone = Timezone
 
 
 def date(year: int, month: int, day: int) -> Date:
-    """Create new Date
+    """Date for the calendar day year-month-day.
     """
     return Date(year, month, day)
 
@@ -42,7 +42,34 @@ def datetime(
     tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
     fold: int = 0,
 ) -> DateTime:
-    """Create new DateTime
+    """DateTime for the given fields, in UTC unless tzinfo names a zone.
+
+    Parameters
+    ----------
+    year : int
+        Calendar year.
+    month : int
+        1-12.
+    day : int
+        Day of the month.
+    hour : int, default 0
+        0-23.
+    minute : int, default 0
+        0-59.
+    second : int, default 0
+        0-59.
+    microsecond : int, default 0
+        0-999999.
+    tzinfo : str, tzinfo or None, default UTC
+        A str is a zone name. None gives a naive DateTime, so only an
+        explicit None matches `datetime.datetime`, whose default is naive.
+    fold : int, default 0
+        0 or 1: the earlier or later of the two wall times a
+        daylight-saving fall-back repeats.
+
+    Returns
+    -------
+    DateTime
     """
     return DateTime(
         year,
@@ -53,8 +80,7 @@ def datetime(
         second=second,
         microsecond=microsecond,
         tzinfo=tzinfo,
-        fold=fold,
-    )
+        fold=fold)
 
 
 def time(
@@ -64,27 +90,87 @@ def time(
     microsecond: int = 0,
     tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
 ) -> Time:
-    """Create new Time
+    """Time of day for the given fields, in UTC unless tzinfo names a zone.
+
+    Parameters
+    ----------
+    hour : int
+        0-23.
+    minute : int, default 0
+        0-59.
+    second : int, default 0
+        0-59.
+    microsecond : int, default 0
+        0-999999.
+    tzinfo : str, tzinfo or None, default UTC
+        A str is a zone name. None gives a naive Time, so only an explicit
+        None matches `datetime.time`, whose default is naive.
+
+    Returns
+    -------
+    Time
     """
     return Time(hour, minute, second, microsecond, tzinfo)
 
 
 def interval(begdate: Date | DateTime, enddate: Date | DateTime) -> Interval:
-    """Create new Interval
+    """Interval between two dates, its start the earlier of the two.
     """
     return Interval(begdate, enddate)
 
 
-def parse(s: str | None, calendar: str | Calendar | None = None, raise_err: bool = False) -> DateTime | None:
-    """Parse using DateTime.parse
+def parse(
+    s: str | None,
+    calendar: str | Calendar | None = None,
+    raise_err: bool = False,
+) -> DateTime | None:
+    """DateTime that DateTime.parse reads from s.
+
+    Parameters
+    ----------
+    s : str or None
+        Text in any form DateTime.parse accepts, a date code such as 'T-3b'
+        included.
+    calendar : str, Calendar or None, default None
+        Calendar that business-day codes count against. None takes the
+        default calendar, where DateTime.parse itself defaults to 'NYSE'.
+    raise_err : bool, default False
+        True raises where s is None or does not parse. False returns None.
+
+    Returns
+    -------
+    DateTime or None
+        None where s is None or does not parse, and raise_err is False.
+
+    Raises
+    ------
+    ValueError
+        s is None or does not parse, and raise_err is True.
     """
     if calendar is None:
         calendar = get_default_calendar()
     return DateTime.parse(s, calendar=calendar, raise_err=raise_err)
 
 
-def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateTime | Date | Time:
-    """Create a DateTime/Date/Time instance from a datetime/date/time native one.
+def instance(
+    obj: _datetime.date | _datetime.datetime | _datetime.time,
+) -> DateTime | Date | Time:
+    """The opendate counterpart of a stdlib date, datetime or time.
+
+    Parameters
+    ----------
+    obj : datetime.date, datetime.datetime or datetime.time
+        Stdlib value to wrap.
+
+    Returns
+    -------
+    DateTime, Date or Time
+        DateTime for a datetime, Date for a date, Time for a time.
+
+    Raises
+    ------
+    ValueError
+        obj is none of the three.
     """
     if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
         return Date.instance(obj)
@@ -96,13 +182,13 @@ def instance(obj: _datetime.date | _datetime.datetime | _datetime.time) -> DateT
 
 
 def now(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
-    """Returns Datetime.now
+    """Current instant as a DateTime in tz, the local zone where tz is None.
     """
     return DateTime.now(tz)
 
 
 def today(tz: str | _zoneinfo.ZoneInfo | None = None) -> DateTime:
-    """Returns DateTime.today
+    """Midnight today as a DateTime in tz, the local zone where tz is None.
     """
     return DateTime.today(tz)
 

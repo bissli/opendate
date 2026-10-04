@@ -3,17 +3,19 @@ from __future__ import annotations
 import datetime as _datetime
 import sys
 import zoneinfo as _zoneinfo
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import pandas as pd
 import pendulum as _pendulum
-
 from opendate.constants import DATEMATCH, LCL, PENDULUM_TIMEZONES, UTC
 from opendate.constants import normalize_timezone
+from opendate.date_ import Date
 from opendate.helpers import _rust_parse_datetime
-from opendate.metaclass import DATETIME_METHODS_RETURNING_DATETIME, DateContextMeta
+from opendate.metaclass import DATETIME_METHODS_RETURNING_DATETIME
+from opendate.metaclass import DateContextMeta
 from opendate.mixins import DateBusinessMixin
+from opendate.time_ import Time
 
 if sys.version_info >= (3, 11):
     from typing import Self
@@ -22,8 +24,6 @@ else:
 
 if TYPE_CHECKING:
     from opendate.calendars import Calendar
-    from opendate.date_ import Date
-    from opendate.time_ import Time
 
 
 class DateTime(
@@ -32,50 +32,32 @@ class DateTime(
     metaclass=DateContextMeta,
     methods_to_wrap=DATETIME_METHODS_RETURNING_DATETIME
 ):
-    """DateTime class extending pendulum.DateTime with business day and additional functionality.
-
-    This class inherits all pendulum.DateTime functionality while adding:
-    - Business day calculations with NYSE calendar integration
-    - Enhanced timezone handling
-    - Extended parsing capabilities
-    - Custom utility methods for financial applications
-
-    Unlike pendulum.DateTime:
-    - today() returns start of day rather than current time
-    - Methods preserve business status and entity when chaining
-    - Has timezone handling helpers not present in pendulum
+    """pendulum.DateTime with business-day arithmetic and extended parsing.
     """
 
-    def __new__(cls, *args, **kwargs) -> Self:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         """Build the instance, rebuilding a tzinfo pendulum cannot read.
+
+        Parameters
+        ----------
+        *args : Any
+            The datetime.datetime fields in order, tzinfo eighth. A str
+            tzinfo, here or by keyword, is read as a zone name, which the
+            stdlib rejects.
+        **kwargs : Any
+            The same fields by keyword, plus fold.
 
         Returns
         -------
         DateTime
             The new instance, carrying a pendulum timezone wherever the
-            caller supplied any timezone at all.
+            caller supplied any timezone at all. Unpickling rebuilds the
+            timezone too, so a value pickled with a tzinfo pendulum
+            cannot read loads with a pendulum one.
 
         See Also
         --------
         opendate.constants.normalize_timezone : the rebuild itself
-
-        Notes
-        -----
-        - Every construction path lands here - `instance`, `parse`,
-          `combine`, `replace`, `__deepcopy__` and a plain call - so
-          this is the one place that has to hold for `.tz` to answer on
-          every instance. See `normalize_timezone` for what goes wrong
-          when it does not.
-        - A construction carrying no timezone, or one pendulum already
-          owns, leaves on the first two tests.
-        - Unpickling lands here too, and settles the timezone it reads.
-          pendulum overrides `__reduce_ex__` to the positional form, so
-          the `(bytes_state, tzinfo)` shape that would slip past never
-          arises - which means a value pickled by an older release comes
-          back repaired rather than as it went in.
-        - A str is taken as a zone name, which the stdlib rejects. It
-          settles without a reference instant, since a name carries its
-          own daylight-saving rule.
         """
         if len(args) > 7:
             tzinfo = args[7]
@@ -92,8 +74,8 @@ class DateTime(
             return super().__new__(cls, *args, **kwargs)
 
         if isinstance(tzinfo, str):
-            # A name settles on its own; it is also not a tzinfo, so it
-            # cannot go into the reference built below.
+            # A str is not a tzinfo, so it cannot go into the reference
+            # built below.
             settled = normalize_timezone(tzinfo)
             if 'tzinfo' in kwargs:
                 kwargs['tzinfo'] = settled
@@ -102,21 +84,17 @@ class DateTime(
             return super().__new__(cls, *args, **kwargs)
 
         # Notes:
-        # - A daylight-saving zone reports no offset unless it is handed
-        #   an instant, so rebuild the one under construction.
-        # - The reference carries `tz` and the caller's `fold`, matching
-        #   what the stdlib passes: a tzinfo may read either, and the
-        #   docs' own recipe answers its standard offset for a naive
-        #   reference and the wrong side of an ambiguous hour for fold 0.
-        # - Missing date parts default to 1. The call is already invalid
-        #   without them, and `super().__new__` is what should say so.
-        fields = ('year', 'month', 'day', 'hour', 'minute', 'second',
-                  'microsecond')
+        # - The reference carries tzinfo and the caller's fold, since a
+        #   tzinfo may read either to pick a side of an ambiguous hour.
+        # - Date parts default to 1, since 0 raises here before
+        #   super().__new__ can report the missing argument.
+        fields = ('year', 'month', 'day', 'hour', 'minute', 'second', 'microsecond')
         parts = list(args[:7])
-        parts += [kwargs.get(field, 1 if index < 3 else 0)
-                  for index, field in enumerate(fields) if index >= len(parts)]
-        when = _datetime.datetime(*parts, tzinfo=tzinfo,
-                                  fold=kwargs.get('fold', 0))
+        parts += [
+            kwargs.get(field, 1 if index < 3 else 0)
+            for index, field in enumerate(fields) if index >= len(parts)
+            ]
+        when = _datetime.datetime(*parts, tzinfo=tzinfo, fold=kwargs.get('fold', 0))
         settled = normalize_timezone(tzinfo, when)
 
         if 'tzinfo' in kwargs:
@@ -131,73 +109,101 @@ class DateTime(
         return self.timestamp()
 
     @classmethod
-    def fromordinal(cls, *args, **kwargs) -> Self:
-        """Create a DateTime from an ordinal.
+    def fromordinal(cls, *args: int, **kwargs: Any) -> Self:
+        """Midnight UTC on a proleptic Gregorian ordinal day.
 
         Parameters
-            n: The ordinal value
+        ----------
+        *args : int
+            The ordinal, where 1 is January 1 of year 1.
+        **kwargs : Any
+            Passed to pendulum.DateTime.fromordinal.
 
         Returns
-            DateTime instance
+        -------
+        DateTime
         """
         result = _pendulum.DateTime.fromordinal(*args, **kwargs)
         return cls.instance(result)
 
     @classmethod
-    def fromtimestamp(cls, timestamp, tz=None) -> Self:
-        """Create a DateTime from a timestamp.
+    def fromtimestamp(
+        cls,
+        timestamp: float,
+        tz: str | _datetime.tzinfo | None = None
+        ) -> Self:
+        """The instant of a Unix timestamp, read in tz.
 
         Parameters
-            timestamp: Unix timestamp
-            tz: Optional timezone
+        ----------
+        timestamp : float
+            Seconds since the Unix epoch.
+        tz : str | tzinfo | None, default None
+            Zone of the result. None gives UTC.
 
         Returns
-            DateTime instance
+        -------
+        DateTime
         """
         tz = tz or UTC
         result = _pendulum.DateTime.fromtimestamp(timestamp, tz)
         return cls.instance(result)
 
     @classmethod
-    def strptime(cls, time_str, fmt) -> Self:
-        """Parse a string into a DateTime according to a format.
+    def strptime(cls, time_str: str, fmt: str) -> Self:
+        """Parse time_str by the strptime format fmt.
 
         Parameters
-            time_str: String to parse
-            fmt: Format string
+        ----------
+        time_str : str
+            Text to parse.
+        fmt : str
+            strptime format.
 
         Returns
-            DateTime instance
+        -------
+        DateTime
+            UTC where fmt reads no offset.
         """
         result = _pendulum.DateTime.strptime(time_str, fmt)
         return cls.instance(result)
 
     @classmethod
-    def utcfromtimestamp(cls, timestamp) -> Self:
-        """Create a UTC DateTime from a timestamp.
+    def utcfromtimestamp(cls, timestamp: float) -> Self:
+        """The instant of a Unix timestamp, in UTC.
 
         Parameters
-            timestamp: Unix timestamp
+        ----------
+        timestamp : float
+            Seconds since the Unix epoch.
 
         Returns
-            DateTime instance
+        -------
+        DateTime
         """
         result = _pendulum.DateTime.utcfromtimestamp(timestamp)
         return cls.instance(result)
 
     @classmethod
     def utcnow(cls) -> Self:
-        """Create a DateTime representing current UTC time.
-
-        Returns
-            DateTime instance
+        """Current date and time in UTC.
         """
         result = _pendulum.DateTime.utcnow()
         return cls.instance(result)
 
     @classmethod
     def now(cls, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None) -> Self:
-        """Get a DateTime instance for the current date and time.
+        """Current date and time in tz.
+
+        Parameters
+        ----------
+        tz : str | ZoneInfo | tzinfo | None, default None
+            None or 'local' gives the local zone LCL, where `instance`
+            would default to UTC.
+
+        Returns
+        -------
+        DateTime
         """
         if tz is None or tz == 'local':
             d = _datetime.datetime.now(LCL)
@@ -207,26 +213,36 @@ class DateTime(
             d = _datetime.datetime.now(UTC)
             tz = _pendulum._safe_timezone(tz)
             d = d.astimezone(tz)
-        return cls(d.year, d.month, d.day, d.hour, d.minute, d.second,
-                   d.microsecond, tzinfo=d.tzinfo, fold=d.fold)
+        return cls(
+            d.year,
+            d.month,
+            d.day,
+            d.hour,
+            d.minute,
+            d.second,
+            d.microsecond,
+            tzinfo=d.tzinfo,
+            fold=d.fold)
 
     @classmethod
     def today(cls, tz: str | _zoneinfo.ZoneInfo | None = None) -> Self:
-        """Create a DateTime object representing today at the start of day.
-
-        Unlike pendulum.today() which returns current time, this method
-        returns a DateTime object at 00:00:00 of the current day.
+        """Start of the current day in tz.
 
         Parameters
-            tz: Optional timezone (defaults to local timezone)
+        ----------
+        tz : str | ZoneInfo | None, default None
+            None gives the local zone LCL.
 
         Returns
-            DateTime instance representing start of current day
+        -------
+        DateTime
+            00:00:00 today, where pendulum.today() gives the current time.
         """
         return DateTime.now(tz).start_of('day')
 
     def date(self) -> Date:
-        from opendate.date_ import Date
+        """Wall-clock calendar date, as a Date.
+        """
         return Date(self.year, self.month, self.day)
 
     @classmethod
@@ -236,7 +252,21 @@ class DateTime(
         time: _datetime.time,
         tzinfo: _zoneinfo.ZoneInfo | None = None,
     ) -> Self:
-        """Combine date and time (*behaves differently from Pendulum `combine`*).
+        """DateTime from a date and a time, in tzinfo or the time's own zone.
+
+        Parameters
+        ----------
+        date : datetime.date
+            Calendar day.
+        time : datetime.time
+            Wall-clock time.
+        tzinfo : ZoneInfo | None, default None
+            Zone set on the wall-clock result, with no conversion. None
+            takes the time's own zone, then UTC.
+
+        Returns
+        -------
+        DateTime
         """
         _tzinfo = tzinfo or time.tzinfo
         return DateTime.instance(_datetime.datetime.combine(date, time, tzinfo=_tzinfo))
@@ -249,7 +279,6 @@ class DateTime(
     def time(self) -> Time:
         """Extract time component from datetime (preserving timezone).
         """
-        from opendate.time_ import Time
         return Time.instance(self)
 
     @classmethod
@@ -258,50 +287,44 @@ class DateTime(
         calendar: str | Calendar = 'NYSE',
         raise_err: bool = False
         ) -> Self | None:
-        """Convert a string or timestamp to a DateTime with extended format support.
-
-        Unlike pendulum's parse, this method supports:
-        - Unix timestamps (int/float, handles milliseconds automatically)
-        - Special codes: T (today), Y (yesterday), P (previous business day)
-        - Business day offsets: T-3b, P+2b (add/subtract business days)
-        - Multiple date-time formats beyond ISO 8601
-        - Combined date and time strings with various separators
+        """DateTime from a string, a date code or a Unix timestamp.
 
         Parameters
-            s: String or timestamp to parse
-            calendar: Calendar name or instance for business day calculations (default 'NYSE')
-            raise_err: If True, raises ValueError on parse failure instead of returning None
+        ----------
+        s : str | int | None
+            A date-time, date or time string, a date code, or a Unix
+            timestamp. A 13-digit number is read as milliseconds. A date
+            code is T (today), Y (yesterday) or P (previous business day),
+            with an optional offset such as T-3 or P+2b, where b counts
+            business days.
+        calendar : str | Calendar, default 'NYSE'
+            Calendar for business-day codes and offsets.
+        raise_err : bool, default False
+            Raise ValueError on an empty or unreadable s instead of
+            returning None.
 
         Returns
-            DateTime instance or None if parsing fails and raise_err is False
+        -------
+        DateTime | None
+            A timestamp gives its local wall time in LCL. A date code gives
+            a naive midnight. A bare time takes today's date. None where s
+            is empty or unreadable and raise_err is False.
+
+        Raises
+        ------
+        TypeError
+            s is not a str, int or float.
+        ValueError
+            s is empty or unreadable and raise_err is True.
 
         Examples
-            Unix timestamps:
-            DateTime.parse(1609459200) → DateTime(2021, 1, 1, 0, 0, 0, tzinfo=LCL)
-            DateTime.parse(1609459200000) → DateTime(2021, 1, 1, 0, 0, 0, tzinfo=LCL)
-
-            ISO 8601 format:
-            DateTime.parse('2020-01-15T14:30:00') → DateTime(2020, 1, 15, 14, 30, 0)
-
-            Date and time separated:
-            DateTime.parse('2020-01-15 14:30:00') → DateTime(2020, 1, 15, 14, 30, 0, tzinfo=LCL)
-            DateTime.parse('01/15/2020:14:30:00') → DateTime(2020, 1, 15, 14, 30, 0, tzinfo=LCL)
-
-            Date only (time defaults to 00:00:00):
-            DateTime.parse('2020-01-15') → DateTime(2020, 1, 15, 0, 0, 0)
-            DateTime.parse('01/15/2020') → DateTime(2020, 1, 15, 0, 0, 0)
-
-            Time only (uses today's date):
-            DateTime.parse('14:30:00') → DateTime(today's year, month, day, 14, 30, 0, tzinfo=LCL)
-
-            Special codes:
-            DateTime.parse('T') → today at 00:00:00
-            DateTime.parse('Y') → yesterday at 00:00:00
-            DateTime.parse('P') → previous business day at 00:00:00
+        --------
+        DateTime.parse('2020-01-15T14:30:00') -> 2020-01-15 14:30:00 UTC
+        DateTime.parse('01/15/2020:14:30:00') -> 2020-01-15 14:30:00 UTC
+        DateTime.parse('01/15/2020') -> 2020-01-15 00:00:00 UTC
+        DateTime.parse('14:30:00') -> today at 14:30:00 UTC
+        DateTime.parse('P') -> previous business day at 00:00:00, naive
         """
-        from opendate.date_ import Date
-        from opendate.time_ import Time
-
         if not s:
             if raise_err:
                 raise ValueError('Empty value')
@@ -312,15 +335,18 @@ class DateTime(
 
         if isinstance(s, (int, float)):
             if len(str(int(s))) == 13:
-                s /= 1000  # Convert from milliseconds to seconds
+                s /= 1000
             dt = _datetime.datetime.fromtimestamp(s)
-            return cls(dt.year, dt.month, dt.day, dt.hour, dt.minute,
-                       dt.second, dt.microsecond, tzinfo=LCL)
+            return cls(
+                dt.year,
+                dt.month,
+                dt.day,
+                dt.hour,
+                dt.minute,
+                dt.second,
+                dt.microsecond,
+                tzinfo=LCL)
 
-        # A dynamic date code has to be recognized before the general
-        # parser is asked, which reads the offset digit of 'T-3' as a
-        # day of month and answers the third of January. `Date.parse`
-        # below resolves the code; this only keeps the parser off it.
         parsed = None if DATEMATCH.match(s) else _rust_parse_datetime(s)
         if parsed is not None:
             return cls.instance(parsed)
@@ -357,27 +383,29 @@ class DateTime(
         tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None,
         raise_err: bool = False,
     ) -> Self | None:
-        """Create a DateTime instance from various datetime-like objects.
-
-        Provides unified interface for converting different date/time types
-        including pandas and numpy datetime objects into DateTime instances.
-
-        Unlike pendulum, this method:
-        - Handles pandas Timestamp and numpy datetime64 objects
-        - Adds timezone (UTC by default) when none is specified
-        - Has special handling for Time objects (combines with current date)
+        """DateTime from a date, datetime, time, pandas or numpy value.
 
         Parameters
-            obj: Date, datetime, time, or compatible object to convert
-            tz: Optional timezone to apply (if None, uses obj's timezone or UTC)
-            raise_err: If True, raises ValueError for None/NA values instead of returning None
+        ----------
+        obj : date | time | pd.Timestamp | np.datetime64 | DateTime | None
+            A date gives midnight. A time takes today's date. A DateTime
+            comes back as the same object where tz is None.
+        tz : str | ZoneInfo | tzinfo | None, default None
+            Zone set on obj's wall-clock value, with no conversion. None
+            keeps obj's own zone, or gives UTC where obj has none.
+        raise_err : bool, default False
+            Raise ValueError on a None or NA obj instead of returning None.
 
         Returns
-            DateTime instance or None if obj is None/NA and raise_err is False
-        """
-        from opendate.date_ import Date
-        from opendate.time_ import Time
+        -------
+        DateTime | None
+            None where obj is None or NA and raise_err is False.
 
+        Raises
+        ------
+        ValueError
+            obj is None or NA and raise_err is True.
+        """
         if pd.isna(obj):
             if raise_err:
                 raise ValueError('Empty value')
@@ -388,18 +416,9 @@ class DateTime(
 
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
-            # No timezone handling here: the constructor settles every
-            # tzinfo this used to special-case, and its `zone` lookup
-            # answers None for a pytz fixed offset, which this raised on.
-            tz = tz or obj.tzinfo or UTC
-            return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
-                       obj.second, obj.microsecond, tzinfo=tz)
 
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
-            tz = tz or UTC
-            return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
-                       obj.second, obj.microsecond, tzinfo=tz)
 
         if type(obj) is Date:
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
@@ -413,8 +432,14 @@ class DateTime(
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
         if isinstance(obj, _datetime.time):
-            from opendate.date_ import Date
             return cls.combine(Date.today(), obj, tzinfo=tz)
 
-        return cls(obj.year, obj.month, obj.day, obj.hour, obj.minute,
-                   obj.second, obj.microsecond, tzinfo=tz)
+        return cls(
+            obj.year,
+            obj.month,
+            obj.day,
+            obj.hour,
+            obj.minute,
+            obj.second,
+            obj.microsecond,
+            tzinfo=tz)

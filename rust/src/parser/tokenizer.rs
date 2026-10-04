@@ -6,15 +6,20 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum State {
     Initial,
-    Word,      // 'a' - reading a word
-    Number,    // '0' - reading a number
-    WordDot,   // 'a.' - word followed by dot
-    NumberDot, // '0.' - number followed by dot
+    /// 'a' - reading a word
+    Word,
+    /// '0' - reading a number
+    Number,
+    /// 'a.' - word followed by dot
+    WordDot,
+    /// '0.' - number followed by dot
+    NumberDot,
 }
 
 /// Tokenizer for datetime strings.
 ///
-/// Breaks strings into lexical units: words, numbers, whitespace, and separators.
+/// Breaks strings into lexical units: words, numbers, whitespace, and
+/// separators.
 pub struct Tokenizer {
     bytes: Vec<u8>,
     pos: usize,
@@ -64,11 +69,10 @@ impl Tokenizer {
             let idx = self.pos;
             let b = self.bytes[self.pos];
             self.pos += 1;
-            // Filter null bytes
             if b == 0 {
                 continue;
             }
-            // Simple ASCII to char conversion for common cases
+            // One byte per char, so a non-ASCII byte reads as Latin-1.
             let c = b as char;
             return Some((idx, c));
         }
@@ -81,7 +85,6 @@ impl Tokenizer {
 
     /// Get the next token.
     pub fn get_token(&mut self) -> Option<String> {
-        // Return buffered tokens first
         if !self.tokenstack.is_empty() {
             let first = self.tokenstack[0].clone();
             let n = self.tokenstack.len();
@@ -122,7 +125,7 @@ impl Tokenizer {
                         token = " ".to_string();
                         break;
                     } else {
-                        break; // Single separator
+                        break;
                     }
                 }
                 State::Word => {
@@ -174,7 +177,6 @@ impl Tokenizer {
             }
         }
 
-        // Handle compound tokens with dots
         let dot_count = count_char(&token, '.');
         if (state == State::WordDot || state == State::NumberDot)
             && (seen_letters
@@ -182,16 +184,13 @@ impl Tokenizer {
                 || ends_with_char(&token, '.')
                 || ends_with_char(&token, ','))
         {
-            // Clone before splitting to avoid borrow issues
             let original = token.clone();
 
-            // Split on dots and commas
             let parts = split_on_delims(&original);
 
             if !parts.is_empty() {
                 token = parts[0].clone();
 
-                // Find separators by walking the original string
                 let mut pos = parts[0].len();
                 let orig_bytes = original.as_bytes();
                 let orig_len = orig_bytes.len();
@@ -207,7 +206,6 @@ impl Tokenizer {
                     part_idx += 1;
                 }
 
-                // Handle trailing separator
                 if pos < orig_len {
                     let trailing_sep = orig_bytes[pos] as char;
                     if trailing_sep == '.' || trailing_sep == ',' {
@@ -217,7 +215,6 @@ impl Tokenizer {
             }
         }
 
-        // Convert comma decimal to dot for numbers
         if state == State::NumberDot && !contains_char(&token, '.') {
             token = replace_char(&token, ',', '.');
         }
@@ -333,53 +330,20 @@ fn split_on_delims(s: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
-    /// Check if a string is a word (all alphabetic).
-    fn is_word(s: &str) -> bool {
-        if s.is_empty() {
-            return false;
-        }
-        let bytes = s.as_bytes();
-        let n = bytes.len();
-        let mut i = 0usize;
-        while i < n {
-            if !is_alphabetic(bytes[i] as char) {
-                return false;
-            }
-            i += 1;
-        }
-        true
-    }
-
-    /// Check if a string is a number (all digits, possibly with decimal point).
-    fn is_number(s: &str) -> bool {
-        if s.is_empty() {
-            return false;
-        }
-        let bytes = s.as_bytes();
-        let n = bytes.len();
-        let mut has_digit = false;
-        let mut has_dot = false;
-        let mut i = 0usize;
-        while i < n {
-            let c = bytes[i] as char;
-            if is_ascii_digit(c) {
-                has_digit = true;
-            } else if c == '.' && !has_dot {
-                has_dot = true;
-            } else {
-                return false;
-            }
-            i += 1;
-        }
-        has_digit
-    }
-
+    /// Verify a dashed date splits into numbers and dash separators.
+    ///
+    /// Mutation: the Number state absorbing '-' into the number token.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_simple_date() {
         let tokens = Tokenizer::split("2024-01-15");
         assert_eq!(tokens, vec!["2024", "-", "01", "-", "15"]);
     }
 
+    /// Verify the ISO 'T' splits from the digits around it.
+    ///
+    /// Mutation: the Word state absorbing digits, giving "T10".
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_datetime_with_t() {
         let tokens = Tokenizer::split("2024-01-15T10:30:00");
@@ -389,24 +353,43 @@ mod tests {
         );
     }
 
+    /// Verify "15," yields the number and a separate comma.
+    ///
+    /// Mutation: dropping the trailing-separator push, which loses the
+    ///   comma after a two-digit number.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_named_month() {
         let tokens = Tokenizer::split("Jan 15, 2024");
         assert_eq!(tokens, vec!["Jan", " ", "15", ",", " ", "2024"]);
     }
 
+    /// Verify a dotted word-number run splits with its dots kept.
+    ///
+    /// Mutation: dropping the separator push between split parts.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_month_with_dot() {
         let tokens = Tokenizer::split("Sep.20.2009");
         assert_eq!(tokens, vec!["Sep", ".", "20", ".", "2009"]);
     }
 
+    /// Verify fractional seconds stay one token after a separator.
+    ///
+    /// Mutation: splitting every NumberDot token, without the
+    ///   one-dot, digits-only exception.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_decimal_time() {
         let tokens = Tokenizer::split("4:30:21.447");
         assert_eq!(tokens, vec!["4", ":", "30", ":", "21.447"]);
     }
 
+    /// Verify a negative UTC offset splits into sign, hours and minutes.
+    ///
+    /// Mutation: the Initial state folding '-' into the next number,
+    ///   giving "-05".
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_timezone() {
         let tokens = Tokenizer::split("2024-01-15T10:30:00-05:00");
@@ -418,9 +401,13 @@ mod tests {
         );
     }
 
+    /// Verify each whitespace character becomes its own " " token.
+    ///
+    /// Mutation: the Initial state merging a whitespace run into one
+    ///   token.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_whitespace() {
-        // dateutil keeps separate whitespace tokens (each space is a token)
         let tokens = Tokenizer::split("January   15,  2024");
         assert_eq!(
             tokens,
@@ -428,52 +415,48 @@ mod tests {
         );
     }
 
+    /// Verify a word at end of input is still emitted.
+    ///
+    /// Mutation: returning None at end of input before the pending
+    ///   token, which drops "AM".
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_am_pm() {
         let tokens = Tokenizer::split("9:30 AM");
         assert_eq!(tokens, vec!["9", ":", "30", " ", "AM"]);
     }
 
+    /// Verify an ordinal suffix splits from its number.
+    ///
+    /// Mutation: the Number state accepting letters, giving "15th".
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_ordinal() {
         let tokens = Tokenizer::split("January 15th, 2024");
         assert_eq!(tokens, vec!["January", " ", "15", "th", ",", " ", "2024"]);
     }
 
-    #[test]
-    fn test_is_word() {
-        assert!(is_word("January"));
-        assert!(is_word("AM"));
-        assert!(!is_word("2024"));
-        assert!(!is_word("15th"));
-        assert!(!is_word(""));
-    }
-
-    #[test]
-    fn test_is_number() {
-        assert!(is_number("2024"));
-        assert!(is_number("15"));
-        assert!(is_number("21.447"));
-        assert!(!is_number("January"));
-        assert!(!is_number("15th"));
-        assert!(!is_number(""));
-    }
-
+    /// Verify a whole-input decimal number stays one token.
+    ///
+    /// Mutation: splitting a NumberDot token on its single dot.
+    /// Oracle: dateutil.parser._timelex.split on the same input.
     #[test]
     fn test_decimal_number() {
-        // Pure decimal number stays as single token
         let tokens = Tokenizer::split("100.264400");
         assert_eq!(tokens, vec!["100.264400"]);
     }
 
+    /// Verify a comma reads as a decimal point only after 2+ digits.
+    ///
+    /// Mutation: the `token.len() >= 2` guard relaxed to 1, or the
+    ///   comma-to-dot conversion dropped.
+    /// Oracle: dateutil.parser._timelex.split on the same input, at the
+    ///   one- and two-digit threshold.
     #[test]
     fn test_european_decimal() {
-        // European style comma decimal (only when token has 2+ digits before comma)
-        // Single digit before comma - comma is separator
         let tokens = Tokenizer::split("3,14159");
         assert_eq!(tokens, vec!["3", ",", "14159"]);
 
-        // 2+ digits before comma - comma is decimal point
         let tokens = Tokenizer::split("30,14159");
         assert_eq!(tokens, vec!["30.14159"]);
     }

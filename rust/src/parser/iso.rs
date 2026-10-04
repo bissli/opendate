@@ -24,8 +24,12 @@ impl IsoParser {
     }
 
     /// Create a new IsoParser with a specific separator.
+    ///
+    /// # Errors
+    ///
+    /// `ParserError::ParseError` when `sep` is non-ASCII or a digit.
     pub fn with_separator(sep: char) -> Result<Self, ParserError> {
-        if !is_ascii(sep) || is_ascii_digit_char(sep) {
+        if !sep.is_ascii() || sep.is_ascii_digit() {
             return Err(ParserError::ParseError(
                 "Separator must be a single, non-numeric ASCII character".to_string(),
             ));
@@ -37,7 +41,24 @@ impl IsoParser {
 
     /// Parse an ISO-8601 datetime string.
     ///
-    /// Returns a ParseResult with the parsed components.
+    /// # Arguments
+    ///
+    /// * `dt_str` - A date in any form `parse_isodate` takes, then
+    ///   optionally one separator byte and a time in any form
+    ///   `parse_isotime` takes.
+    ///
+    /// # Returns
+    ///
+    /// The parsed components. A time of `24:00` comes back as hour 0 on
+    /// the parsed date, so the caller must add the day itself.
+    ///
+    /// # Errors
+    ///
+    /// * `ParserError::EmptyString` - `dt_str` is empty.
+    /// * `ParserError::ParseError` - a malformed date or time, a separator
+    ///   other than the configured one, or text other than spaces and tabs
+    ///   after the time.
+    /// * `ParserError::InvalidTimezone` - a malformed UTC offset.
     pub fn isoparse(&self, dt_str: &str) -> Result<ParseResult, ParserError> {
         let bytes = dt_str.as_bytes();
         let len = bytes.len();
@@ -45,15 +66,11 @@ impl IsoParser {
             return Err(ParserError::EmptyString);
         }
 
-        // Parse date portion
         let (mut result, pos) = self.parse_isodate_internal(bytes)?;
 
-        // Check for time portion
         if pos < len {
             let sep_byte = bytes[pos];
-            // Check separator
             if self.sep.is_none() || Some(sep_byte) == self.sep {
-                // Not a digit means it's a separator
                 if !is_ascii_digit(sep_byte) {
                     let time_start = pos + 1;
                     let time_len = len - time_start;
@@ -66,7 +83,6 @@ impl IsoParser {
                     result.tzoffset = time_result.tzoffset;
                     result.tzname = time_result.tzname;
 
-                    // Check for unconsumed input after time portion
                     let consumed = time_start + time_pos;
                     if consumed < len {
                         let mut all_whitespace = true;
@@ -93,17 +109,25 @@ impl IsoParser {
             }
         }
 
-        // Handle 24:00:00 midnight special case
         if result.hour == Some(24) {
             result.hour = Some(0);
-            // Caller needs to add one day - we'll signal this via a flag or let Python handle it
-            // For now, we just set hour to 0 and let the Python layer handle day increment
         }
 
         Ok(result)
     }
 
     /// Parse the date portion of an ISO string.
+    ///
+    /// # Arguments
+    ///
+    /// * `datestr` - `YYYY`, `YYYY-MM`, `YYYY-MM-DD` or `YYYYMMDD`; a week
+    ///   date `YYYY-Www[-D]` or `YYYYWww[D]`; or an ordinal date
+    ///   `YYYY-DDD` or `YYYYDDD`. A missing month, day or weekday is 1.
+    ///
+    /// # Errors
+    ///
+    /// * `ParserError::EmptyString` - `datestr` is empty.
+    /// * `ParserError::ParseError` - a malformed date, or any text after it.
     pub fn parse_isodate(&self, datestr: &str) -> Result<ParseResult, ParserError> {
         let bytes = datestr.as_bytes();
         let len = bytes.len();
@@ -122,6 +146,25 @@ impl IsoParser {
     }
 
     /// Parse the time portion of an ISO string.
+    ///
+    /// # Arguments
+    ///
+    /// * `timestr` - `HH`, `HH:MM` or `HHMM`, or `HH:MM:SS` or `HHMMSS`
+    ///   with an optional `.` or `,` fraction of a second, then an
+    ///   optional `Z`, `+HH`, `+HHMM` or `+HH:MM` offset (or `-`).
+    ///   Fraction digits past the sixth are dropped, never rounded.
+    ///
+    /// # Returns
+    ///
+    /// The parsed components, with an absent minute, second or
+    /// microsecond as 0. `24:00` comes back as hour 0.
+    ///
+    /// # Errors
+    ///
+    /// * `ParserError::EmptyString` - `timestr` is empty.
+    /// * `ParserError::ParseError` - a malformed time, hour 24 with a
+    ///   nonzero part, or text other than spaces and tabs after the time.
+    /// * `ParserError::InvalidTimezone` - a malformed UTC offset.
     pub fn parse_isotime(&self, timestr: &str) -> Result<ParseResult, ParserError> {
         let bytes = timestr.as_bytes();
         let len = bytes.len();
@@ -131,9 +174,7 @@ impl IsoParser {
 
         let (mut result, pos) = self.parse_isotime_internal_slice(bytes, 0, len)?;
 
-        // Check for unconsumed input (reject trailing characters)
         if pos < len {
-            // Allow trailing whitespace only
             let mut all_whitespace = true;
             let mut i = pos;
             while i < len {
@@ -151,7 +192,6 @@ impl IsoParser {
             }
         }
 
-        // Handle 24:00:00 midnight
         if result.hour == Some(24) {
             result.hour = Some(0);
         }
@@ -160,6 +200,22 @@ impl IsoParser {
     }
 
     /// Parse timezone string.
+    ///
+    /// # Arguments
+    ///
+    /// * `tzstr` - `Z`, `z`, `+HH`, `+HHMM` or `+HH:MM` (or `-`).
+    /// * `zero_as_utc` - Has no effect: a zero offset gives `Some(0)`
+    ///   either way.
+    ///
+    /// # Returns
+    ///
+    /// The offset in seconds east of UTC, or `None` for an empty string.
+    ///
+    /// # Errors
+    ///
+    /// * `ParserError::InvalidTimezone` - a wrong length, a missing sign,
+    ///   hours above 23 or minutes above 59.
+    /// * `ParserError::ParseError` - a non-digit where a digit belongs.
     #[allow(dead_code)]
     pub fn parse_tzstr(&self, tzstr: &str, zero_as_utc: bool) -> Result<Option<i32>, ParserError> {
         let bytes = tzstr.as_bytes();
@@ -169,14 +225,16 @@ impl IsoParser {
 
     // Internal parsing methods
 
+    /// Parse a date at the start of `dt_str` and count the bytes it took.
     fn parse_isodate_internal(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
-        // Try common format first, then uncommon
         match self.parse_isodate_common(dt_str) {
             Ok(r) => Ok(r),
             Err(_) => self.parse_isodate_uncommon(dt_str),
         }
     }
 
+    /// Parse a calendar date at the start of `dt_str` and count the bytes
+    /// it took.
     fn parse_isodate_common(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
         let len_str = dt_str.len();
         let mut result = ParseResult::new();
@@ -185,13 +243,11 @@ impl IsoParser {
             return Err(ParserError::ParseError("ISO string too short".to_string()));
         }
 
-        // Year (always 4 digits)
         result.year = Some(parse_int_slice(dt_str, 0, 4)? as i32);
         result.century_specified = true;
         let mut pos = 4usize;
 
         if pos >= len_str {
-            // Just YYYY
             result.month = Some(1);
             result.day = Some(1);
             return Ok((result, pos));
@@ -202,7 +258,6 @@ impl IsoParser {
             pos += 1;
         }
 
-        // Month
         if len_str - pos < 2 {
             return Err(ParserError::ParseError("Invalid common month".to_string()));
         }
@@ -211,11 +266,9 @@ impl IsoParser {
 
         if pos >= len_str {
             if has_sep {
-                // YYYY-MM format
                 result.day = Some(1);
                 return Ok((result, pos));
             } else {
-                // YYYYMM is not valid ISO format
                 return Err(ParserError::ParseError("Invalid ISO format".to_string()));
             }
         }
@@ -229,7 +282,6 @@ impl IsoParser {
             pos += 1;
         }
 
-        // Day
         if len_str - pos < 2 {
             return Err(ParserError::ParseError("Invalid common day".to_string()));
         }
@@ -239,6 +291,8 @@ impl IsoParser {
         Ok((result, pos))
     }
 
+    /// Parse a week or ordinal date at the start of `dt_str` and count the
+    /// bytes it took.
     fn parse_isodate_uncommon(&self, dt_str: &[u8]) -> Result<(ParseResult, usize), ParserError> {
         let len_str = dt_str.len();
         if len_str < 4 {
@@ -254,7 +308,6 @@ impl IsoParser {
         let mut pos = 4 + if has_sep { 1 } else { 0 };
 
         if pos < len_str && dt_str[pos] == b'W' {
-            // Week date: YYYY-Www or YYYYWww or YYYY-Www-D or YYYYWwwD
             pos += 1;
             if len_str < pos + 2 {
                 return Err(ParserError::ParseError("Invalid week number".to_string()));
@@ -266,9 +319,9 @@ impl IsoParser {
             let mut dayno = 1i32;
             if len_str > pos {
                 let next_byte = dt_str[pos];
-                // Check if this is the time separator (T or space) - no day follows
                 if next_byte == b'T' || next_byte == b' ' || next_byte == b't' {
-                    // No day, just time separator - leave dayno as 1 (Monday)
+                    // No day, just time separator - leave dayno as 1
+                    // (Monday)
                 } else {
                     let day_has_sep = next_byte == b'-';
                     if day_has_sep != has_sep {
@@ -295,7 +348,6 @@ impl IsoParser {
             return Ok((result, pos));
         }
 
-        // Ordinal date: YYYY-DDD or YYYYDDD
         if len_str - pos < 3 {
             return Err(ParserError::ParseError("Invalid ordinal day".to_string()));
         }
@@ -320,6 +372,12 @@ impl IsoParser {
         Ok((result, pos))
     }
 
+    /// Parse a time in `timestr[start..start + len]`.
+    ///
+    /// # Returns
+    ///
+    /// The time, with hour 24 kept as 24, and the bytes it took counted
+    /// from `start`.
     fn parse_isotime_internal_slice(
         &self,
         timestr: &[u8],
@@ -334,7 +392,7 @@ impl IsoParser {
         result.microsecond = Some(0);
 
         let mut pos = start;
-        let mut comp: i32 = -1; // Will be incremented to 0 at start of first iteration
+        let mut comp: i32 = -1;
 
         if len < 2 {
             return Err(ParserError::ParseError("ISO time too short".to_string()));
@@ -345,7 +403,6 @@ impl IsoParser {
         while pos < end && comp < 4 {
             comp += 1;
 
-            // Check for timezone boundary
             if pos < end {
                 let b = timestr[pos];
                 if b == b'-' || b == b'+' || b == b'Z' || b == b'z' {
@@ -355,38 +412,30 @@ impl IsoParser {
                     if tz_offset == Some(0) {
                         result.tzname = Some("UTC".to_string());
                     }
-                    // Consume the timezone string
                     pos = end;
                     break;
                 }
             }
 
-            // Handle separator after hour (before minute)
             if comp == 1 {
                 if pos < end && timestr[pos] == b':' {
                     has_sep = true;
                     pos += 1;
                 }
-            }
-            // Handle separator after minute (before second)
-            else if comp == 2 && has_sep {
+            } else if comp == 2 && has_sep {
                 if pos < end {
                     if timestr[pos] == b':' {
                         pos += 1;
                     } else {
-                        // No colon means no seconds component - break out
                         break;
                     }
                 }
             }
 
             if comp < 3 {
-                // Hour, minute, second
                 if pos + 2 > end {
-                    // Not enough characters - this might be end of string or timezone
                     break;
                 }
-                // Check if next chars are digits
                 if !is_ascii_digit(timestr[pos]) {
                     break;
                 }
@@ -399,7 +448,6 @@ impl IsoParser {
                 }
                 pos += 2;
             } else if comp == 3 {
-                // Fraction of a second
                 if pos < end {
                     let b = timestr[pos];
                     if b == b'.' || b == b',' {
@@ -430,7 +478,6 @@ impl IsoParser {
             }
         }
 
-        // Validate 24:00:00 midnight
         if result.hour == Some(24)
             && (result.minute != Some(0)
                 || result.second != Some(0)
@@ -444,6 +491,8 @@ impl IsoParser {
         Ok((result, pos - start))
     }
 
+    /// Parse a UTC offset in `tzstr[start..start + len]`, as `parse_tzstr`
+    /// does.
     fn parse_tzstr_internal_slice(
         &self,
         tzstr: &[u8],
@@ -455,7 +504,6 @@ impl IsoParser {
             return Ok(None);
         }
 
-        // Z or z
         if len == 1 && (tzstr[start] == b'Z' || tzstr[start] == b'z') {
             return Ok(Some(0));
         }
@@ -481,10 +529,8 @@ impl IsoParser {
         let minutes = if len == 3 {
             0
         } else if tzstr[start + 3] == b':' {
-            // ±HH:MM
             parse_int_slice(tzstr, start + 4, start + len)? as i32
         } else {
-            // ±HHMM
             parse_int_slice(tzstr, start + 3, start + len)? as i32
         };
 
@@ -511,18 +557,13 @@ impl IsoParser {
 
 // Helper functions
 
-fn is_ascii(c: char) -> bool {
-    (c as u32) < 128
-}
-
-fn is_ascii_digit_char(c: char) -> bool {
-    c >= '0' && c <= '9'
-}
-
+/// True for a byte in `b'0'..=b'9'`.
 fn is_ascii_digit(b: u8) -> bool {
     b >= b'0' && b <= b'9'
 }
 
+/// Parse the unsigned decimal digits in `bytes[start..end]`. An empty
+/// range gives 0.
 fn parse_int_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, ParserError> {
     let mut result = 0u32;
     let mut i = start;
@@ -541,6 +582,7 @@ fn parse_int_slice(bytes: &[u8], start: usize, end: usize) -> Result<u32, Parser
     Ok(result)
 }
 
+/// Copy `bytes[start..end]` into a String, one char per byte.
 fn slice_to_str(bytes: &[u8], start: usize, end: usize) -> String {
     let len = end - start;
     let mut result = String::with_capacity(len);
@@ -552,10 +594,12 @@ fn slice_to_str(bytes: &[u8], start: usize, end: usize) -> String {
     result
 }
 
+/// True for a Gregorian leap year.
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
+/// Days in `month` of `year`. An out-of-range month gives 0.
 fn days_in_month(year: i32, month: u32) -> u32 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
@@ -571,6 +615,11 @@ fn days_in_month(year: i32, month: u32) -> u32 {
     }
 }
 
+/// Month and day of a 1-based day of the year.
+///
+/// # Errors
+///
+/// `ParserError::ParseError` when `ordinal` falls past the year's end.
 fn ordinal_to_month_day(year: i32, ordinal: i32) -> Result<(u32, u32), ParserError> {
     let mut remaining = ordinal;
     let mut month = 1u32;
@@ -588,7 +637,13 @@ fn ordinal_to_month_day(year: i32, ordinal: i32) -> Result<(u32, u32), ParserErr
     )))
 }
 
-/// Calculate the date from ISO year-week-day.
+/// Calculate the date from ISO year-week-day, where week 1 is the week
+/// that holds January 4.
+///
+/// # Errors
+///
+/// `ParserError::ParseError` when `week` is outside 1-53 or `day` is
+/// outside 1-7.
 fn calculate_weekdate(year: i32, week: i32, day: i32) -> Result<(i32, u32, u32), ParserError> {
     if week < 1 || week > 53 {
         return Err(ParserError::ParseError(format!("Invalid week: {}", week)));
@@ -597,22 +652,14 @@ fn calculate_weekdate(year: i32, week: i32, day: i32) -> Result<(i32, u32, u32),
         return Err(ParserError::ParseError(format!("Invalid weekday: {}", day)));
     }
 
-    // Find January 4th of the given year (always in week 1)
-    // January 4th's day of week tells us where week 1 starts
-    let jan_4_dow = day_of_week(year, 1, 4); // 0=Monday, 6=Sunday
-
-    // Week 1, day 1 (Monday) is jan_4 - jan_4_dow days
-    // Then we add (week-1)*7 + (day-1) days
+    let jan_4_dow = day_of_week(year, 1, 4);
     let days_from_jan4 = -(jan_4_dow as i32) + (week - 1) * 7 + (day - 1);
 
-    // Start from January 4
     let mut y = year;
     let mut m = 1u32;
     let mut d = 4i32 + days_from_jan4;
 
-    // Normalize the date
     while d < 1 {
-        // Go to previous month
         if m == 1 {
             m = 12;
             y -= 1;
@@ -635,9 +682,9 @@ fn calculate_weekdate(year: i32, week: i32, day: i32) -> Result<(i32, u32, u32),
     Ok((y, m, d as u32))
 }
 
-/// Calculate day of week (0=Monday, 6=Sunday) using Zeller's congruence variant.
+/// Calculate day of week (0=Monday, 6=Sunday) using Zeller's congruence
+/// variant.
 fn day_of_week(year: i32, month: u32, day: u32) -> u32 {
-    // Adjust for January and February
     let (y, m) = if month <= 2 {
         (year - 1, month + 12)
     } else {
@@ -647,11 +694,7 @@ fn day_of_week(year: i32, month: u32, day: u32) -> u32 {
     let q = day as i32;
     let k = y % 100;
     let j = y / 100;
-
-    // Zeller's formula for Gregorian calendar
     let h = (q + (13 * (m as i32 + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
-
-    // Convert from Zeller's (0=Saturday) to ISO (0=Monday)
     ((h + 5) % 7) as u32
 }
 
@@ -659,35 +702,41 @@ fn day_of_week(year: i32, month: u32, day: u32) -> u32 {
 mod tests {
     use super::*;
 
+    /// Verify each calendar date form, and day 1 or month 1 where absent.
+    ///
+    /// Mutation: dropping the day default in the `YYYY-MM` branch, or
+    /// advancing past a dash that `YYYYMMDD` lacks.
+    /// Oracle: hand-read components of each input.
     #[test]
     fn test_parse_iso_date() {
         let parser = IsoParser::new();
 
-        // YYYY-MM-DD
         let r = parser.parse_isodate("2024-01-15").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(15));
 
-        // YYYYMMDD
         let r = parser.parse_isodate("20240115").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(15));
 
-        // YYYY-MM
         let r = parser.parse_isodate("2024-01").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(1));
 
-        // YYYY
         let r = parser.parse_isodate("2024").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(1));
     }
 
+    /// Verify isoparse() joins a date and a time across the `T`.
+    ///
+    /// Mutation: starting the time at the separator byte instead of the
+    /// byte after it.
+    /// Oracle: hand-read components of the input.
     #[test]
     fn test_parse_iso_datetime() {
         let parser = IsoParser::new();
@@ -701,6 +750,11 @@ mod tests {
         assert_eq!(r.second, Some(0));
     }
 
+    /// Verify hour, minute and second forms, with absent parts as 0.
+    ///
+    /// Mutation: not setting has_sep at the first colon, or leaving an
+    /// absent second as None.
+    /// Oracle: hand-read components of each input.
     #[test]
     fn test_parse_iso_time() {
         let parser = IsoParser::new();
@@ -720,6 +774,11 @@ mod tests {
         assert_eq!(r.minute, Some(0));
     }
 
+    /// Verify a fraction scales to microseconds after `.` or `,`.
+    ///
+    /// Mutation: dropping the power-of-ten scale for a fraction shorter
+    /// than six digits, or accepting only `.`.
+    /// Oracle: hand-computed .123 -> 123000 and ,5 -> 500000.
     #[test]
     fn test_parse_iso_time_with_microseconds() {
         let parser = IsoParser::new();
@@ -730,101 +789,111 @@ mod tests {
         assert_eq!(r.second, Some(45));
         assert_eq!(r.microsecond, Some(123456));
 
-        // Shorter fractions
         let r = parser.parse_isotime("14:30:45.123").unwrap();
         assert_eq!(r.microsecond, Some(123000));
 
-        // Comma separator
         let r = parser.parse_isotime("14:30:45,5").unwrap();
         assert_eq!(r.microsecond, Some(500000));
     }
 
+    /// Verify each offset form converts to signed seconds east of UTC.
+    ///
+    /// Mutation: a flipped sign multiplier, or reading `+HHMM` minutes
+    /// one byte late as for `+HH:MM`.
+    /// Oracle: hand-computed seconds, 5:30 -> 19800.
     #[test]
     fn test_parse_iso_timezone() {
         let parser = IsoParser::new();
 
-        // UTC
         let r = parser.isoparse("2024-01-15T10:30:00Z").unwrap();
         assert_eq!(r.tzoffset, Some(0));
 
-        // Positive offset
         let r = parser.isoparse("2024-01-15T10:30:00+05:30").unwrap();
         assert_eq!(r.tzoffset, Some(5 * 3600 + 30 * 60));
 
-        // Negative offset
         let r = parser.isoparse("2024-01-15T10:30:00-05:00").unwrap();
         assert_eq!(r.tzoffset, Some(-5 * 3600));
 
-        // Compact offset
         let r = parser.isoparse("2024-01-15T10:30:00+0530").unwrap();
         assert_eq!(r.tzoffset, Some(5 * 3600 + 30 * 60));
 
-        // Hour only offset
         let r = parser.isoparse("2024-01-15T10:30:00-05").unwrap();
         assert_eq!(r.tzoffset, Some(-5 * 3600));
     }
 
+    /// Verify ordinal days map to month and day, through day 366.
+    ///
+    /// Mutation: `<` for `<=` in ordinal_to_month_day, or a leap test
+    /// that rejects 2024.
+    /// Oracle: calendar, 2024-032 = Feb 1 and 2024-366 = Dec 31.
     #[test]
     fn test_parse_ordinal_date() {
         let parser = IsoParser::new();
 
-        // 2024-001 = January 1
         let r = parser.parse_isodate("2024-001").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(1));
 
-        // 2024-032 = February 1
         let r = parser.parse_isodate("2024-032").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(2));
         assert_eq!(r.day, Some(1));
 
-        // 2024-366 (leap year)
         let r = parser.parse_isodate("2024-366").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(12));
         assert_eq!(r.day, Some(31));
     }
 
+    /// Verify a week date, dashed and compact, lands on its Monday.
+    ///
+    /// Mutation: an off-by-one week 1 start from the January 4 weekday.
+    /// Oracle: calendar, 2024-W01-1 = Monday 2024-01-01.
     #[test]
     fn test_parse_week_date() {
         let parser = IsoParser::new();
 
-        // 2024-W01-1 = Monday of week 1, 2024
         let r = parser.parse_isodate("2024-W01-1").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(1));
 
-        // Compact form
         let r = parser.parse_isodate("2024W011").unwrap();
         assert_eq!(r.year, Some(2024));
         assert_eq!(r.month, Some(1));
         assert_eq!(r.day, Some(1));
     }
 
+    /// Verify parse_isotime() returns 24:00:00 as hour 0.
+    ///
+    /// Mutation: dropping the hour 24 -> 0 step in parse_isotime.
+    /// Oracle: the documented contract, hour 0 for 24:00:00.
     #[test]
     fn test_midnight_24() {
         let parser = IsoParser::new();
 
-        // 24:00:00 should be normalized to 00:00:00
         let r = parser.parse_isotime("24:00:00").unwrap();
         assert_eq!(r.hour, Some(0));
         assert_eq!(r.minute, Some(0));
         assert_eq!(r.second, Some(0));
     }
 
+    /// Verify day_of_week() numbers Monday 0 through Sunday 6.
+    ///
+    /// Mutation: a wrong Zeller-to-ISO shift, such as `h + 6` for `h + 5`.
+    /// Oracle: calendar, 2024-01-01 Monday, 01-04 Thursday, 01-07 Sunday.
     #[test]
     fn test_day_of_week() {
-        // 2024-01-01 is Monday (0)
         assert_eq!(day_of_week(2024, 1, 1), 0);
-        // 2024-01-07 is Sunday (6)
         assert_eq!(day_of_week(2024, 1, 7), 6);
-        // 2024-01-04 is Thursday (3)
         assert_eq!(day_of_week(2024, 1, 4), 3);
     }
 
+    /// Verify is_leap_year() applies the century rules.
+    ///
+    /// Mutation: dropping the `% 100` or the `% 400` term.
+    /// Oracle: Gregorian rule, 1900 common and 2000 leap.
     #[test]
     fn test_leap_year() {
         assert!(is_leap_year(2024));
@@ -833,45 +902,55 @@ mod tests {
         assert!(!is_leap_year(1900));
     }
 
+    /// Verify parse_isotime() rejects a stray trailing digit or letter.
+    ///
+    /// Mutation: dropping the unconsumed-input check in parse_isotime.
+    /// Oracle: `09301` and `143045X` match no ISO time form.
     #[test]
     fn test_invalid_time_trailing_digit() {
         let parser = IsoParser::new();
 
-        // '09301' - 5 digits should fail (trailing '1')
         assert!(parser.parse_isotime("09301").is_err());
-
-        // '143045X' - trailing non-digit
         assert!(parser.parse_isotime("143045X").is_err());
     }
 
+    /// Verify parse_isotime() rejects an AM/PM suffix or trailing text.
+    ///
+    /// Mutation: treating any trailing text as whitespace in
+    /// parse_isotime.
+    /// Oracle: ISO 8601 has no AM/PM suffix.
     #[test]
     fn test_invalid_time_trailing_text() {
         let parser = IsoParser::new();
 
-        // '0930 pm' - AM/PM suffix should fail (ISO doesn't support this)
         assert!(parser.parse_isotime("0930 pm").is_err());
         assert!(parser.parse_isotime("09:30 pm").is_err());
         assert!(parser.parse_isotime("09:30am").is_err());
 
-        // Trailing text
         assert!(parser.parse_isotime("14:30extra").is_err());
         assert!(parser.parse_isotime("14:30:45.123extra").is_err());
     }
 
+    /// Verify isoparse() rejects text after the time.
+    ///
+    /// Mutation: dropping the unconsumed-input check in isoparse.
+    /// Oracle: `extra` and `X` match no ISO time or offset form.
     #[test]
     fn test_invalid_datetime_trailing_text() {
         let parser = IsoParser::new();
 
-        // DateTime with trailing text should fail
         assert!(parser.isoparse("2024-01-15T09:30extra").is_err());
         assert!(parser.isoparse("2024-01-15T093015X").is_err());
     }
 
+    /// Verify parse_isotime() accepts a trailing space or tab.
+    ///
+    /// Mutation: rejecting all trailing input, or allowing only spaces.
+    /// Oracle: hand-read components of each input.
     #[test]
     fn test_valid_time_trailing_whitespace() {
         let parser = IsoParser::new();
 
-        // Trailing whitespace should be allowed
         let r = parser.parse_isotime("14:30 ").unwrap();
         assert_eq!(r.hour, Some(14));
         assert_eq!(r.minute, Some(30));

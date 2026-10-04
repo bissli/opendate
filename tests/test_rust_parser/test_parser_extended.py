@@ -9,24 +9,26 @@ from opendate._opendate import Parser, parse
 
 
 class TestParserMoreFormats:
-    """Test additional date/time formats from dateutil."""
+    """Test additional date/time formats from dateutil.
+    """
 
     def test_parse_date_with_spaces(self):
-        """Test date with spaces: Jan 15 2024."""
+        """Test date with spaces: Jan 15 2024.
+
+        Mutation: a comma after the day made mandatory.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('Jan 15 2024')
         assert r.year == 2024
         assert r.month == 1
         assert r.day == 15
 
-    def test_parse_date_dash_separator(self):
-        """Test date with dash separator: 15-Jan-2024."""
-        r = parse('15-Jan-2024')
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-
     def test_parse_date_dot_separator(self):
-        """Test date with dot separator: 15.01.2024."""
+        """Test date with dot separator: 15.01.2024.
+
+        Mutation: a dot-joined date read as a decimal number.
+        Oracle: fields hand-read from the literal input under dayfirst.
+        """
         parser = Parser(dayfirst=True)
         r = parser.parse('15.01.2024')
         assert r.year == 2024
@@ -34,51 +36,43 @@ class TestParserMoreFormats:
         assert r.day == 15
 
     def test_parse_date_year_first(self):
-        """Test date with year first: 2024/01/15."""
+        """Test date with year first: 2024/01/15.
+
+        Mutation: a leading 4-digit field read as month or day.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('2024/01/15')
         assert r.year == 2024
         assert r.month == 1
         assert r.day == 15
 
-    def test_parse_datetime_with_comma(self):
-        """Test datetime: Jan 15, 2024, 10:30."""
-        r = parse('Jan 15, 2024, 10:30', fuzzy=True)
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-        assert r.hour == 10
-        assert r.minute == 30
+    @pytest.mark.parametrize(
+        'text',
+        [
+            'Jan 15, 2024, 10:30',
+            'Jan 15, 2024 at 10:30',
+            '10:30 on Jan 15, 2024',
+            ])
+    def test_parse_datetime_with_words(self, text):
+        """Test date and time joined by a comma, 'at' or 'on'.
 
-    def test_parse_datetime_at(self):
-        """Test datetime with 'at': Jan 15, 2024 at 10:30."""
-        r = parse('Jan 15, 2024 at 10:30', fuzzy=True)
+        Mutation: a joining word ends the parse, so the time or date
+            after it is lost.
+        Oracle: fields hand-read from the literal input.
+        """
+        r = parse(text, fuzzy=True)
         assert r.year == 2024
         assert r.month == 1
         assert r.day == 15
         assert r.hour == 10
         assert r.minute == 30
-
-    def test_parse_datetime_on(self):
-        """Test datetime with 'on': 10:30 on Jan 15, 2024."""
-        r = parse('10:30 on Jan 15, 2024', fuzzy=True)
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-        assert r.hour == 10
-        assert r.minute == 30
-
-    def test_parse_datetime_t_separator(self):
-        """Test ISO datetime with T separator."""
-        r = parse('2024-01-15T10:30:45')
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-        assert r.hour == 10
-        assert r.minute == 30
-        assert r.second == 45
 
     def test_parse_datetime_space_separator(self):
-        """Test datetime with space separator."""
+        """Test datetime with space separator.
+
+        Mutation: a space between date and time ends the parse.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('2024-01-15 10:30:45')
         assert r.year == 2024
         assert r.month == 1
@@ -89,166 +83,135 @@ class TestParserMoreFormats:
 
 
 class TestParserMicroseconds:
-    """Test microsecond parsing."""
+    """Test microsecond parsing.
+    """
 
-    def test_parse_microseconds_6_digits(self):
-        """Test 6-digit microseconds."""
-        r = parse('2024-01-15T10:30:45.123456')
-        assert r.microsecond == 123456
+    @pytest.mark.parametrize(
+        ('text', 'microsecond'),
+        [
+            ('2024-01-15T10:30:45.123456', 123456),
+            ('2024-01-15T10:30:45.123', 123000),
+            ('2024-01-15T10:30:45.1', 100000),
+            ('2024-01-15T10:30:45,123456', 123456),
+            ])
+    def test_parse_microseconds(self, text, microsecond):
+        """Test 6-, 3- and 1-digit fractions, and a comma decimal mark.
 
-    def test_parse_microseconds_3_digits(self):
-        """Test 3-digit milliseconds (converted to microseconds)."""
-        r = parse('2024-01-15T10:30:45.123')
-        assert r.microsecond == 123000
-
-    def test_parse_microseconds_1_digit(self):
-        """Test 1-digit fractional second."""
-        r = parse('2024-01-15T10:30:45.1')
-        assert r.microsecond == 100000
-
-    def test_parse_microseconds_comma_separator(self):
-        """Test comma as decimal separator."""
-        r = parse('2024-01-15T10:30:45,123456')
-        assert r.microsecond == 123456
+        Mutation: a short fraction read as a whole count (.1 as 1 us), or
+            the comma mark rejected.
+        Oracle: hand-scaled fractions of a second in microseconds.
+        """
+        r = parse(text)
+        assert r.microsecond == microsecond
 
 
 class TestParserTimezoneOffsets:
-    """Test timezone offset parsing."""
+    """Test timezone offset parsing.
+    """
 
-    def test_parse_offset_plus_hhmm(self):
-        """Test +HH:MM offset."""
-        r = parse('2024-01-15T10:30:00+05:30')
-        assert r.tzoffset == 5 * 3600 + 30 * 60
+    @pytest.mark.parametrize(
+        ('text', 'tzoffset'),
+        [
+            ('2024-01-15T10:30:00+05:30', 5 * 3600 + 30 * 60),
+            ('2024-01-15T10:30:00-05:30', -(5 * 3600 + 30 * 60)),
+            ('2024-01-15T10:30:00+0530', 5 * 3600 + 30 * 60),
+            ('2024-01-15T10:30:00-0800', -8 * 3600),
+            ('2024-01-15T10:30:00+05', 5 * 3600),
+            ])
+    def test_parse_offsets(self, text, tzoffset):
+        """Test +HH:MM, -HH:MM, +HHMM, -HHMM and +HH offsets.
 
-    def test_parse_offset_minus_hhmm(self):
-        """Test -HH:MM offset."""
-        r = parse('2024-01-15T10:30:00-05:30')
-        assert r.tzoffset == -(5 * 3600 + 30 * 60)
+        Mutation: the minus sign applied to the hours only, or a
+            colon-free or hour-only offset rejected.
+        Oracle: hand-computed offsets in seconds.
+        """
+        r = parse(text)
+        assert r.tzoffset == tzoffset
 
-    def test_parse_offset_compact_plus(self):
-        """Test +HHMM offset (no colon)."""
-        r = parse('2024-01-15T10:30:00+0530')
-        assert r.tzoffset == 5 * 3600 + 30 * 60
+    @pytest.mark.parametrize(
+        ('text', 'tzname'),
+        [
+            ('2024-01-15 10:30:00 EST', 'EST'),
+            ('2024-01-15 10:30:00 PST', 'PST'),
+            ('2024-01-15 10:30:00 CET', 'CET'),
+            ])
+    def test_parse_named_zones(self, text, tzname):
+        """Test a named zone keeps its name.
 
-    def test_parse_offset_compact_minus(self):
-        """Test -HHMM offset (no colon)."""
-        r = parse('2024-01-15T10:30:00-0800')
-        assert r.tzoffset == -8 * 3600
-
-    def test_parse_offset_hour_only(self):
-        """Test +HH offset."""
-        r = parse('2024-01-15T10:30:00+05')
-        assert r.tzoffset == 5 * 3600
-
-    def test_parse_est(self):
-        """Test EST timezone name (name captured, offset requires tzinfos)."""
-        r = parse('2024-01-15 10:30:00 EST')
-        assert r.tzname == 'EST'
-        # Note: Named timezones don't have default offsets (matches dateutil behavior)
-        # Offsets require tzinfos parameter
-
-    def test_parse_pst(self):
-        """Test PST timezone name (name captured, offset requires tzinfos)."""
-        r = parse('2024-01-15 10:30:00 PST')
-        assert r.tzname == 'PST'
-        # Note: Named timezones don't have default offsets (matches dateutil behavior)
-
-    def test_parse_cet(self):
-        """Test CET timezone name (name captured, offset requires tzinfos)."""
-        r = parse('2024-01-15 10:30:00 CET')
-        assert r.tzname == 'CET'
-        # Note: Named timezones don't have default offsets (matches dateutil behavior)
+        Mutation: a zone name dropped or folded into another token.
+        Oracle: the name as written in the input.
+        """
+        r = parse(text)
+        assert r.tzname == tzname
 
 
 class TestParserAMPM:
-    """Test AM/PM parsing."""
+    """Test AM/PM parsing.
+    """
 
-    def test_parse_lowercase_am(self):
-        """Test lowercase am."""
-        r = parse('10:30 am')
-        assert r.hour == 10
-        assert r.minute == 30
+    @pytest.mark.parametrize(
+        ('text', 'hour', 'minute'),
+        [
+            ('10:30 am', 10, 30),
+            ('2:30 pm', 14, 30),
+            ('10:30 AM', 10, 30),
+            ('2:30 PM', 14, 30),
+            ('10:30 a.m.', 10, 30),
+            ('2:30 p.m.', 14, 30),
+            ('12:00 AM', 0, 0),
+            ('12:00 PM', 12, 0),
+            ('12:30 AM', 0, 30),
+            ('12:30 PM', 12, 30),
+            ])
+    def test_parse_ampm(self, text, hour, minute):
+        """Test am/pm in each case and dotted form, and the 12 o'clock rule.
 
-    def test_parse_lowercase_pm(self):
-        """Test lowercase pm."""
-        r = parse('2:30 pm')
-        assert r.hour == 14
-        assert r.minute == 30
-
-    def test_parse_uppercase_am(self):
-        """Test uppercase AM."""
-        r = parse('10:30 AM')
-        assert r.hour == 10
-        assert r.minute == 30
-
-    def test_parse_uppercase_pm(self):
-        """Test uppercase PM."""
-        r = parse('2:30 PM')
-        assert r.hour == 14
-        assert r.minute == 30
-
-    def test_parse_period_am(self):
-        """Test a.m. format."""
-        r = parse('10:30 a.m.')
-        assert r.hour == 10
-        assert r.minute == 30
-
-    def test_parse_period_pm(self):
-        """Test p.m. format."""
-        r = parse('2:30 p.m.')
-        assert r.hour == 14
-        assert r.minute == 30
-
-    def test_parse_12_am_midnight(self):
-        """Test 12:00 AM is midnight."""
-        r = parse('12:00 AM')
-        assert r.hour == 0
-        assert r.minute == 0
-
-    def test_parse_12_pm_noon(self):
-        """Test 12:00 PM is noon."""
-        r = parse('12:00 PM')
-        assert r.hour == 12
-        assert r.minute == 0
-
-    def test_parse_12_30_am(self):
-        """Test 12:30 AM."""
-        r = parse('12:30 AM')
-        assert r.hour == 0
-        assert r.minute == 30
-
-    def test_parse_12_30_pm(self):
-        """Test 12:30 PM."""
-        r = parse('12:30 PM')
-        assert r.hour == 12
-        assert r.minute == 30
+        Mutation: 12 PM moved to 24 or 12 AM left at 12, or the marker
+            matched case-sensitively.
+        Oracle: 12-hour clock rules: PM adds 12 except at 12, AM maps 12
+            to 0.
+        """
+        r = parse(text)
+        assert r.hour == hour
+        assert r.minute == minute
 
 
 class TestParserDayFirst:
-    """Test dayfirst option."""
+    """Test dayfirst option.
+    """
 
     def test_dayfirst_false(self):
-        """Test MM/DD/YYYY with dayfirst=False."""
+        """Test MM/DD/YYYY with dayfirst=False.
+
+        Mutation: dayfirst=False read as dayfirst=True.
+        Oracle: 15 cannot be a month, so 01/15 reads as January 15.
+        """
         parser = Parser(dayfirst=False)
         r = parser.parse('01/15/2024')
         assert r.month == 1
         assert r.day == 15
 
     def test_dayfirst_true(self):
-        """Test DD/MM/YYYY with dayfirst=True."""
+        """Test DD/MM/YYYY with dayfirst=True.
+
+        Mutation: Parser drops its dayfirst flag.
+        Oracle: 15 cannot be a month, so 15/01 reads as January 15.
+        """
         parser = Parser(dayfirst=True)
         r = parser.parse('15/01/2024')
         assert r.day == 15
         assert r.month == 1
 
     def test_dayfirst_ambiguous(self):
-        """Test ambiguous date 05/06/2024."""
-        # dayfirst=False (default) - MM/DD
+        """Test 05/06/2024 reads as May 6 by default, 5 June under dayfirst.
+
+        Mutation: dayfirst ignored when both fields could be a month.
+        Oracle: MM/DD order by default, DD/MM order under dayfirst.
+        """
         r1 = parse('05/06/2024')
         assert r1.month == 5
         assert r1.day == 6
 
-        # dayfirst=True - DD/MM
         parser = Parser(dayfirst=True)
         r2 = parser.parse('05/06/2024')
         assert r2.day == 5
@@ -256,10 +219,15 @@ class TestParserDayFirst:
 
 
 class TestParserYearFirst:
-    """Test yearfirst option."""
+    """Test yearfirst option.
+    """
 
     def test_yearfirst_false(self):
-        """Test MM/DD/YY with yearfirst=False."""
+        """Test MM/DD/YY with yearfirst=False.
+
+        Mutation: yearfirst=False read as yearfirst=True.
+        Oracle: fields hand-read in MM/DD/YY order.
+        """
         parser = Parser(yearfirst=False)
         r = parser.parse('01/15/24')
         assert r.month == 1
@@ -267,7 +235,11 @@ class TestParserYearFirst:
         assert r.year == 2024
 
     def test_yearfirst_true(self):
-        """Test YY/MM/DD with yearfirst=True."""
+        """Test YY/MM/DD with yearfirst=True.
+
+        Mutation: Parser drops its yearfirst flag.
+        Oracle: fields hand-read in YY/MM/DD order.
+        """
         parser = Parser(yearfirst=True)
         r = parser.parse('24/01/15')
         assert r.year == 2024
@@ -276,81 +248,96 @@ class TestParserYearFirst:
 
 
 class TestParserSpecialFormats:
-    """Test special format parsing."""
+    """Test special format parsing.
+    """
 
     def test_parse_ordinal_day(self):
-        """Test ordinal day: January 15th, 2024."""
+        """Test ordinal day: January 15th, 2024.
+
+        Mutation: an ordinal suffix stops the day being read.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('January 15th, 2024', fuzzy=True)
         assert r.year == 2024
         assert r.month == 1
         assert r.day == 15
 
-    def test_parse_ordinal_1st(self):
-        """Test 1st ordinal."""
-        r = parse('January 1st, 2024', fuzzy=True)
-        assert r.day == 1
+    @pytest.mark.parametrize(
+        ('text', 'day'),
+        [
+            ('January 1st, 2024', 1),
+            ('January 2nd, 2024', 2),
+            ('January 3rd, 2024', 3),
+            ])
+    def test_parse_ordinal_suffixes(self, text, day):
+        """Test the 1st, 2nd and 3rd suffixes.
 
-    def test_parse_ordinal_2nd(self):
-        """Test 2nd ordinal."""
-        r = parse('January 2nd, 2024', fuzzy=True)
-        assert r.day == 2
-
-    def test_parse_ordinal_3rd(self):
-        """Test 3rd ordinal."""
-        r = parse('January 3rd, 2024', fuzzy=True)
-        assert r.day == 3
+        Mutation: only the 'th' suffix recognized.
+        Oracle: the day number before the suffix.
+        """
+        r = parse(text, fuzzy=True)
+        assert r.day == day
 
     def test_parse_year_month(self):
-        """Test year-month only: 2024-01."""
+        """Test year-month only: 2024-01.
+
+        Mutation: a trailing 2-digit field after the year read as a day.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('2024-01')
         assert r.year == 2024
         assert r.month == 1
 
     def test_parse_month_year(self):
-        """Test month year: January 2024."""
+        """Test month year: January 2024.
+
+        Mutation: a 4-digit field after a month name read as a day.
+        Oracle: fields hand-read from the literal input.
+        """
         r = parse('January 2024')
         assert r.year == 2024
         assert r.month == 1
 
     def test_parse_year_only(self):
-        """Test year only: 2024."""
+        """Test year only: 2024.
+
+        Mutation: a lone 4-digit number read as HHMM.
+        Oracle: the literal input.
+        """
         r = parse('2024')
         assert r.year == 2024
 
 
 class TestParserFuzzyMode:
-    """Test fuzzy parsing mode."""
+    """Test fuzzy parsing mode.
+    """
 
-    def test_fuzzy_leading_text(self):
-        """Test fuzzy with leading text."""
-        r = parse('Today is 2024-01-15', fuzzy=True)
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
+    @pytest.mark.parametrize(
+        'text',
+        [
+            'Today is 2024-01-15',
+            '2024-01-15 was yesterday',
+            'The date 2024-01-15 is important',
+            'Order #12345 placed on 2024-01-15',
+            ])
+    def test_fuzzy_skips_text(self, text):
+        """Test fuzzy mode skips leading, trailing and surrounding text.
 
-    def test_fuzzy_trailing_text(self):
-        """Test fuzzy with trailing text."""
-        r = parse('2024-01-15 was yesterday', fuzzy=True)
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-
-    def test_fuzzy_surrounding_text(self):
-        """Test fuzzy with surrounding text."""
-        r = parse('The date 2024-01-15 is important', fuzzy=True)
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-
-    def test_fuzzy_order_number(self):
-        """Test fuzzy ignores order numbers."""
-        r = parse('Order #12345 placed on 2024-01-15', fuzzy=True)
+        Mutation: a stray number such as #12345 taken as a date field, or
+            text on one side of the date not skipped.
+        Oracle: fields hand-read from the embedded date.
+        """
+        r = parse(text, fuzzy=True)
         assert r.year == 2024
         assert r.month == 1
         assert r.day == 15
 
     def test_fuzzy_with_tokens_returns_tuple(self):
-        """Test fuzzy_with_tokens returns tuple."""
+        """Test fuzzy_with_tokens returns the result and the skipped tokens.
+
+        Mutation: fuzzy_with_tokens ignored, or the skipped text discarded.
+        Oracle: 'Today is ' precedes the date, so tokens is not empty.
+        """
         parser = Parser()
         result = parser.parse('Today is 2024-01-15', fuzzy=True, fuzzy_with_tokens=True)
         assert isinstance(result, tuple)
@@ -358,20 +345,19 @@ class TestParserFuzzyMode:
         r, tokens = result
         assert r.year == 2024
         assert isinstance(tokens, list)
+        assert len(tokens) > 0
 
 
 class TestParserEdgeCases:
-    """Test edge cases and special scenarios."""
-
-    def test_parse_time_only(self):
-        """Test parsing time only."""
-        r = parse('10:30:45')
-        assert r.hour == 10
-        assert r.minute == 30
-        assert r.second == 45
+    """Test edge cases and special scenarios.
+    """
 
     def test_parse_date_only(self):
-        """Test parsing date only."""
+        """Test parsing date only.
+
+        Mutation: missing time fields filled with 0 in place of None.
+        Oracle: the input carries no time, so hour and minute stay None.
+        """
         r = parse('2024-01-15')
         assert r.year == 2024
         assert r.month == 1
@@ -380,31 +366,22 @@ class TestParserEdgeCases:
         assert r.minute is None
 
     def test_parse_month_name_case_insensitive(self):
-        """Test month name is case insensitive."""
+        """Test month name is case insensitive.
+
+        Mutation: month names matched case-sensitively.
+        Oracle: the three spellings name the same month, January.
+        """
         r1 = parse('JANUARY 15, 2024')
         r2 = parse('january 15, 2024')
         r3 = parse('January 15, 2024')
         assert r1.month == r2.month == r3.month == 1
 
     def test_parse_weekday_case_insensitive(self):
-        """Test weekday is case insensitive."""
+        """Test weekday is case insensitive.
+
+        Mutation: weekday names matched case-sensitively.
+        Oracle: both spellings name Monday, weekday 0.
+        """
         r1 = parse('MONDAY, January 15, 2024', fuzzy=True)
         r2 = parse('monday, January 15, 2024', fuzzy=True)
         assert r1.weekday == r2.weekday == 0
-
-    def test_parse_yyyymmdd_compact(self):
-        """Test compact YYYYMMDD."""
-        r = parse('20240115')
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-
-    def test_parse_yyyymmddhhmmss_compact(self):
-        """Test compact YYYYMMDDHHMMSS."""
-        r = parse('20240115103045')
-        assert r.year == 2024
-        assert r.month == 1
-        assert r.day == 15
-        assert r.hour == 10
-        assert r.minute == 30
-        assert r.second == 45

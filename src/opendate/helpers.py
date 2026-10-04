@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as _datetime
+import functools
 import logging
 from typing import Any
 
@@ -27,54 +28,68 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-_cached_parser: _RustParser | None = None
-_cached_iso_parser: _RustIsoParser | None = None
-_cached_time_parser: _RustTimeParser | None = None
 
-
+@functools.cache
 def _get_parser() -> _RustParser | None:
-    """Get cached Parser instance.
+    """Shared Parser instance, or None without the Rust extension.
     """
-    global _cached_parser
-    if _RustParser is None:
-        return None
-    if _cached_parser is None:
-        _cached_parser = _RustParser(False, False)
-    return _cached_parser
+    return None if _RustParser is None else _RustParser(False, False)
 
 
+@functools.cache
 def _get_iso_parser() -> _RustIsoParser | None:
-    """Get cached IsoParser instance.
+    """Shared IsoParser instance, or None without the Rust extension.
     """
-    global _cached_iso_parser
-    if _RustIsoParser is None:
-        return None
-    if _cached_iso_parser is None:
-        _cached_iso_parser = _RustIsoParser()
-    return _cached_iso_parser
+    return None if _RustIsoParser is None else _RustIsoParser()
 
 
+@functools.cache
 def _get_time_parser() -> _RustTimeParser | None:
-    """Get cached TimeParser instance.
+    """Shared TimeParser instance, or None without the Rust extension.
     """
-    global _cached_time_parser
-    if _RustTimeParser is None:
-        return None
-    if _cached_time_parser is None:
-        _cached_time_parser = _RustTimeParser()
-    return _cached_time_parser
+    return None if _RustTimeParser is None else _RustTimeParser()
 
 
 def isdateish(x: Any) -> bool:
-    return isinstance(x, (_datetime.date, _datetime.datetime, _datetime.time, pd.Timestamp, np.datetime64))
+    """True for a date, datetime, time, pandas Timestamp or numpy datetime64.
+    """
+    return isinstance(
+        x,
+        (
+            _datetime.date,
+            _datetime.datetime,
+            _datetime.time,
+            pd.Timestamp,
+            np.datetime64,
+            ))
 
 
-def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False, fuzzy: bool = True) -> _datetime.datetime | None:
+def _rust_parse_datetime(
+    s: str,
+    dayfirst: bool = False,
+    yearfirst: bool = False,
+    fuzzy: bool = True,
+) -> _datetime.datetime | None:
     """Parse datetime string using Rust parser, return Python datetime or None.
 
-    This is an internal helper that bridges the Rust parser to Python datetime objects.
-    Returns None if parsing fails or no meaningful components are found.
-    Uses current year as default when year is missing but month/day are present.
+    Parameters
+    ----------
+    s : str
+        Text to parse. An ISO 8601 string is read as ISO, whatever the
+        flags below say.
+    dayfirst : bool, default False
+        Read an ambiguous 01/02 as day then month.
+    yearfirst : bool, default False
+        Read an ambiguous leading number as the year.
+    fuzzy : bool, default True
+        Skip words that are not part of a date or time.
+
+    Returns
+    -------
+    datetime.datetime or None
+        None when the extension is missing, parsing fails, or s holds no
+        date or time part. A missing year is the current year, and a
+        missing month or day is 1. A time with no date falls on today.
     """
     iso_parser = _get_iso_parser()
     if iso_parser is not None:
@@ -83,12 +98,17 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
             if result is not None:
                 tzinfo = None
                 if result.tzoffset is not None:
-                    tzinfo = _datetime.timezone(_datetime.timedelta(seconds=result.tzoffset))
+                    tzinfo = _datetime.timezone(
+                        _datetime.timedelta(seconds=result.tzoffset))
                 return _datetime.datetime(
-                    result.year, result.month, result.day,
-                    result.hour or 0, result.minute or 0, result.second or 0,
-                    result.microsecond or 0, tzinfo=tzinfo,
-                )
+                    result.year,
+                    result.month,
+                    result.day,
+                    result.hour or 0,
+                    result.minute or 0,
+                    result.second or 0,
+                    result.microsecond or 0,
+                    tzinfo=tzinfo)
         except Exception:
             pass
 
@@ -105,8 +125,14 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
         if result is None:
             return None
 
-        has_date = result.year is not None or result.month is not None or result.day is not None
-        has_time = result.hour is not None or result.minute is not None or result.second is not None
+        has_date = (
+            result.year is not None
+            or result.month is not None
+            or result.day is not None)
+        has_time = (
+            result.hour is not None
+            or result.minute is not None
+            or result.second is not None)
 
         if not has_date and not has_time:
             return None
@@ -115,11 +141,11 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
         month = result.month
         day = result.day
 
-        if year is None or (has_time and not has_date and (month is None or day is None)):
+        if year is None:
             now = _datetime.datetime.now()
-            year = year if year is not None else now.year
-            month = month if month is not None else (now.month if has_time and not has_date else 1)
-            day = day if day is not None else (now.day if has_time and not has_date else 1)
+            year = now.year
+            month = month if month is not None else (now.month if not has_date else 1)
+            day = day if day is not None else (now.day if not has_date else 1)
         else:
             month = month if month is not None else 1
             day = day if day is not None else 1
@@ -129,20 +155,32 @@ def _rust_parse_datetime(s: str, dayfirst: bool = False, yearfirst: bool = False
             tzinfo = _datetime.timezone(_datetime.timedelta(seconds=result.tzoffset))
 
         return _datetime.datetime(
-            year, month, day,
-            result.hour or 0, result.minute or 0, result.second or 0,
-            result.microsecond or 0, tzinfo=tzinfo,
-        )
+            year,
+            month,
+            day,
+            result.hour or 0,
+            result.minute or 0,
+            result.second or 0,
+            result.microsecond or 0,
+            tzinfo=tzinfo)
     except Exception as e:
         logger.debug(f'Rust parser failed: {e}')
         return None
 
 
 def _rust_parse_time(s: str) -> tuple[int, int, int, int] | None:
-    """Parse time string using Rust TimeParser, return (h, m, s, us) or None.
+    """Parse time string using Rust TimeParser.
 
-    This is an internal helper that bridges the Rust TimeParser to Python.
-    Returns None if parsing fails.
+    Parameters
+    ----------
+    s : str
+        Text holding a time of day.
+
+    Returns
+    -------
+    tuple[int, int, int, int] or None
+        (hour, minute, second, microsecond), a missing part being 0.
+        None when the extension is missing or parsing fails.
     """
     time_parser = _get_time_parser()
     if time_parser is None:
@@ -159,16 +197,28 @@ def _rust_parse_time(s: str) -> tuple[int, int, int, int] | None:
 
 
 def _get_decade_bounds(year: int) -> tuple[_datetime.date, _datetime.date] | None:
-    """Get decade start/end dates for caching. Returns None if outside valid range.
+    """Padded decade range the calendar cache loads for year.
 
-    Pads the range by 1 year on each side so that business-day lookups
-    near decade boundaries can find results in adjacent years without
-    needing a second calendar fetch.
+    Parameters
+    ----------
+    year : int
+        Any year in the decade.
+
+    Returns
+    -------
+    tuple[datetime.date, datetime.date] or None
+        (start, end): the decade padded by one year each side, so 2024
+        gives (2019-01-01, 2031-01-01). Clamped to Jan 1 of MIN_YEAR and
+        Dec 31 of MAX_YEAR. None when year lies outside
+        [MIN_YEAR, MAX_YEAR].
     """
     if year > MAX_YEAR or year < MIN_YEAR:
         return None
     start_year = max(MIN_YEAR, year // 10 * 10 - 1)
     end_year = (year // 10 + 1) * 10 + 1
     decade_start = _datetime.date(start_year, 1, 1)
-    decade_end = _datetime.date(MAX_YEAR, 12, 31) if end_year > MAX_YEAR else _datetime.date(end_year, 1, 1)
+    if end_year > MAX_YEAR:
+        decade_end = _datetime.date(MAX_YEAR, 12, 31)
+    else:
+        decade_end = _datetime.date(end_year, 1, 1)
     return decade_start, decade_end

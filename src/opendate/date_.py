@@ -29,13 +29,7 @@ class Date(
     metaclass=DateContextMeta,
     methods_to_wrap=DATE_METHODS_RETURNING_DATE
 ):
-    """Date class extending pendulum.Date with business day and additional functionality.
-
-    This class inherits all pendulum.Date functionality while adding:
-    - Business day calculations with NYSE calendar integration
-    - Additional date navigation methods
-    - Enhanced parsing capabilities
-    - Custom financial date utilities
+    """pendulum.Date with business-day arithmetic and extra date utilities.
 
     Unlike pendulum.Date, methods that create new instances return Date objects
     that preserve business status and entity association when chained.
@@ -44,33 +38,55 @@ class Date(
     def to_string(self, fmt: str) -> str:
         """Format date to string, handling platform-specific format codes.
 
-        Automatically converts '%-' format codes to '%#' on Windows.
+        Parameters
+        ----------
+        fmt : str
+            strftime format. On Windows each '%-' becomes '%#', so '%-d'
+            drops the leading zero on every platform.
+
+        Returns
+        -------
+        str
+            The formatted date.
         """
         return self.strftime(fmt.replace('%-', '%#') if _IS_WINDOWS else fmt)
 
     @classmethod
-    def fromordinal(cls, *args, **kwargs) -> Self:
+    def fromordinal(cls, *args: int, **kwargs: int) -> Self:
         """Create a Date from an ordinal.
 
         Parameters
-            n: The ordinal value
+        ----------
+        *args : int
+            The proleptic Gregorian ordinal, 1 being 0001-01-01.
+        **kwargs : int
+            Any keyword raises TypeError: the ordinal is positional only.
 
         Returns
-            Date instance
+        -------
+        Date
         """
         result = _pendulum.Date.fromordinal(*args, **kwargs)
         return cls.instance(result)
 
     @classmethod
-    def fromtimestamp(cls, timestamp, tz=None) -> Self:
+    def fromtimestamp(
+        cls,
+        timestamp: float,
+        tz: _datetime.tzinfo | None = None,
+    ) -> Self:
         """Create a Date from a timestamp.
 
         Parameters
-            timestamp: Unix timestamp
-            tz: Optional timezone (defaults to UTC)
+        ----------
+        timestamp : float
+            Seconds since the Unix epoch.
+        tz : datetime.tzinfo or None, default None
+            Zone whose calendar dates the instant. None means UTC.
 
         Returns
-            Date instance
+        -------
+        Date
         """
         tz = tz or UTC
         dt = _datetime.datetime.fromtimestamp(timestamp, tz=tz)
@@ -85,45 +101,60 @@ class Date(
     ) -> Self | None:
         """Convert a string to a date handling many different formats.
 
-        Supports various date formats including:
-        - Standard formats: YYYY-MM-DD, MM/DD/YYYY, MM/DD/YY, YYYYMMDD
-        - Named months: DD-MON-YYYY, MON-DD-YYYY, Month DD, YYYY
-        - Special codes: T (today), Y (yesterday), P (previous business day)
-        - Business day offsets: T-3b, P+2b (add/subtract business days)
-
         Parameters
-            s: String to parse or None
-            calendar: Calendar name or instance for business day calculations (default 'NYSE')
-            raise_err: If True, raises ValueError on parse failure instead of returning None
+        ----------
+        s : str or None
+            Text to parse: a numeric date (YYYY-MM-DD, MM/DD/YYYY,
+            MM/DD/YY, YYYYMMDD), a named-month date (DD-MON-YYYY,
+            MON-DD-YYYY, Month DD, YYYY), or a code - T (today),
+            Y (yesterday), P (previous business day) - with an optional
+            day offset, where a trailing b counts business days (T-3b).
+            Any other all-numeric string is unparseable.
+        calendar : str or Calendar, default 'NYSE'
+            Calendar name or instance for the P code and business-day
+            offsets.
+        raise_err : bool, default False
+            Raise ValueError on empty or unparseable input instead of
+            returning None.
 
         Returns
-            Date instance or None if parsing fails and raise_err is False
+        -------
+        Date or None
+            None for empty or unparseable input when raise_err is False.
+
+        Raises
+        ------
+        TypeError
+            s is neither empty nor a str.
+        ValueError
+            raise_err is True and s is empty or unparseable.
 
         Examples
-            Standard numeric formats:
-            Date.parse('2020-01-15') → Date(2020, 1, 15)
-            Date.parse('01/15/2020') → Date(2020, 1, 15)
-            Date.parse('01/15/20') → Date(2020, 1, 15)
-            Date.parse('20200115') → Date(2020, 1, 15)
+        --------
+        Standard numeric formats:
+        Date.parse('2020-01-15') -> Date(2020, 1, 15)
+        Date.parse('01/15/2020') -> Date(2020, 1, 15)
+        Date.parse('01/15/20') -> Date(2020, 1, 15)
+        Date.parse('20200115') -> Date(2020, 1, 15)
 
-            Named month formats:
-            Date.parse('15-Jan-2020') → Date(2020, 1, 15)
-            Date.parse('Jan 15, 2020') → Date(2020, 1, 15)
-            Date.parse('15JAN2020') → Date(2020, 1, 15)
+        Named month formats:
+        Date.parse('15-Jan-2020') -> Date(2020, 1, 15)
+        Date.parse('Jan 15, 2020') -> Date(2020, 1, 15)
+        Date.parse('15JAN2020') -> Date(2020, 1, 15)
 
-            Special codes:
-            Date.parse('T') → today's date
-            Date.parse('Y') → yesterday's date
-            Date.parse('P') → previous business day
-            Date.parse('M') → last day of previous month
+        Special codes:
+        Date.parse('T') -> today's date
+        Date.parse('Y') -> yesterday's date
+        Date.parse('P') -> previous business day
+        Date.parse('M') -> last day of previous month
 
-            Business day offsets:
-            Date.parse('T-3b') → 3 business days ago
-            Date.parse('P+2b') → 2 business days after previous business day
-            Date.parse('T+5') → 5 calendar days from today
+        Business day offsets:
+        Date.parse('T-3b') -> 3 business days ago
+        Date.parse('P+2b') -> 2 business days after previous business day
+        Date.parse('T+5') -> 5 calendar days from today
         """
 
-        def date_for_symbol(s):
+        def date_for_symbol(s: str) -> Self | None:
             if s == 'N':
                 return cls.today()
             if s == 'T':
@@ -144,12 +175,11 @@ class Date(
             raise TypeError(f'Invalid type for date parse: {s.__class__}')
 
         with contextlib.suppress(ValueError):
-            if float(s) and len(s) != 8:  # 20000101
+            if float(s) and len(s) != 8:
                 if raise_err:
                     raise ValueError('Invalid date: %s', s)
                 return
 
-        # special shortcode symbolic values: T, Y-2, P-1b
         if m := DATEMATCH.match(s):
             d = date_for_symbol(m.groupdict().get('d'))
             n = m.groupdict().get('n')
@@ -159,7 +189,8 @@ class Date(
             b = m.groupdict().get('b')
             if b:
                 if b != 'b':
-                    raise ValueError(f"Expected 'b' for business day modifier, got '{b}'")
+                    raise ValueError(
+                        f"Expected 'b' for business day modifier, got '{b}'")
                 d = d.calendar(calendar).business().add(days=n)
             else:
                 d = d.add(days=n)
@@ -190,15 +221,23 @@ class Date(
     ) -> Self | None:
         """Create a Date instance from various date-like objects.
 
-        Converts datetime.date, datetime.datetime, pandas Timestamp,
-        numpy datetime64, and other date-like objects to Date instances.
-
         Parameters
-            obj: Date-like object to convert
-            raise_err: If True, raises ValueError for None/NA values instead of returning None
+        ----------
+        obj : date, datetime, pd.Timestamp, np.datetime64, Date or None
+            Date-like object to convert.
+        raise_err : bool, default False
+            Raise ValueError for None or NA instead of returning None.
 
         Returns
-            Date instance or None if obj is None/NA and raise_err is False
+        -------
+        Date or None
+            obj itself when it is already this class. None for None or NA
+            when raise_err is False.
+
+        Raises
+        ------
+        ValueError
+            raise_err is True and obj is None or NA.
         """
         if pd.isna(obj):
             if raise_err:
@@ -210,16 +249,15 @@ class Date(
 
         if isinstance(obj, pd.Timestamp):
             obj = obj.to_pydatetime()
-            return cls(obj.year, obj.month, obj.day)
-
-        if isinstance(obj, np.datetime64):
+        elif isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
-            return cls(obj.year, obj.month, obj.day)
 
         return cls(obj.year, obj.month, obj.day)
 
     @classmethod
     def today(cls) -> Self:
+        """Today's date in the local zone, LCL.
+        """
         d = _datetime.datetime.now(LCL)
         return cls(d.year, d.month, d.day)
 
@@ -229,11 +267,20 @@ class Date(
         with contextlib.suppress(Exception):
             return self.isocalendar()[1]
 
-    def lookback(self, unit='last') -> Self:
+    def lookback(self, unit: str = 'last') -> Self | None:
         """Get date in the past based on lookback unit.
 
-        Supported units: 'last'/'day' (1 day), 'week', 'month', 'quarter', 'year'.
-        Respects business day mode if enabled.
+        Parameters
+        ----------
+        unit : str, default 'last'
+            'last' or 'day' (1 day), 'week', 'month', 'quarter' (3 months)
+            or 'year'.
+
+        Returns
+        -------
+        Date or None
+            None for any other unit. In business mode a result that is
+            not a business day rolls back to the previous one.
         """
         _units = {
             'day': {'days': 1},

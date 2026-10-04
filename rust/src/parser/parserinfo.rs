@@ -93,106 +93,23 @@ impl ParserInfo {
 
     /// Create a new ParserInfo with the given settings.
     pub fn new(dayfirst: bool, yearfirst: bool) -> Self {
-        // Get current year
         let now = chrono_lite_year();
         let century = (now / 100) * 100;
 
-        let mut info = ParserInfo {
+        ParserInfo {
             dayfirst,
             yearfirst,
-            jump: HashMap::new(),
-            weekdays: HashMap::new(),
-            months: HashMap::new(),
-            hms: HashMap::new(),
-            ampm: HashMap::new(),
-            utczone: HashMap::new(),
-            pertain: HashMap::new(),
+            jump: name_set(Self::JUMP),
+            weekdays: name_index(Self::WEEKDAYS, 0),
+            months: name_index(Self::MONTHS, 1),
+            hms: name_index(Self::HMS, 0),
+            ampm: name_index(Self::AMPM, 0),
+            utczone: name_set(Self::UTCZONE),
+            pertain: name_set(Self::PERTAIN),
             tzoffset: HashMap::new(),
             year: now,
             century,
-        };
-
-        // Initialize jump lookup table
-        let jump_len = Self::JUMP.len();
-        let mut i = 0usize;
-        while i < jump_len {
-            info.jump.insert(to_lowercase(Self::JUMP[i]), true);
-            i += 1;
         }
-
-        // Initialize weekdays lookup table
-        let weekdays_len = Self::WEEKDAYS.len();
-        let mut i = 0usize;
-        while i < weekdays_len {
-            let names = Self::WEEKDAYS[i];
-            let names_len = names.len();
-            let mut j = 0usize;
-            while j < names_len {
-                info.weekdays.insert(to_lowercase(names[j]), i as u32);
-                j += 1;
-            }
-            i += 1;
-        }
-
-        // Initialize months lookup table
-        let months_len = Self::MONTHS.len();
-        let mut i = 0usize;
-        while i < months_len {
-            let names = Self::MONTHS[i];
-            let names_len = names.len();
-            let mut j = 0usize;
-            while j < names_len {
-                info.months.insert(to_lowercase(names[j]), (i + 1) as u32);
-                j += 1;
-            }
-            i += 1;
-        }
-
-        // Initialize HMS lookup table
-        let hms_len = Self::HMS.len();
-        let mut i = 0usize;
-        while i < hms_len {
-            let names = Self::HMS[i];
-            let names_len = names.len();
-            let mut j = 0usize;
-            while j < names_len {
-                info.hms.insert(to_lowercase(names[j]), i as u32);
-                j += 1;
-            }
-            i += 1;
-        }
-
-        // Initialize AMPM lookup table
-        let ampm_len = Self::AMPM.len();
-        let mut i = 0usize;
-        while i < ampm_len {
-            let names = Self::AMPM[i];
-            let names_len = names.len();
-            let mut j = 0usize;
-            while j < names_len {
-                info.ampm.insert(to_lowercase(names[j]), i as u32);
-                j += 1;
-            }
-            i += 1;
-        }
-
-        // Initialize UTC zone lookup table
-        let utczone_len = Self::UTCZONE.len();
-        let mut i = 0usize;
-        while i < utczone_len {
-            info.utczone.insert(to_lowercase(Self::UTCZONE[i]), true);
-            i += 1;
-        }
-
-        // Initialize pertain lookup table
-        let pertain_len = Self::PERTAIN.len();
-        let mut i = 0usize;
-        while i < pertain_len {
-            info.pertain.insert(to_lowercase(Self::PERTAIN[i]), true);
-            i += 1;
-        }
-
-        info
     }
 
     /// Check if a token is a jump token (should be skipped).
@@ -262,17 +179,18 @@ impl ParserInfo {
     /// Convert a two-digit year to a four-digit year.
     ///
     /// Years are converted to be within [-50, +49] range of the current year.
+    ///
+    /// # Arguments
+    /// * `year` - Parsed year. A value of 100 or more returns unchanged.
+    /// * `century_specified` - True when the input wrote the century, which
+    ///   returns `year` unchanged.
     pub fn convertyear(&self, year: i32, century_specified: bool) -> i32 {
         if year < 100 && !century_specified {
-            // Assume current century
             let mut converted = year + self.century;
 
-            // If too far in future (>= current year + 50), go back a century
             if converted >= self.year + 50 {
                 converted -= 100;
-            }
-            // If too far in past (< current year - 50), go forward a century
-            else if converted < self.year - 50 {
+            } else if converted < self.year - 50 {
                 converted += 100;
             }
 
@@ -282,9 +200,7 @@ impl ParserInfo {
         }
     }
 
-    /// Validate and normalize a parse result.
-    ///
-    /// Returns true if valid, false otherwise.
+    /// Same as `convertyear`.
     #[allow(dead_code)]
     pub fn validate_year(&self, year: i32, century_specified: bool) -> i32 {
         self.convertyear(year, century_specified)
@@ -298,21 +214,19 @@ impl ParserInfo {
         tzname: Option<&str>,
     ) -> (Option<i32>, Option<String>) {
         match (tzoffset, tzname) {
-            // Zero offset without name, or Z/z name
             (Some(0), None) | (None, Some("Z" | "z")) | (Some(0), Some("Z" | "z")) => {
                 (Some(0), Some("UTC".to_string()))
             }
-            // Non-zero offset with UTC zone name - offset takes precedence
             (Some(offset), Some(name)) if offset != 0 && self.utczone(name) => {
                 (Some(0), Some("UTC".to_string()))
             }
-            // Preserve as-is
             (offset, name) => (offset, name.map(String::from)),
         }
     }
 }
 
-/// Convert string to lowercase.
+/// Copy of `s` with ASCII A-Z lowercased; every other byte maps to one
+/// char unchanged.
 fn to_lowercase(s: &str) -> String {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -320,7 +234,6 @@ fn to_lowercase(s: &str) -> String {
     let mut i = 0usize;
     while i < n {
         let c = bytes[i];
-        // ASCII lowercase conversion
         if c >= b'A' && c <= b'Z' {
             result.push((c + 32) as char);
         } else {
@@ -331,9 +244,37 @@ fn to_lowercase(s: &str) -> String {
     result
 }
 
-/// Get current year (simplified, avoids chrono dependency).
+/// Lowercased name -> true, for membership tests.
+fn name_set(names: &[&str]) -> HashMap<String, bool> {
+    let mut set = HashMap::with_capacity(names.len());
+    let mut i = 0usize;
+    while i < names.len() {
+        set.insert(to_lowercase(names[i]), true);
+        i += 1;
+    }
+    set
+}
+
+/// Lowercased name -> value, where every name in `groups[i]` maps to
+/// `first + i`.
+fn name_index(groups: &[&[&str]], first: u32) -> HashMap<String, u32> {
+    let mut index = HashMap::new();
+    let mut i = 0usize;
+    while i < groups.len() {
+        let names = groups[i];
+        let mut j = 0usize;
+        while j < names.len() {
+            index.insert(to_lowercase(names[j]), first + i as u32);
+            j += 1;
+        }
+        i += 1;
+    }
+    index
+}
+
+/// Current year from the system clock, counting 365-day years. It ignores
+/// leap days, so it can read one year ahead in late December.
 fn chrono_lite_year() -> i32 {
-    // Use std::time for a simple year calculation
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let duration = SystemTime::now()
@@ -341,7 +282,6 @@ fn chrono_lite_year() -> i32 {
         .unwrap_or_default();
 
     let secs = duration.as_secs() as i64;
-    // Approximate year calculation (good enough for century detection)
     let days = secs / 86400;
     let years = days / 365;
     (1970 + years) as i32
@@ -351,6 +291,11 @@ fn chrono_lite_year() -> i32 {
 mod tests {
     use super::*;
 
+    /// Verify jump words match and an unknown word does not.
+    ///
+    /// Mutation: JUMP missing an entry such as "st", or jump() reading
+    ///   the pertain table.
+    /// Oracle: dateutil parserinfo.JUMP.
     #[test]
     fn test_jump() {
         let info = ParserInfo::default();
@@ -361,6 +306,11 @@ mod tests {
         assert!(!info.jump("foo"));
     }
 
+    /// Verify weekday names map Monday=0 to Sunday=6, any case.
+    ///
+    /// Mutation: indexes starting at 1, or the lookup skipping the
+    ///   lowercase step.
+    /// Oracle: dateutil parserinfo.WEEKDAYS order.
     #[test]
     fn test_weekday() {
         let info = ParserInfo::default();
@@ -372,6 +322,10 @@ mod tests {
         assert_eq!(info.weekday("foo"), None);
     }
 
+    /// Verify month names map to 1-12, any case, with "sept" as September.
+    ///
+    /// Mutation: month indexes starting at 0, or "sept" dropped.
+    /// Oracle: dateutil parserinfo.MONTHS.
     #[test]
     fn test_month() {
         let info = ParserInfo::default();
@@ -386,6 +340,10 @@ mod tests {
         assert_eq!(info.month("foo"), None);
     }
 
+    /// Verify hour, minute and second words map to 0, 1 and 2.
+    ///
+    /// Mutation: HMS groups reordered, or "hours" dropped.
+    /// Oracle: dateutil parserinfo.HMS.
     #[test]
     fn test_hms() {
         let info = ParserInfo::default();
@@ -399,6 +357,10 @@ mod tests {
         assert_eq!(info.hms("foo"), None);
     }
 
+    /// Verify AM words map to 0 and PM words to 1, any case.
+    ///
+    /// Mutation: AMPM groups swapped, or the one-letter forms dropped.
+    /// Oracle: dateutil parserinfo.AMPM.
     #[test]
     fn test_ampm() {
         let info = ParserInfo::default();
@@ -411,6 +373,10 @@ mod tests {
         assert_eq!(info.ampm("foo"), None);
     }
 
+    /// Verify UTC zone names match in any case and EST does not.
+    ///
+    /// Mutation: utczone() skipping the lowercase step, or "z" dropped.
+    /// Oracle: dateutil parserinfo.UTCZONE.
     #[test]
     fn test_utczone() {
         let info = ParserInfo::default();
@@ -421,25 +387,31 @@ mod tests {
         assert!(!info.utczone("EST"));
     }
 
+    /// Verify a four-digit year passes through and a two-digit one lands
+    /// in the window around the current year.
+    ///
+    /// Mutation: the `year < 100` guard dropped, or the past and future
+    ///   century shifts swapped.
+    /// Oracle: hand-picked years 24 and 90 against the 50-year window.
     #[test]
     fn test_convertyear() {
         let info = ParserInfo::default();
         let _current_year = chrono_lite_year();
 
-        // Four-digit year unchanged
         assert_eq!(info.convertyear(2024, true), 2024);
         assert_eq!(info.convertyear(1990, true), 1990);
 
-        // Two-digit year conversion
-        // Assuming current year is around 2024-2025
         let converted = info.convertyear(24, false);
         assert!(converted >= 2000 && converted < 2100);
 
-        // Old year (should be 1990s for year 90)
         let converted = info.convertyear(90, false);
         assert!(converted >= 1900 && converted < 2000);
     }
 
+    /// Verify "of" is a pertain word in any case.
+    ///
+    /// Mutation: pertain() skipping the lowercase step.
+    /// Oracle: dateutil parserinfo.PERTAIN.
     #[test]
     fn test_pertain() {
         let info = ParserInfo::default();
@@ -448,19 +420,22 @@ mod tests {
         assert!(!info.pertain("foo"));
     }
 
+    /// Verify UTC names give offset 0, an added name its offset, and an
+    /// unknown name None.
+    ///
+    /// Mutation: tzoffset() skipping the UTC-name check, or
+    ///   add_tzoffset storing the offset under another key.
+    /// Oracle: hand-computed -5 * 3600 for EST.
     #[test]
     fn test_tzoffset() {
         let mut info = ParserInfo::default();
 
-        // UTC zones return 0
         assert_eq!(info.tzoffset("UTC"), Some(0));
         assert_eq!(info.tzoffset("GMT"), Some(0));
 
-        // Custom offset
         info.add_tzoffset("EST", -5 * 3600);
         assert_eq!(info.tzoffset("EST"), Some(-5 * 3600));
 
-        // Unknown returns None
         assert_eq!(info.tzoffset("XYZ"), None);
     }
 }
