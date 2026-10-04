@@ -1,6 +1,6 @@
 # OpenDate
 
-Date/time library built on [Pendulum](https://github.com/sdispater/pendulum) with business day support and financial calculations. Parsing is 1.2-6x faster than pendulum thanks to a Rust-based dateutil port.
+Date/time library built on [Pendulum](https://github.com/sdispater/pendulum) with business day support and financial calculations. Parsing runs on a Rust port of the dateutil parser.
 
 ```bash
 pip install opendate
@@ -9,7 +9,7 @@ pip install opendate
 ## Quick Reference
 
 ```python
-# Preferred import (using canonical module name)
+# Imports
 import opendate
 from opendate import Date, DateTime, Time, Interval
 from opendate import EST, UTC, LCL, WeekDay
@@ -22,32 +22,28 @@ parsed = Date.parse('T-3b')  # 3 business days ago
 
 # Business days
 today.b.add(days=5)                    # 5 business days forward
-today.calendar('LSE').b.subtract(days=3)  # Using London calendar
+today.calendar('LSE').b.subtract(days=3)  # London calendar
 
-# Change default calendar globally
+# Module-wide default calendar
 set_default_calendar('LSE')
 ```
 
----
-
 ## Module Functions
 
-| Function                             | Description                                                          |
-| ------------------------------------ | -------------------------------------------------------------------- |
-| `date(y, m, d)`                      | Create Date                                                          |
-| `datetime(y, m, d, h, m, s, tz=UTC)` | Create DateTime (defaults to UTC)                                    |
-| `time(h, m, s, tz=UTC)`              | Create Time (defaults to UTC)                                        |
-| `interval(start, end)`               | Create Interval                                                      |
-| `parse(s, calendar=None)`            | Parse to DateTime (calendar optional, uses module default)           |
-| `instance(obj)`                      | Convert datetime/date/time (preserves obj's tz if present, else UTC) |
-| `now(tz=None)`                       | Current DateTime (local tz if None)                                  |
-| `today(tz=None)`                     | Today at 00:00:00 (local tz if None)                                 |
-| `get_calendar(name)`                 | Get calendar instance                                                |
-| `set_default_calendar(name)`         | Set module default calendar                                          |
-| `get_default_calendar()`             | Get current default calendar name                                    |
-| `available_calendars()`              | List available calendars                                             |
-
----
+| Function                                 | Description                                                          |
+| ---------------------------------------- | -------------------------------------------------------------------- |
+| `date(y, m, d)`                          | Create Date                                                          |
+| `datetime(y, m, d, h, m, s, tzinfo=UTC)` | Create DateTime (defaults to UTC)                                    |
+| `time(h, m, s, tzinfo=UTC)`              | Create Time (defaults to UTC)                                        |
+| `interval(start, end)`                   | Create Interval                                                      |
+| `parse(s, calendar=None)`                | Parse to DateTime (calendar optional, uses module default)           |
+| `instance(obj)`                          | Convert datetime/date/time (preserves obj's tz if present, else UTC) |
+| `now(tz=None)`                           | Current DateTime (local tz if None)                                  |
+| `today(tz=None)`                         | Today at 00:00:00 (local tz if None)                                 |
+| `get_calendar(name)`                     | Calendar for name, in any case ('nyse' and 'NYSE' are the same)      |
+| `set_default_calendar(name)`             | Set module default calendar                                          |
+| `get_default_calendar()`                 | Get current default calendar name                                    |
+| `available_calendars()`                  | List available calendars                                             |
 
 ## Date
 
@@ -86,14 +82,14 @@ Inherited from pendulum: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `
 
 ### Navigation
 
-| Method                       | Description                                  |
-| ---------------------------- | -------------------------------------------- |
-| `next(day_of_week=None)`     | Next occurrence of weekday                   |
-| `previous(day_of_week=None)` | Previous occurrence of weekday               |
-| `closest(d1, d2)`            | Closer of two dates                          |
-| `farthest(d1, d2)`           | Further of two dates                         |
-| `average(other=None)`        | Midpoint between dates                       |
-| `lookback(unit)`             | Go back by unit: day/week/month/quarter/year |
+| Method                       | Description                                |
+| ---------------------------- | ------------------------------------------ |
+| `next(day_of_week=None)`     | Next occurrence of weekday                 |
+| `previous(day_of_week=None)` | Previous occurrence of weekday             |
+| `closest(d1, d2)`            | Closer of two dates                        |
+| `farthest(d1, d2)`           | Further of two dates                       |
+| `average(other=None)`        | Midpoint between dates                     |
+| `lookback(unit)`             | One unit back: day/week/month/quarter/year |
 
 ### Business Day
 
@@ -112,27 +108,25 @@ Inherited from pendulum: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `
 | `nearest_start_of_month()`     | Nearest month start (threshold: day 15) |
 | `nearest_end_of_month()`       | Nearest month end (threshold: day 15)   |
 | `weekday_or_previous_friday()` | Snap weekend to Friday                  |
-| `to_string(fmt)`               | Format (handles Windows `%-` → `%#`)    |
-
----
+| `to_string(fmt)`               | Format (`%-` becomes `%#` on Windows)   |
 
 ## DateTime
 
 ### Constructors
 
-| Method                                      | Description                                                                                                                                        |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DateTime(y, m, d, h, m, s, us, tzinfo)`    | Create from components                                                                                                                             |
-| `DateTime.now(tz=None)`                     | Current time (local tz if None)                                                                                                                    |
-| `DateTime.today(tz=None)`                   | Today at 00:00:00 (local tz if None, **differs from pendulum**)                                                                                    |
-| `DateTime.parse(s, calendar='NYSE')`        | Parse string or timestamp. Strings: preserve explicit tz, else naive. Timestamps: local tz. Calendar used for business day codes, defaults to NYSE |
-| `DateTime.instance(obj, tz=None)`           | From datetime, Timestamp, datetime64. Preserves obj's tz if present, else uses `tz` param, else UTC                                                |
-| `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time (uses time's tz if tzinfo=None)                                                                                              |
-| `DateTime.fromtimestamp(ts, tz=None)`       | From Unix timestamp (UTC if None)                                                                                                                  |
-| `DateTime.utcfromtimestamp(ts)`             | From timestamp as UTC                                                                                                                              |
-| `DateTime.utcnow()`                         | Current UTC time                                                                                                                                   |
-| `DateTime.strptime(s, fmt)`                 | Parse with format                                                                                                                                  |
-| `DateTime.fromordinal(n)`                   | From ordinal                                                                                                                                       |
+| Method                                      | Description                                                                                                                                                                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DateTime(y, m, d, h, m, s, us, tzinfo)`    | Create from components                                                                                                                                                                                                   |
+| `DateTime.now(tz=None)`                     | Current time (local tz if None)                                                                                                                                                                                          |
+| `DateTime.today(tz=None)`                   | Today at 00:00:00 (local tz if None, **differs from pendulum**)                                                                                                                                                          |
+| `DateTime.parse(s, calendar='NYSE')`        | Parse string or timestamp. A string keeps an offset it spells out, else UTC. A date code (T, P) gives a naive midnight. A timestamp gives local wall time in LCL. Calendar used for business day codes, defaults to NYSE |
+| `DateTime.instance(obj, tz=None)`           | From datetime, Timestamp, datetime64. Preserves obj's tz if present, else uses `tz` param, else UTC                                                                                                                      |
+| `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time (uses time's tz if tzinfo=None)                                                                                                                                                                    |
+| `DateTime.fromtimestamp(ts, tz=None)`       | From Unix timestamp (UTC if None)                                                                                                                                                                                        |
+| `DateTime.utcfromtimestamp(ts)`             | From timestamp as UTC                                                                                                                                                                                                    |
+| `DateTime.utcnow()`                         | Current UTC time                                                                                                                                                                                                         |
+| `DateTime.strptime(s, fmt)`                 | Parse with format                                                                                                                                                                                                        |
+| `DateTime.fromordinal(n)`                   | From ordinal                                                                                                                                                                                                             |
 
 ### Properties
 
@@ -174,8 +168,6 @@ Same as Date: `business()`, `.b`, `calendar(name)`, `is_business_day()`, `busine
 | `to_time_string()`         | HH:MM:SS                     |
 | `to_iso8601_string()`      | Full ISO 8601                |
 
----
-
 ## Time
 
 ### Constructors
@@ -183,7 +175,7 @@ Same as Date: `business()`, `.b`, `calendar(name)`, `is_business_day()`, `busine
 | Method                        | Description                                                                                 |
 | ----------------------------- | ------------------------------------------------------------------------------------------- |
 | `Time(h, m, s, us, tzinfo)`   | Create from components                                                                      |
-| `Time.parse(s, fmt=None)`     | Parse string (always UTC)                                                                   |
+| `Time.parse(s, fmt=None)`     | Parse string. UTC unless the string ends in Z or a signed hh:mm or hhmm offset              |
 | `Time.instance(obj, tz=None)` | From datetime.time, datetime. Preserves obj's tz if present, else uses `tz` param, else UTC |
 
 ### Properties
@@ -197,8 +189,6 @@ Same as Date: `business()`, `.b`, `calendar(name)`, `is_business_day()`, `busine
 | `in_timezone(tz)` | Convert to timezone |
 | `in_tz(tz)`       | Alias               |
 
----
-
 ## Interval
 
 ### Constructor
@@ -211,47 +201,46 @@ Interval(start, end)  # start/end are Date or DateTime
 
 | Property   | Description                                              |
 | ---------- | -------------------------------------------------------- |
-| `days`     | Calendar days (business days if `.b`)                    |
+| `days`     | Signed calendar days (business days if `.b`)             |
 | `months`   | Float with fractional months (**differs from pendulum**) |
-| `years`    | Complete years (floors)                                  |
-| `quarters` | Approximate (days/365*4)                                 |
+| `years`    | Whole years, truncated toward zero                       |
+| `quarters` | Approximate: `4 * days / 365`, negative when reversed    |
 | `start`    | Start date                                               |
 | `end`      | End date                                                 |
 
 ### Methods
 
-| Method                    | Description                               |
-| ------------------------- | ----------------------------------------- |
-| `business()` or `.b`      | Enable business day mode                  |
-| `calendar(name)`          | Set calendar                              |
-| `range(unit, amount=1)`   | Iterate by unit (days/weeks/months/years) |
-| `is_business_day_range()` | Yields bool for each day                  |
-| `start_of(unit)`          | List of period starts in interval         |
-| `end_of(unit)`            | List of period ends in interval           |
-| `yearfrac(basis)`         | Year fraction under a day-count basis     |
+| Method                    | Description                                                                   |
+| ------------------------- | ----------------------------------------------------------------------------- |
+| `business()` or `.b`      | Enable business day mode                                                      |
+| `calendar(name)`          | Set calendar                                                                  |
+| `range(unit, amount=1)`   | Iterate by unit (days/weeks/months/years); a reversed interval steps backward |
+| `is_business_day_range()` | Yields bool for each day                                                      |
+| `start_of(unit)`          | List of period starts in interval                                             |
+| `end_of(unit)`            | List of period ends in interval                                               |
+| `yearfrac(basis)`         | Year fraction under a day-count basis                                         |
 
 ### yearfrac Basis
 
 Each basis equals its QuantLib day counter bitwise on an ascending
-interval. A reversed interval returns the negated ascending value.
+interval. A reversed interval returns the negated ascending value. A
+basis outside 0-8 raises ValueError, on equal endpoints too.
 
-| Basis | Convention         | QuantLib twin              |
-| ----- | ------------------ | -------------------------- |
-| 0     | 30/360 US (SIA)    | `Thirty360(USA)`           |
-| 1     | ACT/ACT ISDA       | `ActualActual(ISDA)`       |
-| 2     | ACT/360            | `Actual360()`              |
-| 3     | ACT/365 Fixed      | `Actual365Fixed()`         |
-| 4     | 30E/360 (Eurobond) | `Thirty360(European)`      |
-| 5     | ACT/365.25         | `Actual36525()`            |
-| 6     | 30/360 Bond Basis  | `Thirty360(BondBasis)`     |
-| 7     | 30E/360 ISDA       | `Thirty360(German)`        |
-| 8     | ACT/365 No Leap    | `Actual365Fixed(NoLeap)`   |
-
----
+| Basis | Convention         | QuantLib twin            |
+| ----- | ------------------ | ------------------------ |
+| 0     | 30/360 US (SIA)    | `Thirty360(USA)`         |
+| 1     | ACT/ACT ISDA       | `ActualActual(ISDA)`     |
+| 2     | ACT/360            | `Actual360()`            |
+| 3     | ACT/365 Fixed      | `Actual365Fixed()`       |
+| 4     | 30E/360 (Eurobond) | `Thirty360(European)`    |
+| 5     | ACT/365.25         | `Actual36525()`          |
+| 6     | 30/360 Bond Basis  | `Thirty360(BondBasis)`   |
+| 7     | 30E/360 ISDA       | `Thirty360(German)`      |
+| 8     | ACT/365 No Leap    | `Actual365Fixed(NoLeap)` |
 
 ## Parsing
 
-OpenDate uses a dateutil-compatible Rust parser that handles virtually any date/time format. The parser supports fuzzy matching, multiple locales, and automatic format detection.
+OpenDate parses with a Rust port of the dateutil parser. It reads the formats dateutil reads, with fuzzy matching and format detection.
 
 ### Special Codes
 
@@ -264,10 +253,10 @@ OpenDate uses a dateutil-compatible Rust parser that handles virtually any date/
 
 ### Business Day Offsets
 
-| Pattern       | Example | Meaning             |
-| ------------- | ------- | ------------------- |
-| `{code}±{n}`  | `T-5`   | 5 calendar days ago |
-| `{code}±{n}b` | `T-3b`  | 3 business days ago |
+| Pattern        | Example | Meaning             |
+| -------------- | ------- | ------------------- |
+| `{code}+-{n}`  | `T-5`   | 5 calendar days ago |
+| `{code}+-{n}b` | `T-3b`  | 3 business days ago |
 
 ### Parser Capabilities
 
@@ -277,16 +266,29 @@ OpenDate uses a dateutil-compatible Rust parser that handles virtually any date/
 - **Fuzzy**: Extracts dates from text containing other content
 
 ```python
-# All of these work
+# Accepted forms
 Date.parse('2024-01-15')
 Date.parse('Jan 15, 2024')
 Date.parse('15/01/2024')
 DateTime.parse('2024-01-15T09:30:00Z')
 DateTime.parse(1640995200)  # Unix timestamp
 DateTime.parse('meeting on Jan 15 at 3pm')  # Fuzzy
+DateTime.parse('2024-01-15T24:00')  # ISO 24:00 is 00:00 on 2024-01-16
 ```
 
----
+### Rejected Input
+
+`parse` returns None on input it cannot read. With `raise_err=True` it
+raises ValueError, and the message names the input. Rejected input
+includes an all-numeric string that is not 8 digits (`Date.parse`), an
+hour, minute or second past its range (`25:00`, `12:61`), and a
+malformed ISO date (`2024-13-01`, `2024-02-30`).
+
+```python
+Date.parse('2024011', raise_err=True)   # ValueError: Invalid date: 2024011
+Time.parse('25:00', raise_err=True)     # ValueError: Failed to parse time: 25:00
+DateTime.parse('2024-02-30')            # None
+```
 
 ## Business Days
 
@@ -296,7 +298,7 @@ DateTime.parse('meeting on Jan 15 at 3pm')  # Fuzzy
 from opendate import set_default_calendar, get_default_calendar
 
 get_default_calendar()      # 'NYSE' initially
-set_default_calendar('LSE') # Change globally
+set_default_calendar('LSE') # Module-wide
 ```
 
 ### Per-Operation Calendar
@@ -308,7 +310,7 @@ date.calendar('LSE').is_business_day()
 
 ### Available Calendars
 
-All calendars from [exchange-calendars](https://github.com/gerrymanoim/exchange_calendars): NYSE, LSE, XLON, XPAR, XFRA, XJPX, XHKG, etc.
+All calendars from [pandas-market-calendars](https://github.com/rsheftel/pandas_market_calendars): NYSE, LSE, XLON, XPAR, XFRA, XJPX, XHKG, etc. A name is accepted in any case.
 
 ```python
 from opendate import available_calendars
@@ -332,8 +334,6 @@ for d in Interval(start, end).b.range('days'):
 # Count business days
 Interval(start, end).b.days
 ```
-
----
 
 ## Timezones
 
@@ -360,8 +360,6 @@ dt = DateTime(2024, 1, 15, 9, 30, tzinfo=tokyo)
 dt.in_timezone(UTC)   # or in_tz() or astimezone()
 ```
 
----
-
 ## Decorators
 
 | Decorator                  | Effect                       |
@@ -374,8 +372,6 @@ dt.in_timezone(UTC)   # or in_tz() or astimezone()
 | `@expect_utc_timezone`     | Converts result to UTC       |
 | `@prefer_native_timezone`  | Adds local tz if no tz       |
 | `@expect_native_timezone`  | Converts result to local     |
-
----
 
 ## Extras Module
 
@@ -391,8 +387,6 @@ overlap_days(int1, int2)           # Do intervals overlap? (bool)
 overlap_days(int1, int2, days=True) # Day count of overlap (int)
 ```
 
----
-
 ## Pendulum Differences
 
 | Feature                          | Pendulum     | OpenDate                                |
@@ -403,8 +397,6 @@ overlap_days(int1, int2, days=True) # Day count of overlap (int)
 | `Interval.months`                | int          | float (fractional)                      |
 | Business day support             | No           | Yes                                     |
 | Default calendar                 | N/A          | `set_default_calendar()`                |
-
----
 
 ## Examples
 
@@ -438,8 +430,6 @@ if now.calendar('NYSE').is_business_day():
     if open_time and open_time <= now <= close_time:
         print("Market open")
 ```
-
----
 
 ## Development
 
