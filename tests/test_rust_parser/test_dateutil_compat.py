@@ -389,7 +389,7 @@ class TestIgnoretz:
         """
         result = parse(dstr, fuzzy=True)
         parsed_dt = _parse_to_datetime(result)
-        assert parsed_dt.replace(tzinfo=None) == expected
+        assert parsed_dt == expected
 
 
 class TestFuzzyParsing:

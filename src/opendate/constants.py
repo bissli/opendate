@@ -147,22 +147,6 @@ WEEKDAY_SHORTNAME = {
     'SU': WeekDay.SUNDAY,
     }
 
-
-MONTH_SHORTNAME = {
-    'jan': 1,
-    'feb': 2,
-    'mar': 3,
-    'apr': 4,
-    'may': 5,
-    'jun': 6,
-    'jul': 7,
-    'aug': 8,
-    'sep': 9,
-    'oct': 10,
-    'nov': 11,
-    'dec': 12,
-    }
-
 DATEMATCH = re.compile(r'^(?P<d>N|T|Y|P|M)(?P<n>[-+]?\d+)?(?P<b>b?)?$')
 
 TIMEOFFSET = re.compile(r'^(?P<time>.*\d)\s*(?P<offset>Z|[-+]\d{2}:\d{2}|[-+]\d{4})$')

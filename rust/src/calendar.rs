@@ -128,10 +128,11 @@ impl BusinessCalendar {
     }
 
     /// Business days from `start` to `end`, both inclusive, ascending.
+    /// Empty when `start` is after `end`.
     pub fn business_days_in_range(&self, start: i32, end: i32) -> Vec<i32> {
         let start_idx = self.lower_bound(start);
         let end_idx = self.upper_bound(end);
-        let slice_len = end_idx - start_idx;
+        let slice_len = end_idx.saturating_sub(start_idx);
         let mut result = Vec::with_capacity(slice_len);
         let mut i = start_idx;
         while i < end_idx {
@@ -142,10 +143,11 @@ impl BusinessCalendar {
     }
 
     /// Number of business days from `start` to `end`, both inclusive.
+    /// 0 when `start` is after `end`.
     pub fn count_business_days(&self, start: i32, end: i32) -> usize {
         let start_idx = self.lower_bound(start);
         let end_idx = self.upper_bound(end);
-        end_idx - start_idx
+        end_idx.saturating_sub(start_idx)
     }
 
     /// Position of `ordinal` in the calendar, or None when it is not a
@@ -199,5 +201,21 @@ mod tests {
 
         assert_eq!(cal.next_business_day(738888), Some(738890));
         assert_eq!(cal.prev_business_day(738888), Some(738887));
+    }
+
+    /// Verify a range whose start is after its end holds no business days.
+    ///
+    /// Mutation: `end_idx - start_idx` without a floor at zero, which
+    ///   wraps or panics when start lands past end.
+    /// Oracle: the docstrings' inclusive range from start to end, which is
+    ///   empty when start > end; fdate's NYSE.business_days_in_range(b, a)
+    ///   returns [] for the same shape.
+    #[test]
+    fn test_reversed_range_is_empty() {
+        let cal = BusinessCalendar::new(vec![1, 2, 3]);
+
+        assert_eq!(cal.count_business_days(3, 1), 0);
+        assert_eq!(cal.business_days_in_range(3, 1), Vec::<i32>::new());
+        assert_eq!(cal.count_business_days(1, 3), 3);
     }
 }

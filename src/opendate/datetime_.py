@@ -369,7 +369,7 @@ class DateTime(
             return cls.combine(current, t, LCL)
 
         if raise_err:
-            raise ValueError('Invalid date-time format: %s', s)
+            raise ValueError(f'Invalid date-time format: {s}')
 
     @classmethod
     def instance(
@@ -420,16 +420,10 @@ class DateTime(
         if isinstance(obj, np.datetime64):
             obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
 
-        if type(obj) is Date:
-            return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
-
         if isinstance(obj, _datetime.date) and not isinstance(obj, _datetime.datetime):
             return cls(obj.year, obj.month, obj.day, tzinfo=tz or UTC)
 
         tz = tz or obj.tzinfo or UTC
-
-        if type(obj) is Time:
-            return cls.combine(Date.today(), obj, tzinfo=tz)
 
         if isinstance(obj, _datetime.time):
             return cls.combine(Date.today(), obj, tzinfo=tz)

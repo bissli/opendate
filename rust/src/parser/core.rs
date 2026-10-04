@@ -38,8 +38,9 @@ fn str_all_digits(s: &str) -> bool {
     all_ascii_digits(bytes, 0, n)
 }
 
-/// True when `s` holds at least one ASCII uppercase letter and no ASCII
-/// lowercase letter. Other bytes are ignored, so "GMT3" is true.
+/// True when `s` holds at least one ASCII uppercase letter, no ASCII
+/// lowercase letter and no non-ASCII byte. Other ASCII bytes are ignored,
+/// so "GMT3" is true and "\u{c9}ST" is false.
 fn all_ascii_uppercase(s: &str) -> bool {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -52,7 +53,7 @@ fn all_ascii_uppercase(s: &str) -> bool {
         let c = bytes[i];
         if c >= b'A' && c <= b'Z' {
             has_letter = true;
-        } else if c >= b'a' && c <= b'z' {
+        } else if (c >= b'a' && c <= b'z') || !c.is_ascii() {
             return false;
         }
         i += 1;
@@ -64,7 +65,8 @@ fn all_ascii_uppercase(s: &str) -> bool {
 /// gives 0.
 ///
 /// # Errors
-/// `ParserError::ParseError` when `s` holds any other byte, a sign included.
+/// `ParserError::ParseError` when `s` holds any other byte, a sign included,
+/// or its value is past `u32::MAX`.
 fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
     let bytes = s.as_bytes();
     let mut result = 0u32;
@@ -72,7 +74,10 @@ fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
     while i < bytes.len() {
         let c = bytes[i];
         if c >= b'0' && c <= b'9' {
-            result = result * 10 + (c - b'0') as u32;
+            result = result
+                .checked_mul(10)
+                .and_then(|r| r.checked_add((c - b'0') as u32))
+                .ok_or_else(|| ParserError::ParseError(format!("Out of range: {}", s)))?;
         } else {
             return Err(ParserError::ParseError("Invalid digit".to_string()));
         }
@@ -85,8 +90,8 @@ fn parse_str_u32(s: &str) -> Result<u32, ParserError> {
 /// gives 0.
 ///
 /// # Errors
-/// `ParserError::ParseError` when `s` is empty or holds a non-digit after
-/// the sign.
+/// `ParserError::ParseError` when `s` is empty, holds a non-digit after the
+/// sign, or its value is outside the `i32` range.
 fn parse_str_i32(s: &str) -> Result<i32, ParserError> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -105,16 +110,18 @@ fn parse_str_i32(s: &str) -> Result<i32, ParserError> {
     while i < n {
         let c = bytes[i];
         if c >= b'0' && c <= b'9' {
-            result = result * 10 + (c - b'0') as i32;
+            let digit = (c - b'0') as i32;
+            let signed_digit = if negative { -digit } else { digit };
+            result = result
+                .checked_mul(10)
+                .and_then(|r| r.checked_add(signed_digit))
+                .ok_or_else(|| ParserError::ParseError(format!("Out of range: {}", s)))?;
         } else {
             return Err(ParserError::ParseError(format!("Invalid digit in: {}", s)));
         }
         i += 1;
     }
 
-    if negative {
-        result = -result;
-    }
     Ok(result)
 }
 
@@ -189,25 +196,6 @@ fn ends_with_str(s: &str, suffix: &str) -> bool {
     true
 }
 
-/// True when the first bytes of `s` equal `prefix`.
-fn starts_with_str(s: &str, prefix: &str) -> bool {
-    let s_bytes = s.as_bytes();
-    let prefix_bytes = prefix.as_bytes();
-    let sn = s_bytes.len();
-    let pn = prefix_bytes.len();
-    if pn > sn {
-        return false;
-    }
-    let mut i = 0usize;
-    while i < pn {
-        if s_bytes[i] != prefix_bytes[i] {
-            return false;
-        }
-        i += 1;
-    }
-    true
-}
-
 /// Copy of `s` with ASCII a-z mapped to A-Z. Every other byte becomes the
 /// char of that code point, so a non-ASCII `s` changes byte length.
 fn to_uppercase(s: &str) -> String {
@@ -228,8 +216,7 @@ fn to_uppercase(s: &str) -> String {
 }
 
 /// `s[start..end]` by byte offset, with `end` clamped to `s.len()` and
-/// `start` to `end`. The slice skips the UTF-8 check, so an offset inside a
-/// multibyte char yields an invalid `&str`.
+/// `start` to `end`. An offset inside a multibyte char gives "".
 fn substr_range(s: &str, start: usize, end: usize) -> &str {
     let bytes = s.as_bytes();
     let actual_end = if end > bytes.len() { bytes.len() } else { end };
@@ -238,7 +225,7 @@ fn substr_range(s: &str, start: usize, end: usize) -> &str {
     } else {
         start
     };
-    unsafe { std::str::from_utf8_unchecked(&bytes[actual_start..actual_end]) }
+    s.get(actual_start..actual_end).unwrap_or("")
 }
 
 /// Fields of `s` between each `delim`, empty fields kept, so "" gives [""].
@@ -263,40 +250,6 @@ fn split_char(s: &str, delim: char) -> Vec<&str> {
     }
 
     if start <= n {
-        result.push(substr_range(s, start, n));
-    }
-
-    result
-}
-
-/// Runs of `s` between space, tab, CR and LF bytes, empty runs dropped.
-fn split_whitespace_vec(s: &str) -> Vec<&str> {
-    let bytes = s.as_bytes();
-    let n = bytes.len();
-    let mut result: Vec<&str> = Vec::new();
-    let mut start = 0usize;
-    let mut in_word = false;
-    let mut i = 0usize;
-
-    while i < n {
-        let c = bytes[i];
-        let is_ws = c == b' ' || c == b'\t' || c == b'\n' || c == b'\r';
-
-        if is_ws {
-            if in_word {
-                result.push(substr_range(s, start, i));
-                in_word = false;
-            }
-        } else {
-            if !in_word {
-                start = i;
-                in_word = true;
-            }
-        }
-        i += 1;
-    }
-
-    if in_word {
         result.push(substr_range(s, start, n));
     }
 
@@ -381,7 +334,8 @@ impl Parser {
     ///
     /// # Errors
     /// `ParserError::ParseError` for an empty or unknown format, an hour past
-    /// 23 (12 with AM/PM), or a minute or second past 59.
+    /// 23 (12 with AM/PM), or a minute or second past 59, all-digit seconds
+    /// past `u32::MAX` included.
     pub fn parse_time_only(&self, timestr: &str) -> Result<ParseResult, ParserError> {
         let s = trim_str(timestr);
         if s.len() == 0 {
@@ -512,7 +466,8 @@ impl Parser {
     ///
     /// # Errors
     /// `ParserError::ParseError` when the hour is past 23 (12 with `ampm`),
-    /// or the minute or second past 59.
+    /// or the minute or second past 59, all-digit seconds past `u32::MAX`
+    /// included.
     fn try_parse_separated_time(
         &self,
         s: &str,
@@ -550,7 +505,7 @@ impl Parser {
                     minute = parse_str_u32(min_str).unwrap_or(0);
 
                     if parts_len >= 3 {
-                        let (sec, micro) = self.parsems(parts[2]);
+                        let (sec, micro) = self.parsems(parts[2])?;
                         second = sec;
                         microsecond = micro;
                     }
@@ -607,7 +562,7 @@ impl Parser {
 
         if tokens_len >= 5 && (tokens[3] == ":" || tokens[3] == ".") {
             let sec_str = &tokens[4];
-            let (sec, micro) = self.parsems(sec_str);
+            let (sec, micro) = self.parsems(sec_str)?;
             second = sec;
             microsecond = micro;
         }
@@ -652,7 +607,8 @@ impl Parser {
     ///
     /// # Errors
     /// `ParserError::ParseError` for a token that fits no field outside fuzzy
-    /// mode, a bad timezone offset, or a date that does not resolve.
+    /// mode, a bad timezone offset, a date that does not resolve, or an
+    /// all-digit seconds value past `u32::MAX`.
     pub fn parse(
         &self,
         timestr: &str,
@@ -694,10 +650,7 @@ impl Parser {
         fuzzy: bool,
     ) -> Result<(ParseResult, Vec<String>), ParserError> {
         if Self::looks_like_iso(timestr) {
-            if let Ok(mut result) = super::IsoParser::new().isoparse(timestr) {
-                if result.tzoffset.is_none() && result.hour.is_some() {
-                    result = self.extract_trailing_timezone(timestr, result);
-                }
+            if let Ok(result) = super::IsoParser::new().isoparse(timestr) {
                 return Ok((result, Vec::new()));
             }
         }
@@ -930,7 +883,8 @@ impl Parser {
     /// # Errors
     /// `ParserError::ParseError` for a number that fits no field outside
     /// fuzzy mode, a word after a date separator that is not a month name,
-    /// or a date member `ymd` rejects.
+    /// a date member `ymd` rejects, or an all-digit seconds value past
+    /// `u32::MAX`.
     fn parse_numeric_token(
         &self,
         tokens: &[String],
@@ -973,7 +927,7 @@ impl Parser {
                 // 19990101T235959[.59]
                 res.hour = Some(parse_str_u32(substr_range(s, 0, 2)).unwrap_or(0));
                 res.minute = Some(parse_str_u32(substr_range(s, 2, 4)).unwrap_or(0));
-                let (sec, micro) = self.parsems(substr_range(s, 4, s.len()));
+                let (sec, micro) = self.parsems(substr_range(s, 4, s.len()))?;
                 res.second = Some(sec);
                 res.microsecond = Some(micro);
             }
@@ -1010,7 +964,7 @@ impl Parser {
             }
 
             if idx + 4 < len_l && tokens[idx + 3] == ":" {
-                let (sec, micro) = self.parsems(&tokens[idx + 4]);
+                let (sec, micro) = self.parsems(&tokens[idx + 4])?;
                 res.second = Some(sec);
                 res.microsecond = Some(micro);
                 idx += 2;
@@ -1061,10 +1015,8 @@ impl Parser {
                 idx += 1;
             } else {
                 let int_val = value as i32;
-                let could_be_date_component = (int_val >= 1 && int_val <= 31)
-                    || (int_val >= 1 && int_val <= 12)
-                    || (int_val >= 0 && int_val <= 99)
-                    || (int_val >= 1000 && int_val <= 9999);
+                let could_be_date_component =
+                    (int_val >= 0 && int_val <= 99) || (int_val >= 1000 && int_val <= 9999);
 
                 if could_be_date_component {
                     ymd.append(value as i32, None)?;
@@ -1143,7 +1095,11 @@ impl Parser {
 
     /// Set the field `hms` names (0 hour, 1 minute, 2 second) from
     /// `value_repr`, its fraction going to the next smaller field. Any
-    /// other code changes nothing. Never returns an error.
+    /// other code changes nothing.
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` when an all-digit seconds value is past
+    /// `u32::MAX`.
     fn assign_hms(
         &self,
         res: &mut ParseResult,
@@ -1168,7 +1124,7 @@ impl Parser {
                 }
             }
             2 => {
-                let (sec, micro) = self.parsems(value_repr);
+                let (sec, micro) = self.parsems(value_repr)?;
                 res.second = Some(sec);
                 res.microsecond = Some(micro);
             }
@@ -1206,22 +1162,8 @@ impl Parser {
         }
 
         match hour {
-            None => {
-                if fuzzy {
-                    return false;
-                }
-                false
-            }
-            Some(h) => {
-                if h > 12 {
-                    if fuzzy {
-                        return false;
-                    }
-                    false
-                } else {
-                    true
-                }
-            }
+            None => false,
+            Some(h) => h <= 12,
         }
     }
 
@@ -1252,72 +1194,26 @@ impl Parser {
 
     /// Seconds and microseconds of "SS[.ffffff]". The fraction is cut or
     /// zero-padded to 6 digits, and a part that is not all digits reads 0.
-    fn parsems(&self, value: &str) -> (u32, u32) {
+    ///
+    /// # Errors
+    /// `ParserError::ParseError` when the seconds are all digits but past
+    /// `u32::MAX`.
+    fn parsems(&self, value: &str) -> Result<(u32, u32), ParserError> {
+        let parse_seconds = |s: &str| match parse_str_u32(s) {
+            Err(e) if str_all_digits(s) => Err(e),
+            parsed => Ok(parsed.unwrap_or(0)),
+        };
         if !contains_char(value, '.') {
-            (parse_str_u32(value).unwrap_or(0), 0)
+            Ok((parse_seconds(value)?, 0))
         } else {
             let parts: Vec<&str> = split_char(value, '.');
             let parts_len = parts.len();
-            let seconds: u32 = parse_str_u32(parts[0]).unwrap_or(0);
+            let seconds: u32 = parse_seconds(parts[0])?;
             let frac = if parts_len > 1 { parts[1] } else { "0" };
             let padded = pad_right_zeros(frac, 6);
             let microseconds: u32 = parse_str_u32(substr_range(&padded, 0, 6)).unwrap_or(0);
-            (seconds, microseconds)
+            Ok((seconds, microseconds))
         }
-    }
-
-    /// `result` with the zone read from the last whitespace-separated word
-    /// of `timestr`, by the first rule that matches:
-    /// - a UTC alias such as "utc" sets the name upper-cased and offset 0
-    /// - a word of at most 5 bytes with an uppercase letter and no
-    ///   lowercase one, such as "EST" or "GMT+3", sets the name only, and
-    ///   the caller resolves its offset through tzinfos
-    /// - "GMT+N" or "UTC+N" in any case sets offset -N hours and no name
-    /// - any other word, or a one-word `timestr`, leaves `result` as is
-    fn extract_trailing_timezone(&self, timestr: &str, mut result: ParseResult) -> ParseResult {
-        let parts: Vec<&str> = split_whitespace_vec(timestr);
-        let parts_len = parts.len();
-        if parts_len < 2 {
-            return result;
-        }
-
-        let last_part = parts[parts_len - 1];
-
-        if self.info.utczone(last_part) {
-            result.tzname = Some(to_uppercase(last_part));
-            result.tzoffset = Some(0);
-            return result;
-        }
-
-        let last_part_len = last_part.len();
-        if last_part_len <= 5 && all_ascii_uppercase(last_part) {
-            result.tzname = Some(last_part.to_string());
-            return result;
-        }
-
-        if last_part_len >= 4 {
-            let upper = to_uppercase(last_part);
-            if starts_with_str(&upper, "GMT") || starts_with_str(&upper, "UTC") {
-                let rest = substr_range(last_part, 3, last_part_len);
-                let rest_bytes = rest.as_bytes();
-                let rest_len = rest_bytes.len();
-
-                if rest_len > 0 {
-                    let first_char = rest_bytes[0];
-                    if first_char == b'+' || first_char == b'-' {
-                        // GMT+N means my time + N = GMT, so offset -N.
-                        let sign: i32 = if first_char == b'+' { -1 } else { 1 };
-                        let offset_str = substr_range(rest, 1, rest_len);
-                        if let Ok(hours) = parse_str_i32(offset_str) {
-                            result.tzoffset = Some(sign * hours * 3600);
-                            return result;
-                        }
-                    }
-                }
-            }
-        }
-
-        result
     }
 
     /// Skipped tokens in input order, each run of adjacent indices joined
@@ -1517,6 +1413,42 @@ mod tests {
         assert_eq!(res.minute, Some(30));
         assert_eq!(res.second, Some(45));
         assert_eq!(res.microsecond, Some(123456));
+    }
+
+    /// Verify a word with a non-ASCII letter is not read as a zone name.
+    ///
+    /// Mutation: all_ascii_uppercase skipping non-ASCII bytes, so
+    /// "\u{c9}ST" counts as all upper case.
+    /// Oracle: dateutil's could_be_tzname requires every char in
+    /// string.ascii_uppercase; dateutil.parser.parse raises 'Unknown
+    /// string format' on "Jan 15 2024 10:30 \u{c9}ST".
+    #[test]
+    fn test_parse_rejects_non_ascii_zone_name() {
+        let parser = Parser::default();
+        assert!(parser
+            .parse("Jan 15 2024 10:30 \u{c9}ST", None, None, false, false)
+            .is_err());
+        let (res, _) = parser
+            .parse("Jan 15 2024 10:30 EST", None, None, false, false)
+            .unwrap();
+        assert_eq!(res.tzname.as_deref(), Some("EST"));
+    }
+
+    /// Verify a seconds token past u32 is an error.
+    ///
+    /// Mutation: `unwrap_or(0)` on the overflowed seconds in parsems,
+    /// which reads them as :00.
+    /// Oracle: dateutil.parser.parse raises OverflowError on
+    /// "10:30:4294967297" and "2024-01-15 10:30:99999999999".
+    #[test]
+    fn test_parse_seconds_overflow_is_error() {
+        let parser = Parser::default();
+        for text in ["10:30:4294967297", "2024-01-15 10:30:99999999999"] {
+            assert!(
+                parser.parse(text, None, None, false, false).is_err(),
+                "{text}"
+            );
+        }
     }
 
     /// Verify a weekday name sets the weekday next to the date fields.
@@ -1812,5 +1744,38 @@ mod tests {
     fn test_time_only_invalid_5_digits() {
         let parser = Parser::default();
         assert!(parser.parse_time_only("09301").is_err());
+    }
+
+    /// Verify parse_str_u32() and parse_str_i32() reject a value past the
+    /// type's range and accept each bound.
+    ///
+    /// Mutation: unchecked `result * 10 + digit`, which wraps or panics;
+    /// or a negative value summed as positive, which rejects i32::MIN.
+    /// Oracle: std `str::parse::<u32>` and `str::parse::<i32>`, which
+    /// these replaced: Err past the range, Ok at u32::MAX, i32::MAX and
+    /// i32::MIN.
+    #[test]
+    fn test_parse_str_int_overflow() {
+        assert_eq!(parse_str_u32("4294967295").ok(), Some(u32::MAX));
+        assert!(parse_str_u32("4294967296").is_err());
+        assert!(parse_str_u32("99999999999").is_err());
+        assert_eq!(parse_str_i32("2147483647").ok(), Some(i32::MAX));
+        assert_eq!(parse_str_i32("-2147483648").ok(), Some(i32::MIN));
+        assert!(parse_str_i32("2147483648").is_err());
+        assert!(parse_str_i32("-2147483649").is_err());
+    }
+
+    /// Verify substr_range() never returns a str cut inside a multibyte
+    /// char.
+    ///
+    /// Mutation: `from_utf8_unchecked` on the raw byte range.
+    /// Oracle: std `str::from_utf8_unchecked` safety contract, which
+    /// requires valid UTF-8; byte 6 of "12345\u{e9}" falls inside the
+    /// two-byte char.
+    #[test]
+    fn test_substr_range_inside_multibyte_char() {
+        let cut = substr_range("12345\u{e9}", 0, 6);
+        assert!(std::str::from_utf8(cut.as_bytes()).is_ok());
+        assert_eq!(substr_range("12345\u{e9}", 0, 7), "12345\u{e9}");
     }
 }

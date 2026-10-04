@@ -185,18 +185,13 @@ class Interval(_pendulum.Interval):
         Returns
         -------
         Iterator[DateTime | Date]
-            For 'days' only, a reversed interval steps backward and business
+            A reversed interval steps backward. For 'days' only, business
             mode skips non-business days.
         """
         _business = self._business
         parent_range = _pendulum.Interval.range
 
         def _range_generator() -> Iterator[DateTime | Date]:
-            if unit != 'days':
-                yield from (
-                    type(d).instance(d) for d in parent_range(self, unit, amount))
-                return
-
             if self._direction == 1:
                 op = operator.le
                 this = self._start
@@ -205,6 +200,12 @@ class Interval(_pendulum.Interval):
                 op = operator.ge
                 this = self._end
                 thru = self._start
+
+            if unit != 'days':
+                yield from (
+                    type(d).instance(d)
+                    for d in parent_range(_pendulum.Interval(this, thru), unit, amount))
+                return
 
             while op(this, thru):
                 if _business:
@@ -263,7 +264,7 @@ class Interval(_pendulum.Interval):
     def quarters(self) -> float:
         """Approximate quarter count, as 4 * days / 365.
         """
-        return self._direction * 4 * self.days / 365.0
+        return 4 * self.days / 365.0
 
     @property
     def years(self) -> int:
@@ -396,6 +397,8 @@ class Interval(_pendulum.Interval):
         def basis8(date1: Date | DateTime, date2: Date | DateTime) -> float:
             return (no_leap_index(date2) - no_leap_index(date1)) / 365.0
 
+        if basis not in range(9):
+            raise ValueError(f'Basis range [0, 8]. Unknown basis {basis}.')
         if self._start.toordinal() == self._end.toordinal():
             return 0.0
         if basis == 0:
@@ -414,10 +417,7 @@ class Interval(_pendulum.Interval):
             return basis6(self._start, self._end) * self._direction
         if basis == 7:
             return basis7(self._start, self._end) * self._direction
-        if basis == 8:
-            return basis8(self._start, self._end) * self._direction
-
-        raise ValueError(f'Basis range [0, 8]. Unknown basis {basis}.')
+        return basis8(self._start, self._end) * self._direction
 
     @reset_business
     def start_of(self, unit: str = 'month') -> list[Date | DateTime]:

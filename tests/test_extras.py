@@ -1,6 +1,7 @@
 import inspect
 from unittest.mock import patch
 
+import opendate
 import pytest
 from opendate import EST, Date, DateTime, get_calendar
 from opendate.extras import create_ics, is_business_day
@@ -148,6 +149,35 @@ def test_is_within_business_hours_has_no_datetime_param():
     """
     sig = inspect.signature(is_within_business_hours)
     assert list(sig.parameters.keys()) == ['calendar']
+
+
+def test_next_relative_date_of_week_by_day():
+    """Verify the weekday code picks this date or the next date on it.
+
+    Mutation: WEEKDAY_SHORTNAME.get(day) in place of WEEKDAY_SHORTNAME[day],
+        so an unknown code moves one week instead of raising.
+    Oracle: Wednesday 2024-01-10 and the January 2024 calendar. dateutil's
+        weekday codes MO..SU are upper case.
+    """
+    wednesday = Date(2024, 1, 10)
+    assert wednesday.next_relative_date_of_week_by_day('WE') == wednesday
+    assert wednesday.next_relative_date_of_week_by_day('MO') == Date(2024, 1, 15)
+    assert wednesday.next_relative_date_of_week_by_day('SU') == Date(2024, 1, 14)
+    for code in ('XX', 'mo'):
+        with pytest.raises(KeyError):
+            wednesday.next_relative_date_of_week_by_day(code)
+
+
+@pytest.mark.parametrize('func', [opendate.datetime, opendate.time])
+def test_tzinfo_annotation_admits_no_float(func):
+    """The tzinfo annotation of datetime() and time() leaves out float.
+
+    Mutation: float added back to the tzinfo annotation.
+    Oracle: the docstring's 'str, tzinfo or None', and the TypeError
+        DateTime and Time raise on a float tzinfo.
+    """
+    annotation = inspect.signature(func).parameters['tzinfo'].annotation
+    assert 'float' not in annotation
 
 
 if __name__ == '__main__':

@@ -21,7 +21,7 @@ enum State {
 /// Breaks strings into lexical units: words, numbers, whitespace, and
 /// separators.
 pub struct Tokenizer {
-    bytes: Vec<u8>,
+    chars: Vec<char>,
     pos: usize,
     charstack: Vec<(usize, char)>,
     tokenstack: Vec<String>,
@@ -32,7 +32,7 @@ impl Tokenizer {
     /// Create a new tokenizer for the given input string.
     pub fn new(input: &str) -> Self {
         Tokenizer {
-            bytes: input.as_bytes().to_vec(),
+            chars: input.chars().collect(),
             pos: 0,
             charstack: Vec::new(),
             tokenstack: Vec::new(),
@@ -63,17 +63,15 @@ impl Tokenizer {
         }
 
         loop {
-            if self.pos >= self.bytes.len() {
+            if self.pos >= self.chars.len() {
                 return None;
             }
             let idx = self.pos;
-            let b = self.bytes[self.pos];
+            let c = self.chars[self.pos];
             self.pos += 1;
-            if b == 0 {
+            if c == '\0' {
                 continue;
             }
-            // One byte per char, so a non-ASCII byte reads as Latin-1.
-            let c = b as char;
             return Some((idx, c));
         }
     }
@@ -238,7 +236,7 @@ impl Iterator for Tokenizer {
 // Helper functions
 
 fn is_alphabetic(c: char) -> bool {
-    (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+    c.is_alphabetic()
 }
 
 fn is_ascii_digit(c: char) -> bool {
@@ -286,12 +284,12 @@ fn contains_char(s: &str, c: char) -> bool {
 }
 
 fn replace_char(s: &str, from: char, to: char) -> String {
-    let bytes = s.as_bytes();
-    let n = bytes.len();
-    let mut result = String::with_capacity(n);
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
+    let mut result = String::with_capacity(s.len());
     let mut i = 0usize;
     while i < n {
-        let c = bytes[i] as char;
+        let c = chars[i];
         if c == from {
             result.push(to);
         } else {
@@ -303,13 +301,13 @@ fn replace_char(s: &str, from: char, to: char) -> String {
 }
 
 fn split_on_delims(s: &str) -> Vec<String> {
-    let bytes = s.as_bytes();
-    let n = bytes.len();
+    let chars: Vec<char> = s.chars().collect();
+    let n = chars.len();
     let mut parts: Vec<String> = Vec::new();
     let mut current = String::new();
     let mut i = 0usize;
     while i < n {
-        let c = bytes[i] as char;
+        let c = chars[i];
         if c == '.' || c == ',' {
             if !current.is_empty() {
                 parts.push(current);
@@ -459,5 +457,24 @@ mod tests {
 
         let tokens = Tokenizer::split("30,14159");
         assert_eq!(tokens, vec!["30.14159"]);
+    }
+
+    /// Verify a non-ASCII character stays one char and a run of Unicode
+    /// letters stays one word.
+    ///
+    /// Mutation: reading one char per UTF-8 byte, or an ASCII-only
+    ///   letter test that splits "\u{e9}t\u{e9}" at each "\u{e9}".
+    /// Oracle: dateutil.parser._timelex.split on the same inputs, which
+    ///   keeps the en dash as one token and the accented word whole.
+    #[test]
+    fn test_non_ascii() {
+        let tokens = Tokenizer::split("25 \u{2013} ok");
+        assert_eq!(tokens, vec!["25", " ", "\u{2013}", " ", "ok"]);
+
+        let tokens = Tokenizer::split("\u{e9}t\u{e9} 5 Jan");
+        assert_eq!(tokens, vec!["\u{e9}t\u{e9}", " ", "5", " ", "Jan"]);
+
+        let tokens = Tokenizer::split("\u{e9}t\u{e9}.20.2009");
+        assert_eq!(tokens, vec!["\u{e9}t\u{e9}", ".", "20", ".", "2009"]);
     }
 }

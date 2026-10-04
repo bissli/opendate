@@ -141,10 +141,10 @@ def type_class(typ: type | str | None, obj: Any) -> type:
     Parameters
     ----------
     typ : type, str or None
-        A class, or 'Date', 'DateTime' or 'Interval' naming one. Any other
-        truthy value comes back as it is. None picks the class from obj.
+        A class, or 'Date', 'DateTime' or 'Interval' naming one. None or ''
+        picks the class from obj.
     obj : Any
-        Value whose class picks the result where typ is None.
+        Value whose class picks the result where typ is None or ''.
 
     Returns
     -------
@@ -154,19 +154,20 @@ def type_class(typ: type | str | None, obj: Any) -> type:
     Raises
     ------
     ValueError
-        typ is None and obj is no stdlib, pendulum or opendate date,
-        datetime or Interval.
+        typ is any other non-empty str, or typ is None or '' and obj is no
+        stdlib, pendulum or opendate date, datetime or Interval.
     """
     # Circular import: opendate imports this module.
     import opendate
 
-    if isinstance(typ, str):
+    if typ and isinstance(typ, str):
         if typ == 'Date':
             return opendate.Date
         if typ == 'DateTime':
             return opendate.DateTime
         if typ == 'Interval':
             return opendate.Interval
+        raise ValueError(f'Unknown type {typ}')
     if typ:
         return typ
     if obj.__class__.__name__ == 'Interval':

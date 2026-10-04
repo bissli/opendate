@@ -199,30 +199,6 @@ impl ParserInfo {
             year
         }
     }
-
-    /// Same as `convertyear`.
-    #[allow(dead_code)]
-    pub fn validate_year(&self, year: i32, century_specified: bool) -> i32 {
-        self.convertyear(year, century_specified)
-    }
-
-    /// Normalize UTC timezone info.
-    #[allow(dead_code)]
-    pub fn normalize_tzinfo(
-        &self,
-        tzoffset: Option<i32>,
-        tzname: Option<&str>,
-    ) -> (Option<i32>, Option<String>) {
-        match (tzoffset, tzname) {
-            (Some(0), None) | (None, Some("Z" | "z")) | (Some(0), Some("Z" | "z")) => {
-                (Some(0), Some("UTC".to_string()))
-            }
-            (Some(offset), Some(name)) if offset != 0 && self.utczone(name) => {
-                (Some(0), Some("UTC".to_string()))
-            }
-            (offset, name) => (offset, name.map(String::from)),
-        }
-    }
 }
 
 /// Copy of `s` with ASCII A-Z lowercased; every other byte maps to one
@@ -272,8 +248,7 @@ fn name_index(groups: &[&[&str]], first: u32) -> HashMap<String, u32> {
     index
 }
 
-/// Current year from the system clock, counting 365-day years. It ignores
-/// leap days, so it can read one year ahead in late December.
+/// Current UTC year from the system clock.
 fn chrono_lite_year() -> i32 {
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -281,10 +256,25 @@ fn chrono_lite_year() -> i32 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
 
-    let secs = duration.as_secs() as i64;
-    let days = secs / 86400;
-    let years = days / 365;
-    (1970 + years) as i32
+    year_from_unix_days(duration.as_secs() as i64 / 86400)
+}
+
+/// Gregorian year holding the day `days` days after 1970-01-01.
+///
+/// # Arguments
+/// * `days` - Whole days since 1970-01-01. A negative count gives 1970.
+fn year_from_unix_days(days: i64) -> i32 {
+    let mut year = 1970i32;
+    let mut remaining = days;
+    loop {
+        let is_leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+        let year_len = if is_leap { 366 } else { 365 };
+        if remaining < year_len {
+            return year;
+        }
+        remaining -= year_len;
+        year += 1;
+    }
 }
 
 #[cfg(test)]
@@ -406,6 +396,26 @@ mod tests {
 
         let converted = info.convertyear(90, false);
         assert!(converted >= 1900 && converted < 2000);
+    }
+
+    /// Verify the year from a day count since 1970-01-01 at year edges.
+    ///
+    /// Mutation: 1970 + days / 365, which ignores leap days and reads
+    ///   2027 from 2026-12-20, or a leap test that drops the 100 or 400
+    ///   rule.
+    /// Oracle: Python's datetime.date(1970, 1, 1) + timedelta(days),
+    ///   for 2024-12-31, 2025-01-01, 2026-12-20, 2026-12-31,
+    ///   2027-01-01, 2000-12-31 and 2101-01-01.
+    #[test]
+    fn test_year_from_unix_days() {
+        assert_eq!(year_from_unix_days(0), 1970);
+        assert_eq!(year_from_unix_days(20088), 2024);
+        assert_eq!(year_from_unix_days(20089), 2025);
+        assert_eq!(year_from_unix_days(20807), 2026);
+        assert_eq!(year_from_unix_days(20818), 2026);
+        assert_eq!(year_from_unix_days(20819), 2027);
+        assert_eq!(year_from_unix_days(11322), 2000);
+        assert_eq!(year_from_unix_days(47847), 2101);
     }
 
     /// Verify "of" is a pertain word in any case.

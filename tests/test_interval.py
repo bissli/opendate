@@ -239,6 +239,22 @@ def test_interval_range_weeks_years():
     assert result == [Date(2014, 7, 15)]
 
 
+def test_interval_range_reversed_non_day_units():
+    """Verify a reversed interval steps backward for units other than days.
+
+    Mutation: the parent range run over the reordered endpoints, which
+        yields nothing; or each step taken from the last step, so the
+        month walk from 08-31 sticks on the 30th.
+    Oracle: pendulum.interval(begdate, enddate).range on the same pairs.
+    """
+    result = list(Interval(Date(2014, 8, 1), Date(2014, 7, 15)).range('weeks'))
+    assert result == [Date(2014, 8, 1), Date(2014, 7, 25), Date(2014, 7, 18)]
+
+    result = list(Interval(Date(2014, 8, 31), Date(2014, 5, 31)).range('months'))
+    assert result == [
+        Date(2014, 8, 31), Date(2014, 7, 31), Date(2014, 6, 30), Date(2014, 5, 31)]
+
+
 def test_interval_days_property():
     """Test days property with and without business mode.
 
@@ -276,6 +292,19 @@ def test_interval_quarters_property():
     assert round(Interval(Date(2020, 1, 1), Date(2020, 4, 1)).quarters, 2) == 1.0
     assert round(Interval(Date(2020, 1, 1), Date(2020, 7, 1)).quarters, 2) == 1.99
     assert round(Interval(Date(2020, 1, 1), Date(2020, 8, 1)).quarters, 2) == 2.33
+
+
+def test_interval_quarters_reversed_negates():
+    """Verify a reversed interval gives the negated forward quarter count.
+
+    Mutation: the direction applied on top of the already signed days,
+        so the two signs cancel.
+    Oracle: the class docstring, which makes a reversed interval's counts
+        negative, and the quarters formula 4 * days / 365.
+    """
+    forward = Interval(Date(2020, 1, 1), Date(2020, 4, 1)).quarters
+    assert Interval(Date(2020, 4, 1), Date(2020, 1, 1)).quarters == -forward
+    assert forward == 4 * 91 / 365
 
 
 def test_interval_same_date_range():

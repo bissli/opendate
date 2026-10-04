@@ -174,11 +174,13 @@ class Date(
         if not isinstance(s, str):
             raise TypeError(f'Invalid type for date parse: {s.__class__}')
 
+        bad_number = False
         with contextlib.suppress(ValueError):
-            if float(s) and len(s) != 8:
-                if raise_err:
-                    raise ValueError('Invalid date: %s', s)
-                return
+            bad_number = bool(float(s)) and len(s) != 8
+        if bad_number:
+            if raise_err:
+                raise ValueError(f'Invalid date: {s}')
+            return
 
         if m := DATEMATCH.match(s):
             d = date_for_symbol(m.groupdict().get('d'))
@@ -186,11 +188,7 @@ class Date(
             if not n:
                 return d
             n = int(n)
-            b = m.groupdict().get('b')
-            if b:
-                if b != 'b':
-                    raise ValueError(
-                        f"Expected 'b' for business day modifier, got '{b}'")
+            if m.groupdict().get('b'):
                 d = d.calendar(calendar).business().add(days=n)
             else:
                 d = d.add(days=n)
@@ -205,14 +203,13 @@ class Date(
             return cls.instance(parsed)
 
         if raise_err:
-            raise ValueError('Failed to parse date: %s', s)
+            raise ValueError(f'Failed to parse date: {s}')
 
     @classmethod
     def instance(
         cls,
         obj: _datetime.date
         | _datetime.datetime
-        | _datetime.time
         | pd.Timestamp
         | np.datetime64
         | Self

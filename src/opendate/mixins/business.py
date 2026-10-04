@@ -137,7 +137,8 @@ class DateBusinessMixin:
             if days == 0 and kwargs:
                 return self._business_or_next().add(**kwargs)
             if days < 0:
-                return self.business().subtract(days=abs(days), **kwargs)
+                negated_kwargs = {k: -v for k, v in kwargs.items()}
+                return self.business().subtract(days=abs(days), **negated_kwargs)
             if self._is_out_of_range():
                 return self
             result = self._add_business_days(days)
@@ -186,7 +187,8 @@ class DateBusinessMixin:
             if days == 0 and kwargs:
                 return self._business_or_previous().subtract(**kwargs)
             if days < 0:
-                return self.business().add(days=abs(days), **kwargs)
+                negated_kwargs = {k: -v for k, v in kwargs.items()}
+                return self.business().add(days=abs(days), **negated_kwargs)
             if self._is_out_of_range():
                 return self
             result = self._add_business_days(-days)
@@ -351,7 +353,7 @@ class DateBusinessMixin:
 
     business_open = is_business_day
 
-    def business_hours(self) -> tuple[DateTime, DateTime]:
+    def business_hours(self) -> tuple[DateTime | None, DateTime | None]:
         """Get market open and close times for this date.
 
         Returns

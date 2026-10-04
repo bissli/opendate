@@ -372,6 +372,18 @@ def test_parse_with_different_inputs():
     assert dt.minute == 11
 
 
+def test_parse_error_names_the_input():
+    """Verify DateTime.parse's ValueError message carries the rejected string.
+
+    Mutation: a logging-style ('...%s', s) pair passed to ValueError,
+        which never fills in the placeholder.
+    Oracle: the legacy tc to_datetime message
+        'Invalid date-time format: ' + s.
+    """
+    with pytest.raises(ValueError, match='^Invalid date-time format: zzz$'):
+        DateTime.parse('zzz', raise_err=True)
+
+
 def test_instance_with_different_types():
     """Test DateTime.instance with various input types.
 

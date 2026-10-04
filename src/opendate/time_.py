@@ -139,7 +139,7 @@ class Time(_pendulum.Time):
             return cls(hour, minute, second, microsecond, tzinfo=tzinfo)
 
         if raise_err:
-            raise ValueError('Failed to parse time: %s', s)
+            raise ValueError(f'Failed to parse time: {s}')
 
     @classmethod
     def instance(
@@ -183,6 +183,9 @@ class Time(_pendulum.Time):
 
         if type(obj) is cls and not tz:
             return obj
+
+        if isinstance(obj, np.datetime64):
+            obj = np.datetime64(obj, 'us').astype(_datetime.datetime)
 
         tz = tz or obj.tzinfo or UTC
 

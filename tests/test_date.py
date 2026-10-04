@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pendulum
 import pytest
-from opendate import WEEKDAY_SHORTNAME, Date, WeekDay, expect_date
+from opendate import Date, WeekDay, expect_date
 from opendate import get_calendar
 
 
@@ -335,24 +335,6 @@ def test_set_calendar():
     assert d == Date(2000, 1, 14)
 
 
-def start_of_month_weekday(self, weekday='MO'):
-    """Get first X of the month
-
-    >>> Date(2014, 8, 1).start_of_month_weekday('WE')
-    Date(2014, 8, 6)
-    >>> Date(2014, 7, 31).start_of_month_weekday('WE')
-    Date(2014, 7, 2)
-    >>> Date(2014, 8, 6).start_of_month_weekday('WE')
-    Date(2014, 8, 6)
-    """
-    return self.start_of('month').next(WEEKDAY_SHORTNAME.get(weekday))
-
-
-def end_of_month_weekday(self, weekday='SU'):
-    """Like `start`, but for the end X weekday of month"""
-    return self.end_of('month').previous(WEEKDAY_SHORTNAME.get(weekday))
-
-
 def test_parse():
     """Test Date.parse with various input formats.
 
@@ -469,6 +451,33 @@ def test_parse_error_handling():
 
     with pytest.raises(ValueError):
         Date.parse(None, raise_err=True)
+
+
+@pytest.mark.parametrize('numeric_str', ['1234', '2020115', '100.264400'])
+def test_parse_numeric_not_8_digits_raises_with_raise_err(numeric_str):
+    """Verify raise_err=True raises for an all-numeric string not 8 long.
+
+    Mutation: the raise placed back inside the suppress(ValueError) that
+        guards float(), so parsing goes on to the fuzzy parser.
+    Oracle: the Date.parse docstring - any other all-numeric string is
+        unparseable, and raise_err raises on unparseable input.
+    """
+    assert Date.parse(numeric_str) is None
+    with pytest.raises(ValueError, match=f'^Invalid date: {numeric_str}$'):
+        Date.parse(numeric_str, raise_err=True)
+
+
+def test_parse_error_message_names_the_input():
+    """Verify the parse error message is formatted with the bad input.
+
+    Mutation: ValueError built logging-style, ('...: %s', s), so str(e)
+        shows the raw tuple.
+    Oracle: the predecessor tc.date.to_date doctest,
+        'ValueError: Failed to parse date: bad date'.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        Date.parse('bad date', raise_err=True)
+    assert str(excinfo.value) == 'Failed to parse date: bad date'
 
 
 @pytest.mark.parametrize('copier', [copy.copy, copy.deepcopy])

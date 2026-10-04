@@ -138,3 +138,16 @@ def test_invalid_basis():
     for bad in (-1, 9, 100):
         with pytest.raises(ValueError, match='Basis range'):
             yearfrac(Date(2020, 1, 1), Date(2021, 1, 1), bad)
+
+
+def test_invalid_basis_on_zero_length_interval():
+    """Verify a basis outside 0-8 raises even when the endpoints match.
+
+    Mutation: the equal-endpoint shortcut returning 0.0 before the basis
+        is checked.
+    Oracle: the yearfrac docstring, which raises ValueError for any basis
+        outside 0-8.
+    """
+    for bad in (-1, 9, 99):
+        with pytest.raises(ValueError, match='Basis range'):
+            yearfrac(Date(2020, 1, 1), Date(2020, 1, 1), bad)

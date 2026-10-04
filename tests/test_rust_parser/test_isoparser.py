@@ -404,6 +404,17 @@ class TestIsoparserInvalidFormats:
     """Test that invalid formats are rejected.
     """
 
+    def test_date_compact_yyyymm_rejected(self):
+        """Test the compact year-month 202401 is rejected.
+
+        Mutation: a 6-digit date read as YYYYMM (2024-01) or as YYMMDD.
+        Oracle: dateutil's isoparse docstring lists YYYY-MM but no YYYYMM,
+            and dateutil.parser.isoparse('202401') raises 'Invalid
+            ordinal day'.
+        """
+        with pytest.raises(ValueError, match='Invalid ordinal day'):
+            isoparse('202401')
+
     def test_time_trailing_digit(self):
         """Test that trailing digit is rejected: 09301 (5 digits).
 

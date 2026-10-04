@@ -11,9 +11,11 @@ type YmdResult = Result<(Option<i32>, Option<i32>, Option<i32>), ParserError>;
 /// Holds parsed Y/M/D values and tracks which position is which.
 #[derive(Debug, Clone, Default)]
 pub struct Ymd {
-    /// The numeric values (up to 3)
+    /// The numeric values in append order. `resolve` rejects more than
+    /// three.
     values: Vec<i32>,
-    /// Whether the century was explicitly specified (4-digit year)
+    /// True once a value above 100, or a token of three or more digits,
+    /// is appended.
     pub century_specified: bool,
     /// Index of day value, if known
     dstridx: Option<usize>,
@@ -157,7 +159,8 @@ impl Ymd {
     /// # Errors
     ///
     /// `ParserError::ParseError` when `s` is not an optionally signed
-    /// decimal integer, or on any error `append` gives.
+    /// decimal integer, when it overflows i32, or on any error `append`
+    /// gives.
     pub fn append_str(&mut self, s: &str, label: Option<char>) -> Result<(), ParserError> {
         let value: i32 = parse_i32(s)?;
 
@@ -398,7 +401,12 @@ fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-/// Parse i32 from string.
+/// Parse an optionally signed decimal integer. A bare sign gives 0.
+///
+/// # Errors
+///
+/// `ParserError::ParseError` when `s` is empty, holds a non-digit after
+/// the sign, or overflows i32.
 fn parse_i32(s: &str) -> Result<i32, ParserError> {
     let bytes = s.as_bytes();
     let n = bytes.len();
@@ -416,7 +424,10 @@ fn parse_i32(s: &str) -> Result<i32, ParserError> {
     while i < n {
         let c = bytes[i];
         if c >= b'0' && c <= b'9' {
-            result = result * 10 + (c - b'0') as i32;
+            result = result
+                .checked_mul(10)
+                .and_then(|r| r.checked_add((c - b'0') as i32))
+                .ok_or_else(|| ParserError::ParseError(format!("Invalid number: {}", s)))?;
         } else {
             return Err(ParserError::ParseError(format!("Invalid number: {}", s)));
         }
@@ -591,6 +602,20 @@ mod tests {
             ymd.append_str(token, None).unwrap();
             assert_eq!(ymd.century_specified, expected, "{token}");
         }
+    }
+
+    /// Verify append_str() rejects a token past i32::MAX.
+    ///
+    /// Mutation: unchecked `result * 10 + digit` in parse_i32, which
+    /// wraps 4294969320 to 2024.
+    /// Oracle: i32::MAX = 2147483647, and dateutil.parser.parse raises
+    /// OverflowError on "Jan-01-4294969320".
+    #[test]
+    fn test_ymd_token_overflow() {
+        assert!(Ymd::new().append_str("2147483647", None).is_ok());
+        assert!(Ymd::new().append_str("2147483648", None).is_err());
+        assert!(Ymd::new().append_str("4294969320", None).is_err());
+        assert!(Ymd::new().append_str("99999999999", None).is_err());
     }
 
     /// Verify resolve() rejects a fourth value.

@@ -1,6 +1,7 @@
 import datetime
 import zoneinfo
 
+import numpy as np
 import pendulum
 import pytest
 
@@ -93,6 +94,29 @@ def test_time_instance_basic():
     result = Time.instance(Time(12, 30, 1))
     assert result == Time(12, 30, 1)
     assert result.tzinfo is None
+
+
+def test_time_instance_reads_a_numpy_datetime64():
+    """Verify Time.instance takes the time of day of a numpy datetime64.
+
+    Mutation: instance reading tzinfo and hour off the datetime64 itself,
+        which has neither, so it raises AttributeError.
+    Oracle: the instance docstring, which lists np.datetime64 as an
+        accepted obj and UTC where obj has no zone.
+    """
+    value = np.datetime64('2022-01-01T12:30:15.250000')
+    assert Time.instance(value) == Time(12, 30, 15, 250000, tzinfo=UTC)
+
+
+def test_time_parse_error_names_the_input():
+    """Verify Time.parse's ValueError message carries the rejected string.
+
+    Mutation: a logging-style ('...%s', s) pair passed to ValueError,
+        which never fills in the placeholder.
+    Oracle: the legacy tc to_time message 'Failed to parse time: ' + s.
+    """
+    with pytest.raises(ValueError, match='^Failed to parse time: zzz$'):
+        Time.parse('zzz', raise_err=True)
 
 
 def test_time_in_timezone():

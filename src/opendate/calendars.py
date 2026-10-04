@@ -3,11 +3,12 @@ from __future__ import annotations
 import datetime as _datetime
 import zoneinfo as _zoneinfo
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 
 import opendate as _date
 import pandas as pd
 import pandas_market_calendars as mcal
-from opendate.constants import MAX_YEAR, UTC, Timezone
+from opendate.constants import MAX_YEAR, MIN_YEAR, UTC, Timezone
 from opendate.helpers import _BusinessCalendar, _get_decade_bounds
 
 
@@ -100,8 +101,7 @@ class ExchangeCalendar(Calendar):
     Parameters
     ----------
     name : str
-        A pandas_market_calendars name. It is upper-cased before the lookup,
-        so a mixed-case name such as 'CME_Equity' raises.
+        A pandas_market_calendars name, any case.
 
     Attributes
     ----------
@@ -111,7 +111,7 @@ class ExchangeCalendar(Calendar):
     Raises
     ------
     RuntimeError
-        pandas_market_calendars has no calendar named name.upper().
+        pandas_market_calendars has no calendar named name in any case.
     """
 
     BEGDATE = _datetime.date(2000, 1, 1)
@@ -119,7 +119,9 @@ class ExchangeCalendar(Calendar):
 
     def __init__(self, name: str) -> None:
         self._name = name.upper()
-        self._mcal = mcal.get_calendar(self._name)
+        mcal_name_by_upper = {n.upper(): n for n in mcal.get_calendar_names()}
+        mcal_name = mcal_name_by_upper.get(self._name, self._name)
+        self._mcal = mcal.get_calendar(mcal_name)
         tz_str = str(self._mcal.tz)
         self._tz = Timezone(tz_str)
         self._business_days_cache: dict[tuple, set] = {}
@@ -143,36 +145,35 @@ class ExchangeCalendar(Calendar):
         self,
         begdate: _datetime.date = None,
         enddate: _datetime.date = None) -> set:
-        """Business days in the padded decade around begdate.
+        """Business days from begdate through enddate.
 
         Parameters
         ----------
         begdate : datetime.date, optional
-            Selects the decade. None means BEGDATE.
+            First date, inclusive. None means BEGDATE.
         enddate : datetime.date, optional
-            Unused.
+            Last date, inclusive. None means ENDDATE.
 
         Returns
         -------
         set of Date
-            Every business day in _get_decade_bounds(begdate.year), a
-            superset of begdate through enddate, so a caller that needs the
-            range alone must filter. Empty when begdate's year lies outside
-            MIN_YEAR..MAX_YEAR. The set is the cached object: mutating it
-            changes later results.
+            Days outside MIN_YEAR..MAX_YEAR are never included.
         """
         if begdate is None:
             begdate = self.BEGDATE
         if enddate is None:
             enddate = self.ENDDATE
+        begdate = _date.Date.instance(begdate)
+        enddate = _date.Date.instance(enddate)
 
-        if begdate.year > MAX_YEAR:
-            return set()
-
-        bounds = _get_decade_bounds(begdate.year)
-        if bounds is None:
-            return set()
-        return self._get_business_days_cached(*bounds)
+        first_decade = max(begdate.year, MIN_YEAR) // 10
+        last_decade = min(enddate.year, MAX_YEAR) // 10
+        result = set()
+        for decade in range(first_decade, last_decade + 1):
+            bounds = _get_decade_bounds(decade * 10)
+            decade_days = self._get_business_days_cached(*bounds)
+            result.update(d for d in decade_days if begdate <= d <= enddate)
+        return result
 
     def _get_business_days_cached(
         self,
@@ -205,8 +206,7 @@ class ExchangeCalendar(Calendar):
         -------
         dict
             Maps a datetime.date to an (open, close) pair of DateTime in the
-            exchange zone. The dict is the cached object: mutating it changes
-            later results.
+            exchange zone.
         """
         if begdate is None:
             begdate = self.BEGDATE
@@ -222,7 +222,7 @@ class ExchangeCalendar(Calendar):
                 for o, c in zip(df.market_open, df.market_close)
                 ]
             self._business_hours_cache[key] = dict(zip(df.index.date, open_close))
-        return self._business_hours_cache[key]
+        return dict(self._business_hours_cache[key])
 
     def business_holidays(
         self,
@@ -240,7 +240,6 @@ class ExchangeCalendar(Calendar):
         Returns
         -------
         set of Date
-            The cached object: mutating it changes later results.
         """
         if begdate is None:
             begdate = self.BEGDATE
@@ -254,7 +253,7 @@ class ExchangeCalendar(Calendar):
                 for d in map(pd.to_datetime, self._mcal.holidays().holidays)
                 if begdate <= d.date() <= enddate
                 }
-        return self._business_holidays_cache[key]
+        return set(self._business_holidays_cache[key])
 
     def _get_fast_calendar(
         self,
@@ -312,7 +311,7 @@ class CustomCalendar(Calendar):
     def __init__(
         self,
         name: str = 'custom',
-        holidays: set[_datetime.date] | callable = None,
+        holidays: set[_datetime.date] | Callable | None = None,
         tz: _zoneinfo.ZoneInfo = UTC,
         weekmask: str = 'Mon Tue Wed Thu Fri',
         open_time: _datetime.time = _datetime.time(9, 30),
@@ -525,8 +524,8 @@ def get_calendar(name: str) -> Calendar:
     if name_upper in _calendar_cache:
         return _calendar_cache[name_upper]
 
-    valid_names = set(mcal.get_calendar_names())
-    if name_upper in valid_names or name in valid_names:
+    valid_names = {n.upper() for n in mcal.get_calendar_names()}
+    if name_upper in valid_names:
         cal = ExchangeCalendar(name)
         _calendar_cache[name_upper] = cal
         return cal

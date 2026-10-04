@@ -39,7 +39,7 @@ def datetime(
     minute: int = 0,
     second: int = 0,
     microsecond: int = 0,
-    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
+    tzinfo: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
     fold: int = 0,
 ) -> DateTime:
     """DateTime for the given fields, in UTC unless tzinfo names a zone.
@@ -88,7 +88,7 @@ def time(
     minute: int = 0,
     second: int = 0,
     microsecond: int = 0,
-    tzinfo: str | float | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
+    tzinfo: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = UTC,
 ) -> Time:
     """Time of day for the given fields, in UTC unless tzinfo names a zone.
 

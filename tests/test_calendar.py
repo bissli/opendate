@@ -1,6 +1,10 @@
+import datetime
+import typing
+
 import pytest
 
-from opendate import CustomCalendar, Date, ExchangeCalendar
+import pandas as pd
+from opendate import UTC, CustomCalendar, Date, DateTime, ExchangeCalendar
 from opendate import available_calendars, get_calendar, register_calendar
 
 
@@ -225,6 +229,119 @@ def test_date_business_with_string_calendar():
     """
     d = Date(2024, 1, 1).calendar('NYSE').b.add(days=1)
     assert d == Date(2024, 1, 2)
+
+
+def test_nyse_business_days_bounded_by_range():
+    """Verify business_days returns begdate through enddate and nothing else.
+
+    Mutation: returning the whole cached decade, ignoring enddate.
+    Oracle: hand-read NYSE January 2024; closed 01-01 (New Year's Day),
+        01-15 (Martin Luther King Jr. Day) and weekends.
+    """
+    expected = {
+        Date(2024, 1, day) for day in range(1, 32)
+        if Date(2024, 1, day).weekday() < 5 and day not in {1, 15}
+        }
+    assert get_calendar('NYSE').business_days(Date(2024, 1, 1), Date(2024, 1, 31)) \
+        == expected
+
+
+def test_nyse_business_days_spans_decades():
+    """Verify a range past the begdate decade's cache keeps its later days.
+
+    Mutation: loading only the decade around begdate, which for 2019 ends
+        on 2021-01-01.
+    Oracle: NYSE closes 2021-01-01 (New Year's Day); 2021-01-04 and
+        2021-01-05 are an open Monday and Tuesday.
+    """
+    business_days = get_calendar('NYSE').business_days(
+        Date(2019, 12, 31),
+        Date(2021, 1, 5))
+    assert Date(2019, 12, 31) in business_days
+    assert Date(2021, 1, 1) not in business_days
+    assert Date(2021, 1, 4) in business_days
+    assert max(business_days) == Date(2021, 1, 5)
+
+
+def test_nyse_business_days_default_range():
+    """Verify business_days() covers BEGDATE through ENDDATE.
+
+    Mutation: the no-argument call loading only the decade around BEGDATE.
+    Oracle: the ExchangeCalendar docstring's BEGDATE 2000-01-01 and ENDDATE
+        2050-01-01, a Saturday; 2000-01-03 and 2049-12-31 are weekdays.
+    """
+    business_days = get_calendar('NYSE').business_days()
+    assert min(business_days) == Date(2000, 1, 3)
+    assert max(business_days) == Date(2049, 12, 31)
+
+
+def test_exchange_results_do_not_share_cache():
+    """Verify mutating a returned set or dict leaves later results intact.
+
+    Mutation: business_days, business_hours or business_holidays returning
+        the cached object itself.
+    Oracle: NYSE opens 2024-01-16 after the MLK Day holiday 2024-01-15,
+        trades 09:30 to 16:00 New York time, and closes 2024-01-01.
+    """
+    nyse = ExchangeCalendar('NYSE')
+    nyse.business_days(Date(2024, 1, 1), Date(2024, 1, 31)).clear()
+    assert Date(2024, 1, 12).calendar(nyse).b.add(days=1) == Date(2024, 1, 16)
+
+    nyse.business_hours(Date(2024, 1, 2), Date(2024, 1, 2)).clear()
+    open_time, close_time = Date(2024, 1, 2).calendar(nyse).business_hours()
+    assert (open_time.hour, open_time.minute) == (9, 30)
+    assert (close_time.hour, close_time.minute) == (16, 0)
+
+    nyse.business_holidays(Date(2024, 1, 1), Date(2024, 1, 31)).clear()
+    assert Date(2024, 1, 1) in nyse.business_holidays(
+        Date(2024, 1, 1),
+        Date(2024, 1, 31))
+
+
+def test_get_calendar_mixed_case_exchange():
+    """Verify a mixed-case pandas_market_calendars name resolves in any case.
+
+    Mutation: ExchangeCalendar looking up name.upper(), which
+        pandas_market_calendars does not register.
+    Oracle: available_calendars() lists 'CME_Equity'; the CME trades on
+        Chicago time.
+    """
+    assert 'CME_Equity' in available_calendars()
+    for name in ('CME_Equity', 'cme_equity'):
+        cme = get_calendar(name)
+        assert isinstance(cme, ExchangeCalendar)
+        assert cme.name == 'CME_EQUITY'
+        assert 'America/Chicago' in str(cme.tz)
+
+
+def test_custom_calendar_type_hints_resolve():
+    """Verify typing.get_type_hints resolves CustomCalendar's signature.
+
+    Mutation: holidays annotated with the builtin callable, a function,
+        which makes the union raise TypeError.
+    Oracle: Python typing docs; collections.abc.Callable is the type.
+    """
+    hints = typing.get_type_hints(CustomCalendar.__init__)
+    assert hints['open_time'] is datetime.time
+
+
+@pytest.mark.parametrize('bound', [
+    lambda d: DateTime(d.year, d.month, d.day, 9, 30, tzinfo=UTC),
+    lambda d: datetime.datetime(d.year, d.month, d.day, 9, 30),
+    lambda d: pd.Timestamp(d.year, d.month, d.day, 9, 30),
+    ])
+def test_nyse_business_days_accepts_datetime_bounds(bound):
+    """Verify business_days takes datetime bounds as their calendar date.
+
+    Mutation: comparing a datetime bound directly against the Date
+        members, which raises TypeError.
+    Oracle: the Date-bounded call over the same days; the begdate
+        docstring entry accepts any datetime.date, a datetime included.
+    """
+    nyse = get_calendar('NYSE')
+    begdate, enddate = Date(2024, 1, 1), Date(2024, 1, 31)
+    expected = nyse.business_days(begdate, enddate)
+    assert nyse.business_days(bound(begdate), bound(enddate)) == expected
 
 
 if __name__ == '__main__':

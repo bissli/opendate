@@ -50,7 +50,9 @@ impl IsoParser {
     /// # Returns
     ///
     /// The parsed components. A time of `24:00` comes back as hour 0 on
-    /// the parsed date, so the caller must add the day itself.
+    /// the next day. Where the date is outside the calendar (year 0, a
+    /// month outside 1-12, day 0 or a day past the month's end), the hour
+    /// is still 0 and the date fields stay as parsed.
     ///
     /// # Errors
     ///
@@ -71,35 +73,33 @@ impl IsoParser {
         if pos < len {
             let sep_byte = bytes[pos];
             if self.sep.is_none() || Some(sep_byte) == self.sep {
-                if !is_ascii_digit(sep_byte) {
-                    let time_start = pos + 1;
-                    let time_len = len - time_start;
-                    let (time_result, time_pos) =
-                        self.parse_isotime_internal_slice(bytes, time_start, time_len)?;
-                    result.hour = time_result.hour;
-                    result.minute = time_result.minute;
-                    result.second = time_result.second;
-                    result.microsecond = time_result.microsecond;
-                    result.tzoffset = time_result.tzoffset;
-                    result.tzname = time_result.tzname;
+                let time_start = pos + 1;
+                let time_len = len - time_start;
+                let (time_result, time_pos) =
+                    self.parse_isotime_internal_slice(bytes, time_start, time_len)?;
+                result.hour = time_result.hour;
+                result.minute = time_result.minute;
+                result.second = time_result.second;
+                result.microsecond = time_result.microsecond;
+                result.tzoffset = time_result.tzoffset;
+                result.tzname = time_result.tzname;
 
-                    let consumed = time_start + time_pos;
-                    if consumed < len {
-                        let mut all_whitespace = true;
-                        let mut i = consumed;
-                        while i < len {
-                            if bytes[i] != b' ' && bytes[i] != b'\t' {
-                                all_whitespace = false;
-                                break;
-                            }
-                            i += 1;
+                let consumed = time_start + time_pos;
+                if consumed < len {
+                    let mut all_whitespace = true;
+                    let mut i = consumed;
+                    while i < len {
+                        if bytes[i] != b' ' && bytes[i] != b'\t' {
+                            all_whitespace = false;
+                            break;
                         }
-                        if !all_whitespace {
-                            return Err(ParserError::ParseError(format!(
-                                "String contains unknown ISO components: {:?}",
-                                slice_to_str(bytes, consumed, len)
-                            )));
-                        }
+                        i += 1;
+                    }
+                    if !all_whitespace {
+                        return Err(ParserError::ParseError(format!(
+                            "String contains unknown ISO components: {:?}",
+                            slice_to_str(bytes, consumed, len)
+                        )));
                     }
                 }
             } else {
@@ -111,6 +111,21 @@ impl IsoParser {
 
         if result.hour == Some(24) {
             result.hour = Some(0);
+            if let (Some(year @ 1..), Some(month @ 1..=12), Some(day @ 1..)) =
+                (result.year, result.month, result.day)
+            {
+                let month_days = days_in_month(year, month);
+                if day < month_days {
+                    result.day = Some(day + 1);
+                } else if day == month_days && month == 12 {
+                    result.year = Some(year + 1);
+                    result.month = Some(1);
+                    result.day = Some(1);
+                } else if day == month_days {
+                    result.month = Some(month + 1);
+                    result.day = Some(1);
+                }
+            }
         }
 
         Ok(result)
@@ -695,7 +710,7 @@ fn day_of_week(year: i32, month: u32, day: u32) -> u32 {
     let k = y % 100;
     let j = y / 100;
     let h = (q + (13 * (m as i32 + 1)) / 5 + k + k / 4 + j / 4 - 2 * j) % 7;
-    ((h + 5) % 7) as u32
+    (h + 5).rem_euclid(7) as u32
 }
 
 #[cfg(test)]
@@ -959,5 +974,87 @@ mod tests {
         assert_eq!(r.hour, Some(14));
         assert_eq!(r.minute, Some(30));
         assert_eq!(r.second, Some(45));
+    }
+
+    /// Verify isoparse() reads a digit after the date as the separator.
+    ///
+    /// Mutation: skipping the time when the byte after the date is a
+    /// digit.
+    /// Oracle: dateutil.parser.isoparse, which raises "ISO time too
+    /// short" for the first two and gives 12:30 for `2024011511230`.
+    #[test]
+    fn test_isoparse_digit_separator() {
+        let parser = IsoParser::new();
+
+        assert!(parser.isoparse("2024-01-155").is_err());
+        assert!(parser.isoparse("2024-0115").is_err());
+
+        let r = parser.isoparse("2024011511230").unwrap();
+        assert_eq!((r.year, r.month, r.day), (Some(2024), Some(1), Some(15)));
+        assert_eq!((r.hour, r.minute), (Some(12), Some(30)));
+    }
+
+    /// Verify isoparse() moves 24:00 to 00:00 on the next day.
+    ///
+    /// Mutation: keeping the parsed date, or adding a day without
+    /// carrying into the month or year.
+    /// Oracle: dateutil.parser.isoparse, 2024-12-31T24:00 = 2025-01-01
+    /// 00:00 and 2023-02-28T24:00 = 2023-03-01 00:00.
+    #[test]
+    fn test_isoparse_hour_24_next_day() {
+        let parser = IsoParser::new();
+        let cases = [
+            ("2024-01-15T24:00", (2024, 1, 16)),
+            ("2024-02-28T24:00", (2024, 2, 29)),
+            ("2023-02-28T24:00", (2023, 3, 1)),
+            ("2024-12-31T24:00", (2025, 1, 1)),
+        ];
+        for (text, (year, month, day)) in cases {
+            let r = parser.isoparse(text).unwrap();
+            assert_eq!(
+                (r.year, r.month, r.day, r.hour),
+                (Some(year), Some(month), Some(day), Some(0)),
+                "{text}"
+            );
+        }
+    }
+
+    /// Verify isoparse() leaves an invalid date as parsed at 24:00.
+    ///
+    /// Mutation: rolling over without the year, month and day range
+    /// check, which turns month 0 day 0 into January 1.
+    /// Oracle: dateutil.parser.isoparse raises on each input ('month
+    /// must be in 1..12', 'day is out of range', 'year 0 is out of
+    /// range'), so the date must stay invalid for the caller to reject.
+    #[test]
+    fn test_isoparse_hour_24_invalid_date_not_rolled() {
+        let parser = IsoParser::new();
+        let cases = [
+            ("2024-00-00T24:00", (0, 2024, 0, 0)),
+            ("2024-01-00T24:00", (0, 2024, 1, 0)),
+            ("0000-12-31T24:00", (0, 0, 12, 31)),
+        ];
+        for (text, (hour, year, month, day)) in cases {
+            let r = parser.isoparse(text).unwrap();
+            assert_eq!(
+                (r.hour, r.year, r.month, r.day),
+                (Some(hour), Some(year), Some(month), Some(day)),
+                "{text}"
+            );
+        }
+    }
+
+    /// Verify a week date where the Zeller sum is negative.
+    ///
+    /// Mutation: `%` for `rem_euclid` in day_of_week, which wraps -1 to
+    /// u32::MAX.
+    /// Oracle: Python date.fromisocalendar(2601, 1, 1) = 2600-12-29,
+    /// and date(2601, 1, 4).isoweekday() = 7 (Sunday).
+    #[test]
+    fn test_week_date_negative_zeller_sum() {
+        assert_eq!(day_of_week(2601, 1, 4), 6);
+
+        let r = IsoParser::new().parse_isodate("2601-W01-1").unwrap();
+        assert_eq!((r.year, r.month, r.day), (Some(2600), Some(12), Some(29)));
     }
 }

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING
 
 from opendate.constants import WEEKDAY_SHORTNAME, WeekDay
 from opendate.decorators import store_calendar
@@ -10,9 +9,6 @@ if sys.version_info >= (3, 11):
     from typing import Self
 else:
     from typing_extensions import Self
-
-if TYPE_CHECKING:
-    pass
 
 
 class DateExtrasMixin:
@@ -69,11 +65,21 @@ class DateExtrasMixin:
         Parameters
         ----------
         day : str, default 'MO'
-            Weekday code, 'MO' through 'SU'.
+            Weekday code, 'MO' through 'SU', upper case.
+
+        Returns
+        -------
+        Self
+
+        Raises
+        ------
+        KeyError
+            day is no such code, 'mo' included.
         """
-        if self.weekday() == WEEKDAY_SHORTNAME.get(day):
+        weekday = WEEKDAY_SHORTNAME[day]
+        if self.weekday() == weekday:
             return self
-        return self.next(WEEKDAY_SHORTNAME.get(day))
+        return self.next(weekday)
 
     def weekday_or_previous_friday(self) -> Self:
         """This date on a weekday, else the Friday before it.

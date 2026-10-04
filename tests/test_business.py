@@ -383,6 +383,22 @@ def test_business_subtract_preserves_sub_day_kwargs():
     assert result == DateTime(2024, 4, 1, 12, 0, 0, tzinfo=UTC)
 
 
+def test_business_negative_days_keep_sub_day_kwargs_sign():
+    """Verify a negative day count leaves the sign of sub-day kwargs alone.
+
+    Mutation: add(days<0) handing hours to subtract(), or subtract(days<0)
+        handing them to add(), unnegated.
+    Oracle: the add/subtract hours tests above; add moves hours forward and
+        subtract back, as pendulum's add and subtract do.
+    """
+    tuesday = DateTime(2024, 4, 2, 9, 0, 0, tzinfo=UTC)
+    assert tuesday.b.add(days=-1, hours=2) \
+        == DateTime(2024, 4, 1, 11, 0, 0, tzinfo=UTC)
+    monday = DateTime(2024, 4, 1, 9, 0, 0, tzinfo=UTC)
+    assert monday.b.subtract(days=-1, hours=2) \
+        == DateTime(2024, 4, 2, 7, 0, 0, tzinfo=UTC)
+
+
 def test_is_business_day_preserves_calendar_on_datetime():
     """Verify DateTime.is_business_day() uses the DateTime's own calendar.
 
