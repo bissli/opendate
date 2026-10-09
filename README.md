@@ -117,12 +117,12 @@ Inherited from pendulum: `year`, `month`, `day`, `day_of_week`, `day_of_year`, `
 | Method                                      | Description                                                                                                                                                                                                              |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DateTime(y, m, d, h, m, s, us, tzinfo)`    | Create from components                                                                                                                                                                                                   |
-| `DateTime.now(tz=None)`                     | Current time (local tz if None)                                                                                                                                                                                          |
+| `DateTime.now(tz=None)`                     | Current time in tz, any tzinfo (local tz if None)                                                                                                                                                                       |
 | `DateTime.today(tz=None)`                   | Today at 00:00:00 (local tz if None, **differs from pendulum**)                                                                                                                                                          |
 | `DateTime.parse(s, calendar='NYSE')`        | Parse string or timestamp. A string keeps an offset it spells out, else UTC. A date code (T, P) gives a naive midnight. A timestamp gives local wall time in LCL. Calendar used for business day codes, defaults to NYSE |
 | `DateTime.instance(obj, tz=None)`           | From datetime, Timestamp, datetime64. Preserves obj's tz if present, else uses `tz` param, else UTC                                                                                                                      |
 | `DateTime.combine(date, time, tzinfo=None)` | Combine Date and Time (uses time's tz if tzinfo=None)                                                                                                                                                                    |
-| `DateTime.fromtimestamp(ts, tz=None)`       | From Unix timestamp (UTC if None)                                                                                                                                                                                        |
+| `DateTime.fromtimestamp(ts, tz=None)`       | From Unix timestamp in tz, any tzinfo (UTC if None)                                                                                                                                                                     |
 | `DateTime.utcfromtimestamp(ts)`             | From timestamp as UTC                                                                                                                                                                                                    |
 | `DateTime.utcnow()`                         | Current UTC time                                                                                                                                                                                                         |
 | `DateTime.strptime(s, fmt)`                 | Parse with format                                                                                                                                                                                                        |
@@ -142,11 +142,11 @@ Inherited from pendulum: `year`, `month`, `day`, `hour`, `minute`, `second`, `mi
 
 ### Timezone
 
-| Method            | Description             |
-| ----------------- | ----------------------- |
-| `in_timezone(tz)` | Convert to timezone     |
-| `in_tz(tz)`       | Alias for `in_timezone` |
-| `astimezone(tz)`  | Alias for `in_timezone` |
+| Method            | Description                                                                                                      |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `in_timezone(tz)` | Same instant in tz, a zone name or any tzinfo. On a naive value, keeps the wall clock and sets tz                |
+| `in_tz(tz)`       | Alias for `in_timezone`                                                                                          |
+| `astimezone(tz)`  | Same instant in tz, a tzinfo or None. Reads a naive value as system local time. None means the system local zone |
 
 ### Arithmetic & Navigation
 
@@ -184,10 +184,10 @@ Same as Date: `business()`, `.b`, `calendar(name)`, `is_business_day()`, `busine
 
 ### Methods
 
-| Method            | Description         |
-| ----------------- | ------------------- |
-| `in_timezone(tz)` | Convert to timezone |
-| `in_tz(tz)`       | Alias               |
+| Method            | Description                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `in_timezone(tz)` | Same instant as a time of day in tz, converted on today's date, so a daylight-saving zone uses today's offset. Reads a naive time as UTC |
+| `in_tz(tz)`       | Alias for `in_timezone`                                                                                                                  |
 
 ## Interval
 
@@ -356,8 +356,12 @@ dt = DateTime(2024, 1, 15, 9, 30, tzinfo=tokyo)
 
 ### Conversion
 
+Every method that takes a zone accepts any tzinfo: a pendulum zone, `zoneinfo.ZoneInfo`, pytz, a fixed `datetime.timezone`, or a dateutil zone. opendate stores a named zone as the pendulum zone of that name and a fixed offset as a fixed pendulum zone. Pendulum reads a dateutil zone as UTC. opendate converts by that zone's offset.
+
 ```python
-dt.in_timezone(UTC)   # or in_tz() or astimezone()
+dt.in_timezone(UTC)                                   # same instant in UTC; in_tz() is an alias
+dt.in_timezone(dateutil.tz.gettz('Australia/Sydney'))  # timezone_name is 'Australia/Sydney'
+dt.astimezone(None)                                   # same instant in the system local zone
 ```
 
 ## Decorators

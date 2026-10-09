@@ -26,6 +26,44 @@ if TYPE_CHECKING:
     from opendate.calendars import Calendar
 
 
+def _pendulum_zone(tz: Any) -> Any:
+    """tz, rebuilt by normalize_timezone where it is a foreign tzinfo.
+
+    Parameters
+    ----------
+    tz : Any
+        A zone bound for pendulum's _safe_timezone, which reads a foreign
+        tzinfo with no name, such as a dateutil zone, as UTC. A str,
+        number, None or pendulum zone comes back unchanged.
+
+    Returns
+    -------
+    Any
+    """
+    if isinstance(tz, _datetime.tzinfo):
+        return normalize_timezone(tz)
+    return tz
+
+
+def _resolve_zone(tz: Any) -> _datetime.tzinfo:
+    """Tz as a tzinfo the stdlib can apply.
+
+    Parameters
+    ----------
+    tz : Any
+        A tzinfo, rebuilt as in _pendulum_zone, or anything pendulum's
+        _safe_timezone reads: a zone name, an hour offset, or None for
+        the local zone.
+
+    Returns
+    -------
+    datetime.tzinfo
+    """
+    if isinstance(tz, _datetime.tzinfo):
+        return normalize_timezone(tz)
+    return _pendulum._safe_timezone(tz)
+
+
 class DateTime(
     DateBusinessMixin,
     _pendulum.DateTime,
@@ -145,9 +183,8 @@ class DateTime(
         -------
         DateTime
         """
-        tz = tz or UTC
-        result = _pendulum.DateTime.fromtimestamp(timestamp, tz)
-        return cls.instance(result)
+        zone = _resolve_zone(tz or UTC)
+        return cls.instance(_datetime.datetime.fromtimestamp(timestamp, zone))
 
     @classmethod
     def strptime(cls, time_str: str, fmt: str) -> Self:
@@ -205,32 +242,16 @@ class DateTime(
         -------
         DateTime
         """
-        if tz is None or tz == 'local':
-            d = _datetime.datetime.now(LCL)
-        elif tz is UTC or tz == 'UTC':
-            d = _datetime.datetime.now(UTC)
-        else:
-            d = _datetime.datetime.now(UTC)
-            tz = _pendulum._safe_timezone(tz)
-            d = d.astimezone(tz)
-        return cls(
-            d.year,
-            d.month,
-            d.day,
-            d.hour,
-            d.minute,
-            d.second,
-            d.microsecond,
-            tzinfo=d.tzinfo,
-            fold=d.fold)
+        zone = _resolve_zone(tz)
+        return cls.instance(_datetime.datetime.now(zone))
 
     @classmethod
-    def today(cls, tz: str | _zoneinfo.ZoneInfo | None = None) -> Self:
+    def today(cls, tz: str | _zoneinfo.ZoneInfo | _datetime.tzinfo | None = None) -> Self:
         """Start of the current day in tz.
 
         Parameters
         ----------
-        tz : str | ZoneInfo | None, default None
+        tz : str | ZoneInfo | tzinfo | None, default None
             None gives the local zone LCL.
 
         Returns
@@ -238,7 +259,9 @@ class DateTime(
         DateTime
             00:00:00 today, where pendulum.today() gives the current time.
         """
-        return DateTime.now(tz).start_of('day')
+        current = DateTime.now(tz)
+        # start_of drops a zone whose .tz is None.
+        return DateTime.instance(current.start_of('day'), tz=current.tzinfo)
 
     def date(self) -> Date:
         """Wall-clock calendar date, as a Date.
@@ -280,6 +303,105 @@ class DateTime(
         """Extract time component from datetime (preserving timezone).
         """
         return Time.instance(self)
+
+    @classmethod
+    def create(cls, *args: Any, **kwargs: Any) -> Self:
+        """Pendulum's create, reading a foreign tzinfo by its name.
+
+        Parameters
+        ----------
+        *args : Any
+            As in pendulum.DateTime.create, tz eighth.
+        **kwargs : Any
+            As in pendulum.DateTime.create.
+
+        Returns
+        -------
+        DateTime
+        """
+        if len(args) > 7:
+            args = (*args[:7], _pendulum_zone(args[7]), *args[8:])
+        elif 'tz' in kwargs:
+            kwargs['tz'] = _pendulum_zone(kwargs['tz'])
+        return super().create(*args, **kwargs)
+
+    def replace(self, *args: Any, **kwargs: Any) -> Self:
+        """Pendulum's replace, reading a foreign tzinfo by its name.
+
+        Parameters
+        ----------
+        *args : Any
+            The datetime.datetime fields in order, tzinfo eighth.
+        **kwargs : Any
+            The same fields by keyword, plus fold.
+
+        Returns
+        -------
+        DateTime
+            Keeps the caller's calendar.
+        """
+        if len(args) > 7:
+            args = (*args[:7], _pendulum_zone(args[7]), *args[8:])
+        elif 'tzinfo' in kwargs:
+            kwargs['tzinfo'] = _pendulum_zone(kwargs['tzinfo'])
+        result = super().replace(*args, **kwargs)
+        result._calendar = self._calendar
+        return result
+
+    def astimezone(self, tz: _datetime.tzinfo | None = None) -> Self:
+        """The same instant in tz.
+
+        Parameters
+        ----------
+        tz : tzinfo | None, default None
+            Target zone. None gives the system's local zone, as in the
+            stdlib.
+
+        Returns
+        -------
+        DateTime
+            Keeps the caller's calendar. A naive value is read as system
+            local time, as in the stdlib.
+        """
+        # dateutil's fromutc does arithmetic pendulum gets wrong.
+        plain = _datetime.datetime(
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+            self.microsecond,
+            tzinfo=self.tzinfo,
+            fold=self.fold)
+        # A nameless zone is read at the converted instant.
+        zone = normalize_timezone(tz, plain.astimezone(tz))
+        result = type(self).instance(plain.astimezone(zone))
+        result._calendar = self._calendar
+        return result
+
+    def in_timezone(self, tz: str | _datetime.tzinfo) -> Self:
+        """The same instant in tz, or a naive value's wall clock set in tz.
+
+        Parameters
+        ----------
+        tz : str | tzinfo
+            Target zone.
+
+        Returns
+        -------
+        DateTime
+            Keeps the caller's calendar.
+        """
+        if self.tzinfo is not None:
+            if not isinstance(tz, _datetime.tzinfo):
+                tz = _pendulum._safe_timezone(tz)
+            return self.astimezone(tz)
+        result = super().in_timezone(_pendulum_zone(tz))
+        result._calendar = self._calendar
+        return result
+
+    in_tz = in_timezone
 
     @classmethod
     def parse(
@@ -436,4 +558,5 @@ class DateTime(
             obj.minute,
             obj.second,
             obj.microsecond,
-            tzinfo=tz)
+            tzinfo=tz,
+            fold=obj.fold)

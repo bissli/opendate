@@ -5,6 +5,7 @@ import os
 import re
 import zoneinfo as _zoneinfo
 
+import dateutil.tz as _dateutil_tz
 import pendulum as _pendulum
 
 _IS_WINDOWS = os.name == 'nt'
@@ -87,9 +88,10 @@ def normalize_timezone(
     Returns
     -------
     datetime.tzinfo or None
-        `tz` where pendulum already owns it, else pendulum's timezone for
-        the name `tz` carries, else a fixed zone at the offset `tz`
-        reports at `when`, UTC for a zero offset. A zone whose offset
+        `tz` where pendulum already owns it, LCL for dateutil's tzlocal,
+        else pendulum's timezone for the name `tz` carries, else a fixed
+        zone at the offset `tz` reports at `when`, UTC for a zero
+        offset. A zone whose offset
         differs between January and July of `when`'s year, or that
         reports none, comes back unchanged.
 
@@ -106,6 +108,8 @@ def normalize_timezone(
         return tz
     if isinstance(tz, str):
         return Timezone(tz)
+    if isinstance(tz, _dateutil_tz.tzlocal):
+        return LCL
 
     name = zone_name(tz)
     if name is not None:

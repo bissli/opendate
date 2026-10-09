@@ -2,6 +2,7 @@
 """
 from __future__ import annotations
 
+import datetime as _datetime
 from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any
@@ -108,7 +109,16 @@ def _make_interval_wrapper(
         result = original_method(self, *args, **kwargs)
 
         if isinstance(result, _pendulum.Interval) and not isinstance(result, Interval):
-            result = Interval(result.start, result.end)
+            # Interval() stamps UTC on a naive endpoint opendate does not own.
+            points = []
+            for point in (result.start, result.end):
+                if (isinstance(point, _datetime.datetime)
+                    and not isinstance(point, target_cls)
+                    and point.tzinfo is None):
+                    fields = point.timetuple()[:6]
+                    point = target_cls(*fields, point.microsecond, fold=point.fold)
+                points.append(point)
+            result = Interval(*points)
             if _calendar:
                 result._calendar = _calendar
         elif isinstance(result, (_pendulum.Date, _pendulum.DateTime)):
